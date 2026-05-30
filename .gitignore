@@ -1,0 +1,10 @@
+build/
+
+arkive-sync.db
+cookies.txt
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
