@@ -1,9 +1,35 @@
 #include "./ArkiveClient.hpp"
 #include <curl/curl.h>
 #include <filesystem>
-#include <spdlog/spdlog.h>
+#include <memory>
 #include <stdexcept>
 #include <utility>
+
+namespace {
+
+using CurlPtr = std::unique_ptr<CURL, decltype(&curl_easy_cleanup)>;
+using HeaderPtr = std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>;
+
+CurlPtr makeCurlHandle() {
+  CurlPtr curl(curl_easy_init(), &curl_easy_cleanup);
+  if (!curl) {
+    throw std::runtime_error("failed to initialize curl");
+  }
+
+  return curl;
+}
+
+void appendHeader(HeaderPtr &headers, const char *header) {
+  curl_slist *raw_headers = curl_slist_append(headers.get(), header);
+  if (raw_headers == nullptr) {
+    throw std::runtime_error("failed to append curl header");
+  }
+
+  curl_slist *release = headers.release();
+  headers.reset(raw_headers);
+}
+
+} // namespace
 
 ArkiveClient::ArkiveClient(std::string baseUrl, std::string cookiePath)
     : baseUrl_(std::move(baseUrl)), cookiePath_(std::move(cookiePath)) {
@@ -43,37 +69,31 @@ std::string ArkiveClient::url(const std::string &path) const {
 
 nlohmann::json ArkiveClient::postJson(const std::string &path,
                                       const nlohmann::json &body) {
-  CURL *curl = curl_easy_init();
-  if (!curl) {
-    throw std::runtime_error("failed to initialize curl");
-  }
+  CurlPtr curl = makeCurlHandle();
 
   std::string response;
   std::string requestUrl = url(path);
   std::string bodyText = body.dump();
 
-  struct curl_slist *headers = nullptr;
-  headers = curl_slist_append(headers, "Content-Type: application/json");
-  headers = curl_slist_append(headers, "Accept: application/json");
+  HeaderPtr headers(nullptr, &curl_slist_free_all);
+  appendHeader(headers, "Content-Type: application/json");
+  appendHeader(headers, "Accept: application/json");
 
-  curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_POST, 1L);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyText.c_str());
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, bodyText.size());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl.get(), CURLOPT_URL, requestUrl.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+  curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, bodyText.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, bodyText.size());
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
 
-  curl_easy_setopt(curl, CURLOPT_COOKIEFILE, cookiePath_.c_str());
-  curl_easy_setopt(curl, CURLOPT_COOKIEJAR, cookiePath_.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
 
-  CURLcode code = curl_easy_perform(curl);
+  CURLcode code = curl_easy_perform(curl.get());
 
   long status = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
 
   if (code != CURLE_OK) {
     throw std::runtime_error(curl_easy_strerror(code));
@@ -92,34 +112,28 @@ nlohmann::json ArkiveClient::postJson(const std::string &path,
 }
 
 nlohmann::json ArkiveClient::getJson(const std::string &path) {
-  CURL *curl = curl_easy_init();
-  if (!curl) {
-    throw std::runtime_error("failed to initialize curl");
-  }
+  CurlPtr curl = makeCurlHandle();
 
   std::string response;
   std::string requestUrl = url(path);
 
-  struct curl_slist *headers = nullptr;
-  headers = curl_slist_append(headers, "Accept: application/json");
+  HeaderPtr headers(nullptr, &curl_slist_free_all);
+  appendHeader(headers, "Accept: application/json");
 
-  curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl.get(), CURLOPT_URL, requestUrl.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+  curl_easy_setopt(curl.get(), CURLOPT_HTTPGET, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
 
-  curl_easy_setopt(curl, CURLOPT_COOKIEFILE, cookiePath_.c_str());
-  curl_easy_setopt(curl, CURLOPT_COOKIEJAR, cookiePath_.c_str());
-  curl_easy_setopt(curl, CURLOPT_COOKIELIST, "FLUSH");
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIELIST, "FLUSH");
 
-  CURLcode code = curl_easy_perform(curl);
+  CURLcode code = curl_easy_perform(curl.get());
 
   long status = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
 
   if (code != CURLE_OK) {
     throw std::runtime_error(curl_easy_strerror(code));
