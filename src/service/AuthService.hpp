@@ -1,16 +1,24 @@
 #pragma once
 
-#include "api/ArkiveClient.hpp"
+#include "api/ArkiveHttpClient.hpp"
 #include "repo/UserRepo.hpp"
+
+struct LoginResponse {
+  std::string salt;
+  std::string encryptedMasterKey;
+};
 
 class AuthService {
 public:
-  AuthService(UserRepo &userRepo, ArkiveClient &client);
+  AuthService(UserRepo &userRepo, ArkiveHttpClient &client);
 
-  void login(const std::string &email, const std::string &password);
-  void logout();
+  bool login(const std::string &email, const std::string &password);
+  bool logout();
+  nlohmann::json me();
 
 private:
+  bool hasValidSession();
+
   UserRepo &userRepo_;
-  ArkiveClient &client_;
+  ArkiveHttpClient &client_;
 };

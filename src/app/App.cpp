@@ -1,5 +1,5 @@
 #include "App.hpp"
-#include "./api/ArkiveClient.hpp"
+#include "./api/ArkiveHttpClient.hpp"
 #include "./db/Sqlite.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
@@ -104,10 +104,13 @@ int App::run(int argc, char *argv[]) {
     spdlog::info("Logging into arkive");
 
     const std::string baseUrl = requireBaseUrl(userRepo);
-    ArkiveClient client(baseUrl, kCookiePath);
+    ArkiveHttpClient client(baseUrl, kCookiePath);
     AuthService authService(userRepo, client);
-    authService.login("numan@gmail.com", "12345678@Aa");
-    spdlog::info("Successfully logged in!");
+    if (authService.login("numan@gmail.com", "12345678@Aa")) {
+      spdlog::info("Successfully logged in!");
+    } else {
+      spdlog::info("Session is already valid. Skipping login.");
+    }
     return 0;
   }
 
@@ -115,10 +118,13 @@ int App::run(int argc, char *argv[]) {
     spdlog::info("Logging out of arkive");
 
     const std::string baseUrl = requireBaseUrl(userRepo);
-    ArkiveClient client(baseUrl, kCookiePath);
+    ArkiveHttpClient client(baseUrl, kCookiePath);
     AuthService authService(userRepo, client);
-    authService.logout();
-    spdlog::info("Successfully logged out!");
+    if (authService.logout()) {
+      spdlog::info("Successfully logged out!");
+    } else {
+      spdlog::info("No valid session found. Cleared local auth state.");
+    }
     return 0;
   }
 

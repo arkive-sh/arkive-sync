@@ -35,7 +35,7 @@ find_package(SQLite3 REQUIRED)
 add_executable(arkive-sync
     src/main.cpp
     src/app/App.cpp
-    src/api/ArkiveClient.cpp
+    src/api/ArkiveHttpClient.cpp
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/repo/UserRepo.cpp

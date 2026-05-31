@@ -1,4 +1,4 @@
-#include "./ArkiveClient.hpp"
+#include "./ArkiveHttpClient.hpp"
 #include <curl/curl.h>
 #include <filesystem>
 #include <memory>
@@ -31,7 +31,18 @@ void appendHeader(HeaderPtr &headers, const char *header) {
 
 } // namespace
 
-ArkiveClient::ArkiveClient(std::string baseUrl, std::string cookiePath)
+HttpError::HttpError(long statusCode, std::string responseBody)
+    : std::runtime_error("HTTP " + std::to_string(statusCode) + ": " +
+                         responseBody),
+      statusCode_(statusCode), responseBody_(std::move(responseBody)) {}
+
+long HttpError::statusCode() const noexcept { return statusCode_; }
+
+const std::string &HttpError::responseBody() const noexcept {
+  return responseBody_;
+}
+
+ArkiveHttpClient::ArkiveHttpClient(std::string baseUrl, std::string cookiePath)
     : baseUrl_(std::move(baseUrl)), cookiePath_(std::move(cookiePath)) {
   const std::filesystem::path cookie_file_path(cookiePath_);
   if (cookie_file_path.has_parent_path()) {
@@ -39,11 +50,11 @@ ArkiveClient::ArkiveClient(std::string baseUrl, std::string cookiePath)
   }
 }
 
-ArkiveClient::ArkiveClient(ArkiveClient &&other) noexcept
+ArkiveHttpClient::ArkiveHttpClient(ArkiveHttpClient &&other) noexcept
     : baseUrl_(std::move(other.baseUrl_)),
       cookiePath_(std::move(other.cookiePath_)) {}
 
-ArkiveClient &ArkiveClient::operator=(ArkiveClient &&other) noexcept {
+ArkiveHttpClient &ArkiveHttpClient::operator=(ArkiveHttpClient &&other) noexcept {
   if (this != &other) {
     baseUrl_ = std::move(other.baseUrl_);
     cookiePath_ = std::move(other.cookiePath_);
@@ -59,7 +70,7 @@ static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
   return size * nmemb;
 }
 
-std::string ArkiveClient::url(const std::string &path) const {
+std::string ArkiveHttpClient::url(const std::string &path) const {
   if (!path.empty() && path[0] == '/') {
     return baseUrl_ + path;
   }
@@ -67,7 +78,7 @@ std::string ArkiveClient::url(const std::string &path) const {
   return baseUrl_ + "/" + path;
 }
 
-nlohmann::json ArkiveClient::postJson(const std::string &path,
+nlohmann::json ArkiveHttpClient::postJson(const std::string &path,
                                       const nlohmann::json &body) {
   CurlPtr curl = makeCurlHandle();
 
@@ -100,8 +111,7 @@ nlohmann::json ArkiveClient::postJson(const std::string &path,
   }
 
   if (status < 200 || status >= 300) {
-    throw std::runtime_error("HTTP " + std::to_string(status) + ": " +
-                             response);
+    throw HttpError(status, response);
   }
 
   if (response.empty()) {
@@ -111,7 +121,7 @@ nlohmann::json ArkiveClient::postJson(const std::string &path,
   return nlohmann::json::parse(response);
 }
 
-nlohmann::json ArkiveClient::getJson(const std::string &path) {
+nlohmann::json ArkiveHttpClient::getJson(const std::string &path) {
   CurlPtr curl = makeCurlHandle();
 
   std::string response;
@@ -140,8 +150,7 @@ nlohmann::json ArkiveClient::getJson(const std::string &path) {
   }
 
   if (status < 200 || status >= 300) {
-    throw std::runtime_error("HTTP " + std::to_string(status) + ": " +
-                             response);
+    throw HttpError(status, response);
   }
 
   if (response.empty()) {
@@ -151,7 +160,7 @@ nlohmann::json ArkiveClient::getJson(const std::string &path) {
   return nlohmann::json::parse(response);
 }
 
-void ArkiveClient::postForm(const std::string &path) {
+void ArkiveHttpClient::postForm(const std::string &path) {
   CurlPtr curl = makeCurlHandle();
 
   std::string response;
@@ -178,22 +187,6 @@ void ArkiveClient::postForm(const std::string &path) {
   }
 
   if (status < 200 || status >= 400) {
-    throw std::runtime_error("HTTP " + std::to_string(status) + ": " +
-                             response);
+    throw HttpError(status, response);
   }
 }
-
-LoginResponse ArkiveClient::login(const std::string &email,
-                                  const std::string &password) {
-  auto res =
-      postJson("/api/auth/login", {{"email", email}, {"password", password}});
-
-  return LoginResponse{
-      .salt = res.value("salt", ""),
-      .encryptedMasterKey = res.value("encryptedMasterKey", ""),
-  };
-}
-
-void ArkiveClient::logout() { postForm("/logout"); }
-
-nlohmann::json ArkiveClient::me() { return getJson("/api/me"); }
