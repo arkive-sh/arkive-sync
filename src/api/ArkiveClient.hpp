@@ -17,6 +17,7 @@ public:
   ArkiveClient &operator=(ArkiveClient &&other) noexcept;
 
   LoginResponse login(const std::string &email, const std::string &password);
+  void logout();
   nlohmann::json me();
 
 private:
@@ -25,6 +26,7 @@ private:
 
   nlohmann::json postJson(const std::string &path, const nlohmann::json &body);
   nlohmann::json getJson(const std::string &path);
+  void postForm(const std::string &path);
 
   std::string url(const std::string &path) const;
 };

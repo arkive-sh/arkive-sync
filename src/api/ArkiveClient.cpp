@@ -151,6 +151,38 @@ nlohmann::json ArkiveClient::getJson(const std::string &path) {
   return nlohmann::json::parse(response);
 }
 
+void ArkiveClient::postForm(const std::string &path) {
+  CurlPtr curl = makeCurlHandle();
+
+  std::string response;
+  std::string requestUrl = url(path);
+
+  curl_easy_setopt(curl.get(), CURLOPT_URL, requestUrl.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_POST, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, "");
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, 0L);
+  curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
+
+  CURLcode code = curl_easy_perform(curl.get());
+
+  long status = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+
+  if (code != CURLE_OK) {
+    throw std::runtime_error(curl_easy_strerror(code));
+  }
+
+  if (status < 200 || status >= 400) {
+    throw std::runtime_error("HTTP " + std::to_string(status) + ": " +
+                             response);
+  }
+}
+
 LoginResponse ArkiveClient::login(const std::string &email,
                                   const std::string &password) {
   auto res =
@@ -161,5 +193,7 @@ LoginResponse ArkiveClient::login(const std::string &email,
       .encryptedMasterKey = res.value("encryptedMasterKey", ""),
   };
 }
+
+void ArkiveClient::logout() { postForm("/logout"); }
 
 nlohmann::json ArkiveClient::me() { return getJson("/api/me"); }

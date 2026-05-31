@@ -37,6 +37,9 @@ add_executable(arkive-sync
     src/app/App.cpp
     src/api/ArkiveClient.cpp
     src/db/Sqlite.cpp
+    src/db/SqliteHelpers.cpp
+    src/repo/UserRepo.cpp
+    src/service/AuthService.cpp
     src/crypto/RustCrypto.cpp
 )
 
