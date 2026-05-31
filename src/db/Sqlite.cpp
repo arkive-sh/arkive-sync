@@ -1,4 +1,4 @@
-#include "./sqlite.hpp"
+#include "./Sqlite.hpp"
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
 #include <stdexcept>
