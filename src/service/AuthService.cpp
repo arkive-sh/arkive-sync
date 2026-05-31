@@ -1,4 +1,8 @@
 #include "service/AuthService.hpp"
+#include "./helpers/Helpers.hpp"
+#include <iostream>
+#include <stdexcept>
+#include <string>
 
 namespace {
 
@@ -23,7 +27,7 @@ void AuthService::ensureValidSession() {
 AuthService::AuthService(UserRepo &userRepo, ArkiveHttpClient &client)
     : userRepo_(userRepo), client_(client) {}
 
-bool AuthService::login(const std::string &email, const std::string &password) {
+bool AuthService::login() {
   const auto account = userRepo_.getAccount();
   if (!account.has_value()) {
     throw std::runtime_error(
@@ -34,13 +38,37 @@ bool AuthService::login(const std::string &email, const std::string &password) {
     ensureValidSession();
     return false;
   } catch (const std::runtime_error &error) {
-    if (std::string(error.what()) != "No valid session. Run: arkive-sync login") {
+    if (std::string(error.what()) !=
+        "No valid session. Run: arkive-sync login") {
       throw;
     }
   }
 
-  const auto responseJson =
-      client_.postJson("/api/auth/login", {{"email", email}, {"password", password}});
+  std::string email, password;
+
+  // Get email input
+  std::cout << "Enter your email: ";
+  std::getline(std::cin, email);
+
+  if (email == "") {
+    throw std::invalid_argument("Email cannot be empty");
+  }
+
+  // hide password from terminal
+  std::cout << "Enter your password:" << std::flush;
+  // extra scope so terminal goes back to normal regardless of what happens RAII
+  {
+    auto echoGuard = makeTerminalEchoGuard();
+    std::getline(std::cin, password);
+  }
+  std::cout << '\n';
+
+  if (password == "") {
+    throw std::invalid_argument("Password cannot be empty!");
+  }
+
+  const auto responseJson = client_.postJson(
+      "/api/auth/login", {{"email", email}, {"password", password}});
   const LoginResponse response{
       .salt = responseJson.value("salt", ""),
       .encryptedMasterKey = responseJson.value("encryptedMasterKey", ""),
@@ -65,7 +93,8 @@ bool AuthService::logout() {
   try {
     ensureValidSession();
   } catch (const std::runtime_error &error) {
-    if (std::string(error.what()) != "No valid session. Run: arkive-sync login") {
+    if (std::string(error.what()) !=
+        "No valid session. Run: arkive-sync login") {
       throw;
     }
 

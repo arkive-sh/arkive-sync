@@ -12,7 +12,7 @@ class AuthService {
 public:
   AuthService(UserRepo &userRepo, ArkiveHttpClient &client);
 
-  bool login(const std::string &email, const std::string &password);
+  bool login();
   bool logout();
   nlohmann::json me();
   void ensureValidSession();

@@ -67,8 +67,8 @@ int App::run(int argc, char *argv[]) {
   sqlite3 *dbInstance = db.getDb();
   UserRepo userRepo(dbInstance);
   if (argc < 2) {
-    spdlog::info(
-        "Usage: arkive-sync <status|set-base-url|login|logout|upload|download>");
+    spdlog::info("Usage: arkive-sync "
+                 "<status|set-base-url|login|logout|upload|download>");
     return 0;
   }
 
@@ -106,7 +106,7 @@ int App::run(int argc, char *argv[]) {
     const std::string baseUrl = requireBaseUrl(userRepo);
     ArkiveHttpClient client(baseUrl, kCookiePath);
     AuthService authService(userRepo, client);
-    if (authService.login("numan@gmail.com", "12345678@Aa")) {
+    if (authService.login()) {
       spdlog::info("Successfully logged in!");
     } else {
       spdlog::info("Session is already valid. Skipping login.");
