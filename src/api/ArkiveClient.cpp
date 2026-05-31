@@ -6,18 +6,25 @@
 #include <utility>
 
 ArkiveClient::ArkiveClient(std::string baseUrl, std::string cookiePath)
-    : baseUrl_(std::move(baseUrl)), cookiePath_(std::move(cookiePath)) {};
+    : baseUrl_(std::move(baseUrl)), cookiePath_(std::move(cookiePath)) {
+  const std::filesystem::path cookie_file_path(cookiePath_);
+  if (cookie_file_path.has_parent_path()) {
+    std::filesystem::create_directories(cookie_file_path.parent_path());
+  }
+}
 
 ArkiveClient::ArkiveClient(ArkiveClient &&other) noexcept
-    : baseUrl_(std::move(other.baseUrl_)) {}
+    : baseUrl_(std::move(other.baseUrl_)),
+      cookiePath_(std::move(other.cookiePath_)) {}
+
 ArkiveClient &ArkiveClient::operator=(ArkiveClient &&other) noexcept {
   if (this != &other) {
     baseUrl_ = std::move(other.baseUrl_);
-    cookiePath_ = other.cookiePath_;
+    cookiePath_ = std::move(other.cookiePath_);
   }
 
   return *this;
-};
+}
 
 static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
                             void *userdata) {
@@ -132,14 +139,6 @@ nlohmann::json ArkiveClient::getJson(const std::string &path) {
 
 LoginResponse ArkiveClient::login(const std::string &email,
                                   const std::string &password) {
-
-  std::filesystem::path dataDir =
-      std::filesystem::path(std::getenv("HOME")) / ".local/share/arkive-sync";
-
-  std::filesystem::create_directories(dataDir);
-
-  std::string cookiePath = (dataDir / "cookies.txt").string();
-
   auto res =
       postJson("/api/auth/login", {{"email", email}, {"password", password}});
 
