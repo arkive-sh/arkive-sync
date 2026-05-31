@@ -15,10 +15,9 @@ public:
   bool login(const std::string &email, const std::string &password);
   bool logout();
   nlohmann::json me();
+  void ensureValidSession();
 
 private:
-  bool hasValidSession();
-
   UserRepo &userRepo_;
   ArkiveHttpClient &client_;
 };

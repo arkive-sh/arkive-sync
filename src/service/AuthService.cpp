@@ -1,12 +1,19 @@
 #include "service/AuthService.hpp"
 
-bool AuthService::hasValidSession() {
+namespace {
+
+bool isUnauthorized(const HttpError &error) {
+  return error.statusCode() == 401 || error.statusCode() == 403;
+}
+
+} // namespace
+
+void AuthService::ensureValidSession() {
   try {
     client_.getJson("/api/me");
-    return true;
   } catch (const HttpError &error) {
-    if (error.statusCode() == 401 || error.statusCode() == 403) {
-      return false;
+    if (isUnauthorized(error)) {
+      throw std::runtime_error("No valid session. Run: arkive-sync login");
     }
 
     throw;
@@ -23,8 +30,13 @@ bool AuthService::login(const std::string &email, const std::string &password) {
         "Base URL is not configured. Run: arkive-sync set-base-url <url>");
   }
 
-  if (hasValidSession()) {
+  try {
+    ensureValidSession();
     return false;
+  } catch (const std::runtime_error &error) {
+    if (std::string(error.what()) != "No valid session. Run: arkive-sync login") {
+      throw;
+    }
   }
 
   const auto responseJson =
@@ -50,7 +62,13 @@ bool AuthService::login(const std::string &email, const std::string &password) {
 }
 
 bool AuthService::logout() {
-  if (!hasValidSession()) {
+  try {
+    ensureValidSession();
+  } catch (const std::runtime_error &error) {
+    if (std::string(error.what()) != "No valid session. Run: arkive-sync login") {
+      throw;
+    }
+
     userRepo_.clearAccount();
     return false;
   }
