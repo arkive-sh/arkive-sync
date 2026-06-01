@@ -15,8 +15,10 @@ struct SyncRootRecord {
 struct EntryRecord {
   std::string id;
   std::optional<std::string> remoteId;
+  std::string syncRootId;
   std::string remoteType;
   std::string localPath;
+  bool isDirectory;
   std::optional<std::string> parentFolderId;
   std::optional<std::string> encryptedName;
   std::optional<int64_t> localSize;
@@ -31,8 +33,14 @@ class SyncRepo {
 public:
   explicit SyncRepo(sqlite3 *db);
 
+  std::optional<SyncRootRecord>
+  getSyncRootByLocalPath(const std::string &localPath) const;
   void upsertSyncRoot(const SyncRootRecord &syncRoot) const;
+  std::vector<EntryRecord> getEntriesForSyncRoot(const std::string &syncRootId) const;
   void upsertEntries(const std::vector<EntryRecord> &entries) const;
+  void markMissingEntriesDeleted(const std::string &syncRootId,
+                                 const std::vector<std::string> &presentPaths) const;
+  size_t enqueuePendingUploads(const std::string &syncRootId) const;
 
 private:
   sqlite3 *db_;

@@ -1,4 +1,5 @@
 #include "./Sqlite.hpp"
+#include "db/SqliteHelpers.hpp"
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
 #include <stdexcept>
@@ -52,8 +53,10 @@ void Database::createSchema() {
     CREATE TABLE IF NOT EXISTS entries (
       id TEXT PRIMARY KEY,
       remote_id TEXT,
+      sync_root_id TEXT NOT NULL,
       remote_type TEXT NOT NULL,
       local_path TEXT NOT NULL,
+      is_directory INTEGER NOT NULL DEFAULT 0,
       parent_folder_id TEXT,
       encrypted_name TEXT,
       local_size INTEGER,
@@ -64,10 +67,6 @@ void Database::createSchema() {
       last_synced_at TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_local_path ON entries(local_path);
-    CREATE INDEX IF NOT EXISTS idx_entries_remote_id ON entries(remote_id);
-    CREATE INDEX IF NOT EXISTS idx_entries_sync_state ON entries(sync_state);
 
     CREATE TABLE IF NOT EXISTS transfer_queue (
       id TEXT PRIMARY KEY,
@@ -96,6 +95,18 @@ void Database::createSchema() {
     sqlite3_free(error_message);
     throw std::runtime_error("Failed to create schema: " + message);
   }
+
+  execOrThrow(
+      db,
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path "
+      "ON entries(sync_root_id, local_path);");
+  execOrThrow(db,
+              "CREATE INDEX IF NOT EXISTS idx_entries_remote_id ON "
+              "entries(remote_id);");
+  execOrThrow(db,
+              "CREATE INDEX IF NOT EXISTS idx_entries_sync_state ON "
+              "entries(sync_state);");
+  execOrThrow(db, "DROP INDEX IF EXISTS idx_entries_local_path;");
 }
 
 void Database::verifySchema() {
