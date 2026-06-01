@@ -35,11 +35,16 @@ public:
 
   std::optional<SyncRootRecord>
   getSyncRootByLocalPath(const std::string &localPath) const;
+  std::optional<EntryRecord> getEntryById(const std::string &entryId) const;
   void upsertSyncRoot(const SyncRootRecord &syncRoot) const;
-  std::vector<EntryRecord> getEntriesForSyncRoot(const std::string &syncRootId) const;
+  std::vector<EntryRecord>
+  getEntriesForSyncRoot(const std::string &syncRootId) const;
   void upsertEntries(const std::vector<EntryRecord> &entries) const;
-  void markMissingEntriesDeleted(const std::string &syncRootId,
-                                 const std::vector<std::string> &presentPaths) const;
+  void
+  markMissingEntriesDeleted(const std::string &syncRootId,
+                            const std::vector<std::string> &presentPaths) const;
+
+  void markEntrySynced(const std::string &entryId);
 
 private:
   sqlite3 *db_;

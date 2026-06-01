@@ -1,10 +1,11 @@
 #pragma once
 
 #include "repo/QueueRepo.hpp"
+#include "repo/SyncRepo.hpp"
 
 class QueueService {
 public:
-  explicit QueueService(QueueRepo &queueRepo);
+  QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo);
 
   QueueStats stats();
   std::optional<TransferJob> claimNextQueuedUpload();
@@ -13,7 +14,9 @@ public:
   void incrementProgress(const std::string &jobId, uint64_t bytesDone);
   void retryFailed();
   void clearDone();
+  void processQueuedUploads();
 
 private:
   QueueRepo &queueRepo_;
+  SyncRepo &syncRepo_;
 };

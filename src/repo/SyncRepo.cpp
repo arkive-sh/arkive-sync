@@ -1,9 +1,10 @@
 #include "repo/SyncRepo.hpp"
 #include "db/SqliteHelpers.hpp"
 
+#include <optional>
 #include <sqlite3.h>
-#include <unordered_set>
 #include <stdexcept>
+#include <unordered_set>
 
 SyncRepo::SyncRepo(sqlite3 *db) : db_(db) {
   if (db == nullptr) {
@@ -62,6 +63,142 @@ WHERE local_path = ?;
   };
 }
 
+std::optional<EntryRecord>
+SyncRepo::getEntryById(const std::string &entryId) const {
+  static constexpr const char *getEntryByIdSql = R"sql(
+SELECT
+  id,
+  remote_id,
+  sync_root_id,
+  remote_type,
+  local_path,
+  is_directory,
+  parent_folder_id,
+  encrypted_name,
+  local_size,
+  local_mtime,
+  local_hash,
+  remote_updated_at,
+  sync_state,
+  last_synced_at
+FROM entries
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, getEntryByIdSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  const char *id =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 0));
+  const char *remoteId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 1));
+  const char *syncRootId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 2));
+  const char *remoteType =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 3));
+  const char *localPath =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 4));
+  const char *parentFolderId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 6));
+  const char *encryptedName =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 7));
+  const char *localMtime =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 9));
+  const char *localHash =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 10));
+  const char *remoteUpdatedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 11));
+  const char *syncState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 12));
+  const char *lastSyncedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 13));
+
+  if (id == nullptr || syncRootId == nullptr || remoteType == nullptr ||
+      localPath == nullptr || syncState == nullptr) {
+    throw std::invalid_argument("entries row contained NULL value");
+  }
+
+  return EntryRecord{
+      .id = id,
+      .remoteId = remoteId != nullptr ? std::optional<std::string>(remoteId)
+                                      : std::nullopt,
+      .syncRootId = syncRootId,
+      .remoteType = remoteType,
+      .localPath = localPath,
+      .isDirectory = sqlite3_column_int(stmt.get(), 5) != 0,
+      .parentFolderId = parentFolderId != nullptr
+                            ? std::optional<std::string>(parentFolderId)
+                            : std::nullopt,
+      .encryptedName = encryptedName != nullptr
+                           ? std::optional<std::string>(encryptedName)
+                           : std::nullopt,
+      .localSize =
+          sqlite3_column_type(stmt.get(), 8) != SQLITE_NULL
+              ? std::optional<int64_t>(sqlite3_column_int64(stmt.get(), 8))
+              : std::nullopt,
+      .localMtime = localMtime != nullptr
+                        ? std::optional<std::string>(localMtime)
+                        : std::nullopt,
+      .localHash = localHash != nullptr ? std::optional<std::string>(localHash)
+                                        : std::nullopt,
+      .remoteUpdatedAt = remoteUpdatedAt != nullptr
+                             ? std::optional<std::string>(remoteUpdatedAt)
+                             : std::nullopt,
+      .syncState = syncState,
+      .lastSyncedAt = lastSyncedAt != nullptr
+                          ? std::optional<std::string>(lastSyncedAt)
+                          : std::nullopt,
+  };
+}
+
+void SyncRepo::markEntrySynced(const std::string &entryId) {
+  static constexpr const char *markEntrySyncedSql = R"sql(
+    UPDATE entries
+    SET
+      sync_state = 'synced',
+      last_synced_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?;
+      )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, markEntrySyncedSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  if (sqlite3_changes(db_) != 1) {
+    throw std::runtime_error(std::string("Changes failed") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
 void SyncRepo::upsertSyncRoot(const SyncRootRecord &syncRoot) const {
   static constexpr const char *upsertSyncRootSql = R"sql(
 INSERT INTO sync_roots (
@@ -93,7 +230,8 @@ ON CONFLICT(local_path) DO UPDATE SET
   bindText(db_, stmt.get(), 1, syncRoot.id);
   bindText(db_, stmt.get(), 2, syncRoot.localPath);
   bindOptionalText(db_, stmt.get(), 3, syncRoot.folderId);
-  throwIfBindFailed(db_, sqlite3_bind_int(stmt.get(), 4, syncRoot.enabled ? 1 : 0));
+  throwIfBindFailed(db_,
+                    sqlite3_bind_int(stmt.get(), 4, syncRoot.enabled ? 1 : 0));
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -167,8 +305,8 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
       bindText(db_, stmt.get(), 3, entry.syncRootId);
       bindText(db_, stmt.get(), 4, entry.remoteType);
       bindText(db_, stmt.get(), 5, entry.localPath);
-      throwIfBindFailed(db_, sqlite3_bind_int(stmt.get(), 6,
-                                              entry.isDirectory ? 1 : 0));
+      throwIfBindFailed(
+          db_, sqlite3_bind_int(stmt.get(), 6, entry.isDirectory ? 1 : 0));
       bindOptionalText(db_, stmt.get(), 7, entry.parentFolderId);
       bindOptionalText(db_, stmt.get(), 8, entry.encryptedName);
       bindOptionalInt64(db_, stmt.get(), 9, entry.localSize);
@@ -273,23 +411,25 @@ WHERE sync_root_id = ?;
         .remoteType = remoteType,
         .localPath = localPath,
         .isDirectory = sqlite3_column_int(stmt.get(), 5) != 0,
-        .parentFolderId =
-            parentFolderId != nullptr ? std::optional<std::string>(parentFolderId)
-                                      : std::nullopt,
-        .encryptedName =
-            encryptedName != nullptr ? std::optional<std::string>(encryptedName)
-                                     : std::nullopt,
-        .localSize = sqlite3_column_type(stmt.get(), 8) != SQLITE_NULL
-                         ? std::optional<int64_t>(sqlite3_column_int64(stmt.get(), 8))
-                         : std::nullopt,
+        .parentFolderId = parentFolderId != nullptr
+                              ? std::optional<std::string>(parentFolderId)
+                              : std::nullopt,
+        .encryptedName = encryptedName != nullptr
+                             ? std::optional<std::string>(encryptedName)
+                             : std::nullopt,
+        .localSize =
+            sqlite3_column_type(stmt.get(), 8) != SQLITE_NULL
+                ? std::optional<int64_t>(sqlite3_column_int64(stmt.get(), 8))
+                : std::nullopt,
         .localMtime = localMtime != nullptr
                           ? std::optional<std::string>(localMtime)
                           : std::nullopt,
-        .localHash = localHash != nullptr ? std::optional<std::string>(localHash)
-                                          : std::nullopt,
-        .remoteUpdatedAt =
-            remoteUpdatedAt != nullptr ? std::optional<std::string>(remoteUpdatedAt)
-                                       : std::nullopt,
+        .localHash = localHash != nullptr
+                         ? std::optional<std::string>(localHash)
+                         : std::nullopt,
+        .remoteUpdatedAt = remoteUpdatedAt != nullptr
+                               ? std::optional<std::string>(remoteUpdatedAt)
+                               : std::nullopt,
         .syncState = syncState,
         .lastSyncedAt = lastSyncedAt != nullptr
                             ? std::optional<std::string>(lastSyncedAt)

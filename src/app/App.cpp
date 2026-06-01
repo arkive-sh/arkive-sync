@@ -235,7 +235,8 @@ int App::run(int argc, char *argv[]) {
   case Command::QueueStats:
     {
       QueueRepo queueRepo(dbInstance);
-      QueueService queueService(queueRepo);
+      SyncRepo syncRepo(dbInstance);
+      QueueService queueService(queueRepo, syncRepo);
       const QueueStats stats = queueService.stats();
       spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
                    stats.queued, stats.running, stats.failed, stats.done);
@@ -249,7 +250,8 @@ int App::run(int argc, char *argv[]) {
   case Command::QueueRetryFailed:
     {
       QueueRepo queueRepo(dbInstance);
-      QueueService queueService(queueRepo);
+      SyncRepo syncRepo(dbInstance);
+      QueueService queueService(queueRepo, syncRepo);
       queueService.retryFailed();
       spdlog::info("Retried failed queue jobs");
     }
@@ -258,7 +260,8 @@ int App::run(int argc, char *argv[]) {
   case Command::QueueClearDone:
     {
       QueueRepo queueRepo(dbInstance);
-      QueueService queueService(queueRepo);
+      SyncRepo syncRepo(dbInstance);
+      QueueService queueService(queueRepo, syncRepo);
       queueService.clearDone();
       spdlog::info("Cleared done queue jobs");
     }
