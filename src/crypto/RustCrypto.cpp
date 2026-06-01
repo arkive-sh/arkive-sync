@@ -68,8 +68,12 @@ RustCrypto::Blake3Hasher& RustCrypto::Blake3Hasher::operator=(Blake3Hasher&& oth
 }
 
 void RustCrypto::Blake3Hasher::update(const std::vector<uint8_t>& data) {
+    update(bytesPtr(data), data.size());
+}
+
+void RustCrypto::Blake3Hasher::update(const uint8_t* data, size_t len) {
     checkBoolResult(
-        arkive_blake3_hasher_update(handle_, bytesPtr(data), data.size()),
+        arkive_blake3_hasher_update(handle_, data, len),
         "arkive_blake3_hasher_update"
     );
 }
@@ -132,8 +136,12 @@ RustCrypto::Sha256Hasher& RustCrypto::Sha256Hasher::operator=(Sha256Hasher&& oth
 }
 
 void RustCrypto::Sha256Hasher::update(const std::vector<uint8_t>& data) {
+    update(bytesPtr(data), data.size());
+}
+
+void RustCrypto::Sha256Hasher::update(const uint8_t* data, size_t len) {
     checkBoolResult(
-        arkive_sha256_hasher_update(handle_, bytesPtr(data), data.size()),
+        arkive_sha256_hasher_update(handle_, data, len),
         "arkive_sha256_hasher_update"
     );
 }

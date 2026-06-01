@@ -1,12 +1,13 @@
 #include "service/SyncService.hpp"
+#include "sync/FileHasher.hpp"
 
 #include <chrono>
 #include <filesystem>
-#include <unordered_map>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -24,10 +25,9 @@ std::string toMtimeString(const std::filesystem::file_time_type &time) {
   return std::to_string(time.time_since_epoch().count());
 }
 
-bool shouldMarkPendingUpload(
-    const std::optional<EntryRecord> &existingEntry,
-    const LocalEntry &scannedEntry,
-    const std::string &scannedMtime) {
+bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
+                             const LocalEntry &scannedEntry,
+                             const std::string &scannedMtime) {
   if (!existingEntry.has_value()) {
     return true;
   }
@@ -90,6 +90,14 @@ size_t SyncService::addPath() {
     const std::string relativePath = entry.relativePath.string();
     const std::string localMtime = toMtimeString(entry.modifiedTime);
     const auto existingEntryIt = existingEntriesByPath.find(relativePath);
+
+    std::optional<std::string> localHash = std::nullopt;
+
+    if (!entry.isDirectory) {
+      FileHasher hasher(entry.absolutePath);
+      localHash = hasher.hashFile();
+    }
+
     const std::optional<EntryRecord> existingEntry =
         existingEntryIt != existingEntriesByPath.end()
             ? std::optional<EntryRecord>(existingEntryIt->second)
@@ -99,25 +107,26 @@ size_t SyncService::addPath() {
 
     entryRecords.push_back(EntryRecord{
         .id = existingEntry.has_value() ? existingEntry->id : generateId(),
-        .remoteId = existingEntry.has_value() ? existingEntry->remoteId
-                                              : std::nullopt,
+        .remoteId =
+            existingEntry.has_value() ? existingEntry->remoteId : std::nullopt,
         .syncRootId = syncRoot->id,
         .remoteType = entry.isDirectory ? "folder" : "file",
         .localPath = relativePath,
         .isDirectory = entry.isDirectory,
-        .parentFolderId = existingEntry.has_value() ? existingEntry->parentFolderId
-                                                    : std::nullopt,
-        .encryptedName = existingEntry.has_value() ? existingEntry->encryptedName
-                                                   : std::nullopt,
+        .parentFolderId = existingEntry.has_value()
+                              ? existingEntry->parentFolderId
+                              : std::nullopt,
+        .encryptedName = existingEntry.has_value()
+                             ? existingEntry->encryptedName
+                             : std::nullopt,
         .localSize = entry.isDirectory ? std::nullopt
                                        : std::optional<int64_t>(
                                              static_cast<int64_t>(entry.size)),
         .localMtime = localMtime,
-        .localHash = existingEntry.has_value() ? existingEntry->localHash
-                                               : std::nullopt,
-        .remoteUpdatedAt =
-            existingEntry.has_value() ? existingEntry->remoteUpdatedAt
-                                      : std::nullopt,
+        .localHash = localHash,
+        .remoteUpdatedAt = existingEntry.has_value()
+                               ? existingEntry->remoteUpdatedAt
+                               : std::nullopt,
         .syncState = shouldMarkPendingUpload(existingEntry, entry, localMtime)
                          ? "pending_upload"
                          : existingEntry->syncState,

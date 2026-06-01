@@ -45,6 +45,7 @@ add_executable(arkive-sync
     src/service/AuthService.cpp
     src/crypto/RustCrypto.cpp
     src/fs/FileScanner.cpp
+    src/sync/FileHasher.cpp
 )
 
 target_include_directories(arkive-sync PRIVATE

@@ -19,6 +19,7 @@ public:
         Blake3Hasher(Blake3Hasher&& other) noexcept;
         Blake3Hasher& operator=(Blake3Hasher&& other) noexcept;
 
+        void update(const uint8_t* data, size_t len);
         void update(const std::vector<uint8_t>& data);
         std::vector<uint8_t> digest() const;
         std::string digestHex() const;
@@ -40,6 +41,7 @@ public:
         Sha256Hasher(Sha256Hasher&& other) noexcept;
         Sha256Hasher& operator=(Sha256Hasher&& other) noexcept;
 
+        void update(const uint8_t* data, size_t len);
         void update(const std::vector<uint8_t>& data);
         std::vector<uint8_t> digest() const;
         std::string digestHex() const;
