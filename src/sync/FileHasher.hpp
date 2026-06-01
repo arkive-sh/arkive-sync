@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <string>
 
+inline constexpr std::size_t kChunkSize = 4 * 1024 * 1024; // 4MB
+
 class FileHasher {
 public:
   explicit FileHasher(const std::filesystem::path &path);

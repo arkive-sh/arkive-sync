@@ -10,6 +10,11 @@ bool isUnauthorized(const HttpError &error) {
   return error.statusCode() == 401 || error.statusCode() == 403;
 }
 
+bool hasPersistedAccountData(const AccountRecord &account) {
+  return account.email.has_value() && account.vaultSalt.has_value() &&
+         account.encryptedMasterKey.has_value();
+}
+
 } // namespace
 
 void AuthService::ensureValidSession() {
@@ -36,7 +41,9 @@ bool AuthService::login() {
 
   try {
     ensureValidSession();
-    return false;
+    if (hasPersistedAccountData(*account)) {
+      return false;
+    }
   } catch (const std::runtime_error &error) {
     if (std::string(error.what()) !=
         "No valid session. Run: arkive-sync login") {

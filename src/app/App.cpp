@@ -2,9 +2,11 @@
 #include "./api/ArkiveHttpClient.hpp"
 #include "./db/Sqlite.hpp"
 #include "./fs/FileScanner.hpp"
+#include "./repo/QueueRepo.hpp"
 #include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
+#include "./service/QueueService.hpp"
 #include "./service/SyncService.hpp"
 #include <filesystem>
 #include <spdlog/spdlog.h>
@@ -196,8 +198,9 @@ int App::run(int argc, char *argv[]) {
   case Command::SyncAdd: {
     const std::filesystem::path syncPath = argv[3];
     FileScanner fileScanner(syncPath);
+    QueueRepo queueRepo(dbInstance);
     SyncRepo syncRepo(dbInstance);
-    SyncService syncService(syncRepo, fileScanner);
+    SyncService syncService(syncRepo, queueRepo, fileScanner);
     syncService.addPath();
     spdlog::info("Added sync path: {}",
                  std::filesystem::absolute(syncPath).string());
@@ -207,8 +210,9 @@ int App::run(int argc, char *argv[]) {
   case Command::SyncRun: {
     const std::filesystem::path syncPath = argv[3];
     FileScanner fileScanner(syncPath);
+    QueueRepo queueRepo(dbInstance);
     SyncRepo syncRepo(dbInstance);
-    SyncService syncService(syncRepo, fileScanner);
+    SyncService syncService(syncRepo, queueRepo, fileScanner);
     const size_t insertedCount = syncService.scanRoot();
     spdlog::info("Ran sync for path: {}",
                  std::filesystem::absolute(syncPath).string());
@@ -229,7 +233,13 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::QueueStats:
-    spdlog::info("queue stats not implemented yet");
+    {
+      QueueRepo queueRepo(dbInstance);
+      QueueService queueService(queueRepo);
+      const QueueStats stats = queueService.stats();
+      spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
+                   stats.queued, stats.running, stats.failed, stats.done);
+    }
     return 0;
 
   case Command::QueueProcess:
@@ -237,11 +247,21 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::QueueRetryFailed:
-    spdlog::info("queue retry-failed not implemented yet");
+    {
+      QueueRepo queueRepo(dbInstance);
+      QueueService queueService(queueRepo);
+      queueService.retryFailed();
+      spdlog::info("Retried failed queue jobs");
+    }
     return 0;
 
   case Command::QueueClearDone:
-    spdlog::info("queue clear-done not implemented yet");
+    {
+      QueueRepo queueRepo(dbInstance);
+      QueueService queueService(queueRepo);
+      queueService.clearDone();
+      spdlog::info("Cleared done queue jobs");
+    }
     return 0;
 
   case Command::Daemon:

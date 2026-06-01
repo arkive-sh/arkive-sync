@@ -40,7 +40,6 @@ public:
   void upsertEntries(const std::vector<EntryRecord> &entries) const;
   void markMissingEntriesDeleted(const std::string &syncRootId,
                                  const std::vector<std::string> &presentPaths) const;
-  size_t enqueuePendingUploads(const std::string &syncRootId) const;
 
 private:
   sqlite3 *db_;

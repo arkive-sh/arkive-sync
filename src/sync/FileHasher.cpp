@@ -18,7 +18,7 @@ std::string FileHasher::hashFile() {
   }
 
   auto hasher = crypto_.createBlake3Hasher();
-  std::vector<char> rawBuffer(4 * 1024 * 1024);
+  std::vector<char> rawBuffer(kChunkSize);
 
   while (file) {
     file.read(rawBuffer.data(), static_cast<std::streamsize>(rawBuffer.size()));

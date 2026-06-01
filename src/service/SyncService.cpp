@@ -58,8 +58,9 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
 
 } // namespace
 
-SyncService::SyncService(SyncRepo &syncRepo, FileScanner &fileScanner)
-    : syncRepo_(syncRepo), fileScanner_(fileScanner) {}
+SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo,
+                         FileScanner &fileScanner)
+    : syncRepo_(syncRepo), queueRepo_(queueRepo), fileScanner_(fileScanner) {}
 
 void SyncService::addPath() {
   const std::filesystem::path rootPath =
@@ -159,6 +160,15 @@ size_t SyncService::scanRoot() {
 
   syncRepo_.upsertEntries(entryRecords);
   syncRepo_.markMissingEntriesDeleted(syncRoot->id, presentPaths);
-  syncRepo_.enqueuePendingUploads(syncRoot->id);
+
+  for (const auto &entry : entryRecords) {
+    if (entry.syncState != "pending_upload" || entry.isDirectory) {
+      continue;
+    }
+
+    queueRepo_.enqueueUpload(entry.id, entry.localPath, entry.parentFolderId,
+                             entry.localSize.value_or(0));
+  }
+
   return entryRecords.size();
 }
