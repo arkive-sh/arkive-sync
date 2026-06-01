@@ -8,6 +8,8 @@ namespace fs = std::filesystem;
 
 FileScanner::FileScanner(const fs::path &fsPath) : path_(fsPath) {}
 
+const fs::path &FileScanner::rootPath() const { return path_; }
+
 std::vector<LocalEntry> FileScanner::scanFiles() {
   std::vector<LocalEntry> entries;
   if (!fs::exists(path_) || !fs::is_directory(path_)) {

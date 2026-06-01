@@ -1,8 +1,12 @@
 #include "App.hpp"
 #include "./api/ArkiveHttpClient.hpp"
 #include "./db/Sqlite.hpp"
+#include "./fs/FileScanner.hpp"
+#include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
+#include "./service/SyncService.hpp"
+#include <filesystem>
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
 #include <stdexcept>
@@ -19,6 +23,7 @@ enum class Command {
   SetBaseUrl,
   Status,
   Upload,
+  Sync,
   Unknown,
 };
 
@@ -41,6 +46,10 @@ Command parseCommand(const std::string &command) {
 
   if (command == "upload") {
     return Command::Upload;
+  }
+
+  if (command == "sync") {
+    return Command::Sync;
   }
 
   return Command::Unknown;
@@ -68,7 +77,7 @@ int App::run(int argc, char *argv[]) {
   UserRepo userRepo(dbInstance);
   if (argc < 2) {
     spdlog::info("Usage: arkive-sync "
-                 "<status|set-base-url|login|logout|upload|download>");
+                 "<status|set-base-url|login|logout|upload|download|sync>");
     return 0;
   }
 
@@ -141,6 +150,24 @@ int App::run(int argc, char *argv[]) {
     std::string path = argv[2];
     spdlog::info("Upload requested for: {}", path);
     return 0;
+  }
+
+  case Command::Sync: {
+    if (argc == 5 && std::string(argv[2]) == "add" &&
+        std::string(argv[3]) == "path") {
+      const std::filesystem::path syncPath = argv[4];
+      FileScanner fileScanner(syncPath);
+      SyncRepo syncRepo(dbInstance);
+      SyncService syncService(syncRepo, fileScanner);
+      const size_t insertedCount = syncService.addPath();
+      spdlog::info("Added sync path: {}",
+                   std::filesystem::absolute(syncPath).string());
+      spdlog::info("Inserted {} entry records", insertedCount);
+      return 0;
+    }
+
+    spdlog::error("Usage: arkive-sync sync add path <path>");
+    return 1;
   }
 
   case Command::Unknown:

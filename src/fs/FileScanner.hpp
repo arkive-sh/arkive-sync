@@ -20,6 +20,7 @@ public:
   FileScanner(const FileScanner &) = delete;
   FileScanner &operator=(const FileScanner &) = delete;
 
+  const std::filesystem::path &rootPath() const;
   std::vector<LocalEntry> scanFiles();
 
 private:
