@@ -4,10 +4,6 @@ QueueService::QueueService(QueueRepo &queueRepo) : queueRepo_(queueRepo) {}
 
 QueueStats QueueService::stats() { return queueRepo_.stats(); }
 
-size_t QueueService::processQueuedUploads() {
-  return 0;
-}
-
 std::optional<TransferJob> QueueService::claimNextQueuedUpload() {
   return queueRepo_.claimNextQueuedUpload();
 }

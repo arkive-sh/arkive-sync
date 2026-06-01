@@ -7,7 +7,6 @@ public:
   explicit QueueService(QueueRepo &queueRepo);
 
   QueueStats stats();
-  size_t processQueuedUploads();
   std::optional<TransferJob> claimNextQueuedUpload();
   void markDone(const std::string &jobId);
   void markFailed(const std::string &jobId, const std::string &errorMessage);

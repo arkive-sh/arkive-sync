@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -80,6 +81,7 @@ void SyncService::addPath() {
 }
 
 size_t SyncService::scanRoot() {
+  // 1. Resolve sync root path and make sure root record exists.
   const std::filesystem::path rootPath =
       std::filesystem::absolute(fileScanner_.rootPath()).lexically_normal();
   const std::string rootPathString = rootPath.string();
@@ -94,6 +96,7 @@ size_t SyncService::scanRoot() {
     syncRepo_.upsertSyncRoot(*syncRoot);
   }
 
+  // 2. Load current DB view for this root.
   const auto existingEntries = syncRepo_.getEntriesForSyncRoot(syncRoot->id);
   std::unordered_map<std::string, EntryRecord> existingEntriesByPath;
   existingEntriesByPath.reserve(existingEntries.size());
@@ -101,31 +104,34 @@ size_t SyncService::scanRoot() {
     existingEntriesByPath.emplace(entry.localPath, entry);
   }
 
+  // 3. Scan filesystem and process each unique relative path once.
   const auto scannedEntries = fileScanner_.scanFiles();
 
   std::vector<EntryRecord> entryRecords;
   entryRecords.reserve(scannedEntries.size());
-  std::vector<std::string> presentPaths;
+
+  std::unordered_set<std::string> presentPaths;
   presentPaths.reserve(scannedEntries.size());
 
   for (const auto &entry : scannedEntries) {
     const std::string relativePath = entry.relativePath.string();
+    if (!presentPaths.insert(relativePath).second) {
+      continue;
+    }
+
     const std::string localMtime = toMtimeString(entry.modifiedTime);
     const auto existingEntryIt = existingEntriesByPath.find(relativePath);
-
-    std::optional<std::string> localHash = std::nullopt;
-
-    if (!entry.isDirectory) {
-      FileHasher hasher(entry.absolutePath);
-      localHash = hasher.hashFile();
-    }
 
     const std::optional<EntryRecord> existingEntry =
         existingEntryIt != existingEntriesByPath.end()
             ? std::optional<EntryRecord>(existingEntryIt->second)
             : std::nullopt;
 
-    presentPaths.push_back(relativePath);
+    std::optional<std::string> localHash = std::nullopt;
+    if (!entry.isDirectory) {
+      FileHasher hasher(entry.absolutePath);
+      localHash = hasher.hashFile();
+    }
 
     entryRecords.push_back(EntryRecord{
         .id = existingEntry.has_value() ? existingEntry->id : generateId(),
@@ -151,15 +157,18 @@ size_t SyncService::scanRoot() {
                                : std::nullopt,
         .syncState =
             shouldMarkPendingUpload(existingEntry, entry, localMtime, localHash)
-                         ? "pending_upload"
-                         : existingEntry->syncState,
+                ? "pending_upload"
+                : existingEntry->syncState,
         .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
                                                   : std::nullopt,
     });
   }
 
+  // 4. Persist current scan, mark missing entries deleted, queue uploads.
   syncRepo_.upsertEntries(entryRecords);
-  syncRepo_.markMissingEntriesDeleted(syncRoot->id, presentPaths);
+  syncRepo_.markMissingEntriesDeleted(
+      syncRoot->id,
+      std::vector<std::string>(presentPaths.begin(), presentPaths.end()));
 
   for (const auto &entry : entryRecords) {
     if (entry.syncState != "pending_upload" || entry.isDirectory) {
