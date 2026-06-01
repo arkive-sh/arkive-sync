@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 class HttpError : public std::runtime_error {
 public:
@@ -27,6 +28,8 @@ public:
   nlohmann::json postJson(const std::string &path, const nlohmann::json &body);
   nlohmann::json getJson(const std::string &path);
   void postForm(const std::string &path);
+  std::string putBytes(const std::string &pathOrUrl,
+                       const std::vector<std::byte> &body);
 
 private:
   std::string baseUrl_;

@@ -45,6 +45,7 @@ add_executable(arkive-sync
     src/service/QueueService.cpp
     src/service/SyncService.cpp
     src/service/AuthService.cpp
+    src/service/UploadService.cpp
     src/crypto/RustCrypto.cpp
     src/fs/FileScanner.cpp
     src/sync/FileHasher.cpp

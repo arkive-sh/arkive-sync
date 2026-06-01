@@ -1,7 +1,10 @@
 #include "./ArkiveHttpClient.hpp"
+#include <cctype>
 #include <curl/curl.h>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 #include <stdexcept>
 #include <utility>
 
@@ -70,7 +73,46 @@ static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
   return size * nmemb;
 }
 
+static size_t headerCallback(char *buffer, size_t size, size_t nitems,
+                             void *userdata) {
+  const size_t total = size * nitems;
+  auto *etag = static_cast<std::string *>(userdata);
+  const std::string_view header(buffer, total);
+  static constexpr std::string_view kEtagPrefix = "etag:";
+
+  if (header.size() >= kEtagPrefix.size()) {
+    std::string normalized(header.substr(0, kEtagPrefix.size()));
+    for (char &ch : normalized) {
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+
+    if (normalized == kEtagPrefix) {
+      std::string value(header.substr(kEtagPrefix.size()));
+      const size_t first = value.find_first_not_of(" \t");
+      if (first != std::string::npos) {
+        value.erase(0, first);
+      } else {
+        value.clear();
+      }
+
+      while (!value.empty() &&
+             (value.back() == '\r' || value.back() == '\n' ||
+              value.back() == ' ' || value.back() == '\t')) {
+        value.pop_back();
+      }
+
+      *etag = std::move(value);
+    }
+  }
+
+  return total;
+}
+
 std::string ArkiveHttpClient::url(const std::string &path) const {
+  if (path.rfind("http://", 0) == 0 || path.rfind("https://", 0) == 0) {
+    return path;
+  }
+
   if (!path.empty() && path[0] == '/') {
     return baseUrl_ + path;
   }
@@ -189,4 +231,47 @@ void ArkiveHttpClient::postForm(const std::string &path) {
   if (status < 200 || status >= 400) {
     throw HttpError(status, response);
   }
+}
+
+std::string ArkiveHttpClient::putBytes(const std::string &pathOrUrl,
+                                       const std::vector<std::byte> &body) {
+  CurlPtr curl = makeCurlHandle();
+  HeaderPtr headers(nullptr, &curl_slist_free_all);
+
+  std::string response;
+  std::string etag;
+  const std::string requestUrl = url(pathOrUrl);
+
+  appendHeader(headers, "Content-Type: application/octet-stream");
+
+  curl_easy_setopt(curl.get(), CURLOPT_URL, requestUrl.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+  curl_easy_setopt(curl.get(), CURLOPT_CUSTOMREQUEST, "PUT");
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS,
+                   reinterpret_cast<const char *>(body.data()));
+  curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, body.size());
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl.get(), CURLOPT_HEADERFUNCTION, headerCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_HEADERDATA, &etag);
+
+  if (requestUrl.rfind(baseUrl_, 0) == 0) {
+    curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
+    curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
+  }
+
+  CURLcode code = curl_easy_perform(curl.get());
+
+  long status = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+
+  if (code != CURLE_OK) {
+    throw std::runtime_error(curl_easy_strerror(code));
+  }
+
+  if (status < 200 || status >= 300) {
+    throw HttpError(status, response);
+  }
+
+  return etag;
 }
