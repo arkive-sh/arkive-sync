@@ -107,6 +107,12 @@ void Database::createSchema() {
               "CREATE INDEX IF NOT EXISTS idx_entries_sync_state ON "
               "entries(sync_state);");
   execOrThrow(db, "DROP INDEX IF EXISTS idx_entries_local_path;");
+  execOrThrow(
+      db,
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_transfer_active_upload "
+      "ON transfer_queue(entry_id, direction) "
+      "WHERE direction = 'upload' "
+      "AND status IN ('queued', 'running');");
 }
 
 void Database::verifySchema() {

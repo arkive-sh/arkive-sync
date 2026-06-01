@@ -7,8 +7,7 @@
 namespace {
 
 TransferJob readTransferJob(sqlite3_stmt *stmt) {
-  const char *id =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+  const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
   const char *entryId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
   const char *direction =
@@ -38,8 +37,7 @@ TransferJob readTransferJob(sqlite3_stmt *stmt) {
       .remoteFolderId = remoteFolderId != nullptr
                             ? std::optional<std::string>(remoteFolderId)
                             : std::nullopt,
-      .bytesTotal =
-          static_cast<uint64_t>(sqlite3_column_int64(stmt, 7)),
+      .bytesTotal = static_cast<uint64_t>(sqlite3_column_int64(stmt, 7)),
       .bytesDone = static_cast<uint64_t>(sqlite3_column_int64(stmt, 8)),
       .retryCount = sqlite3_column_int(stmt, 9),
   };
@@ -94,15 +92,12 @@ LIMIT 1;
   return true;
 }
 
-void QueueRepo::enqueueUpload(
-    const std::string &entryId, const std::string &localPath,
-    const std::optional<std::string> &remoteFolderId, uint64_t bytesTotal) {
-  if (hasActiveUploadForEntry(entryId)) {
-    return;
-  }
-
+void QueueRepo::enqueueUpload(const std::string &entryId,
+                              const std::string &localPath,
+                              const std::optional<std::string> &remoteFolderId,
+                              uint64_t bytesTotal) {
   static constexpr const char *enqueueUploadSql = R"sql(
-INSERT INTO transfer_queue (
+INSERT OR IGNORE INTO transfer_queue (
   id,
   entry_id,
   direction,
@@ -145,9 +140,9 @@ INSERT INTO transfer_queue (
   bindText(db_, stmt.get(), 2, entryId);
   bindText(db_, stmt.get(), 3, localPath);
   bindOptionalText(db_, stmt.get(), 4, remoteFolderId);
-  throwIfBindFailed(db_, sqlite3_bind_int64(
-                             stmt.get(), 5,
-                             static_cast<sqlite3_int64>(bytesTotal)));
+  throwIfBindFailed(db_,
+                    sqlite3_bind_int64(stmt.get(), 5,
+                                       static_cast<sqlite3_int64>(bytesTotal)));
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -212,7 +207,8 @@ UPDATE transfer_queue
 SET
   status = 'running',
   updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+WHERE id = ?
+AND status = 'queued';
   )sql";
 
   execOrThrow(db_, "BEGIN IMMEDIATE;");
@@ -254,6 +250,10 @@ WHERE id = ?;
                                sqlite3_errmsg(db_));
     }
 
+    if (sqlite3_changes(db_) != 1) {
+      throw std::runtime_error("Failed to modify");
+    }
+
     execOrThrow(db_, "COMMIT;");
     job.status = "running";
     return job;
@@ -275,7 +275,8 @@ WHERE id = ?;
   )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, markDoneSql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_, markDoneSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
     throw std::runtime_error(std::string("Prepare failed: ") +
                              sqlite3_errmsg(db_));
   }
@@ -319,7 +320,8 @@ WHERE id = ?;
   }
 }
 
-void QueueRepo::incrementProgress(const std::string &jobId, uint64_t bytesDone) {
+void QueueRepo::incrementProgress(const std::string &jobId,
+                                  uint64_t bytesDone) {
   static constexpr const char *incrementProgressSql = R"sql(
 UPDATE transfer_queue
 SET
@@ -336,9 +338,9 @@ WHERE id = ?;
   }
 
   StmtUniquePtr stmt(rawStmt);
-  throwIfBindFailed(db_, sqlite3_bind_int64(
-                             stmt.get(), 1,
-                             static_cast<sqlite3_int64>(bytesDone)));
+  throwIfBindFailed(
+      db_,
+      sqlite3_bind_int64(stmt.get(), 1, static_cast<sqlite3_int64>(bytesDone)));
   bindText(db_, stmt.get(), 2, jobId);
 
   const int rc = sqlite3_step(stmt.get());

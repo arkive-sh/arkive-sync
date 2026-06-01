@@ -243,7 +243,12 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::QueueProcess:
-    spdlog::info("queue process not implemented yet");
+    {
+      QueueRepo queueRepo(dbInstance);
+      QueueService queueService(queueRepo);
+      const size_t claimedCount = queueService.processQueuedUploads();
+      spdlog::info("Claimed {} queued upload jobs", claimedCount);
+    }
     return 0;
 
   case Command::QueueRetryFailed:
