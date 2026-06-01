@@ -22,34 +22,87 @@ enum class Command {
   Logout,
   SetBaseUrl,
   Status,
+  SyncAdd,
+  SyncRun,
+  SyncRunAll,
+  SyncList,
+  SyncRemove,
+  QueueStats,
+  QueueProcess,
+  QueueRetryFailed,
+  QueueClearDone,
+  Daemon,
   Upload,
-  Sync,
   Unknown,
 };
 
-Command parseCommand(const std::string &command) {
-  if (command == "login") {
+Command parseCommand(int argc, char *argv[]) {
+  if (argc < 2) {
+    return Command::Unknown;
+  }
+
+  const std::string command = argv[1];
+
+  if (command == "login" && argc == 2) {
     return Command::Login;
   }
 
-  if (command == "status") {
+  if (command == "status" && argc == 2) {
     return Command::Status;
   }
 
-  if (command == "logout") {
+  if (command == "logout" && argc == 2) {
     return Command::Logout;
   }
 
-  if (command == "set-base-url") {
+  if (command == "set-base-url" && argc == 3) {
     return Command::SetBaseUrl;
   }
 
-  if (command == "upload") {
-    return Command::Upload;
+  if (command == "sync" && argc == 4 && std::string(argv[2]) == "add") {
+    return Command::SyncAdd;
   }
 
-  if (command == "sync") {
-    return Command::Sync;
+  if (command == "sync" && argc == 4 && std::string(argv[2]) == "run") {
+    return Command::SyncRun;
+  }
+
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "run-all") {
+    return Command::SyncRunAll;
+  }
+
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "list") {
+    return Command::SyncList;
+  }
+
+  if (command == "sync" && argc == 4 && std::string(argv[2]) == "remove") {
+    return Command::SyncRemove;
+  }
+
+  if (command == "queue" && argc == 2) {
+    return Command::QueueStats;
+  }
+
+  if (command == "queue" && argc == 3 && std::string(argv[2]) == "process") {
+    return Command::QueueProcess;
+  }
+
+  if (command == "queue" && argc == 3 &&
+      std::string(argv[2]) == "retry-failed") {
+    return Command::QueueRetryFailed;
+  }
+
+  if (command == "queue" && argc == 3 &&
+      std::string(argv[2]) == "clear-done") {
+    return Command::QueueClearDone;
+  }
+
+  if (command == "daemon" && argc == 2) {
+    return Command::Daemon;
+  }
+
+  if (command == "upload" && argc >= 3) {
+    return Command::Upload;
   }
 
   return Command::Unknown;
@@ -77,19 +130,12 @@ int App::run(int argc, char *argv[]) {
   UserRepo userRepo(dbInstance);
   if (argc < 2) {
     spdlog::info("Usage: arkive-sync "
-                 "<status|set-base-url|login|logout|upload|download|sync>");
+                 "<status|set-base-url|login|logout|sync|queue|daemon|upload>");
     return 0;
   }
 
-  const std::string command = argv[1];
-
-  switch (parseCommand(command)) {
+  switch (parseCommand(argc, argv)) {
   case Command::SetBaseUrl: {
-    if (argc < 3) {
-      spdlog::error("Usage: arkive-sync set-base-url <url>");
-      return 1;
-    }
-
     AccountRecord account{
         .baseUrl = argv[2],
         .email = std::nullopt,
@@ -142,36 +188,76 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::Upload: {
-    if (argc < 3) {
-      spdlog::error("Usage: arkive-sync upload <path>");
-      return 1;
-    }
-
     std::string path = argv[2];
     spdlog::info("Upload requested for: {}", path);
     return 0;
   }
 
-  case Command::Sync: {
-    if (argc == 5 && std::string(argv[2]) == "add" &&
-        std::string(argv[3]) == "path") {
-      const std::filesystem::path syncPath = argv[4];
-      FileScanner fileScanner(syncPath);
-      SyncRepo syncRepo(dbInstance);
-      SyncService syncService(syncRepo, fileScanner);
-      const size_t insertedCount = syncService.addPath();
-      spdlog::info("Added sync path: {}",
-                   std::filesystem::absolute(syncPath).string());
-      spdlog::info("Inserted {} entry records", insertedCount);
-      return 0;
-    }
-
-    spdlog::error("Usage: arkive-sync sync add path <path>");
-    return 1;
+  case Command::SyncAdd: {
+    const std::filesystem::path syncPath = argv[3];
+    FileScanner fileScanner(syncPath);
+    SyncRepo syncRepo(dbInstance);
+    SyncService syncService(syncRepo, fileScanner);
+    syncService.addPath();
+    spdlog::info("Added sync path: {}",
+                 std::filesystem::absolute(syncPath).string());
+    return 0;
   }
 
+  case Command::SyncRun: {
+    const std::filesystem::path syncPath = argv[3];
+    FileScanner fileScanner(syncPath);
+    SyncRepo syncRepo(dbInstance);
+    SyncService syncService(syncRepo, fileScanner);
+    const size_t insertedCount = syncService.scanRoot();
+    spdlog::info("Ran sync for path: {}",
+                 std::filesystem::absolute(syncPath).string());
+    spdlog::info("Upserted {} entry records", insertedCount);
+    return 0;
+  }
+
+  case Command::SyncRunAll:
+    spdlog::info("sync run-all not implemented yet");
+    return 0;
+
+  case Command::SyncList:
+    spdlog::info("sync list not implemented yet");
+    return 0;
+
+  case Command::SyncRemove:
+    spdlog::info("sync remove not implemented yet");
+    return 0;
+
+  case Command::QueueStats:
+    spdlog::info("queue stats not implemented yet");
+    return 0;
+
+  case Command::QueueProcess:
+    spdlog::info("queue process not implemented yet");
+    return 0;
+
+  case Command::QueueRetryFailed:
+    spdlog::info("queue retry-failed not implemented yet");
+    return 0;
+
+  case Command::QueueClearDone:
+    spdlog::info("queue clear-done not implemented yet");
+    return 0;
+
+  case Command::Daemon:
+    spdlog::info("daemon not implemented yet");
+    return 0;
+
   case Command::Unknown:
-    spdlog::error("Unknown command: {}", command);
+    spdlog::error(
+        "Usage: arkive-sync login | arkive-sync logout | "
+        "arkive-sync set-base-url <url> | arkive-sync status | "
+        "arkive-sync sync add <path> | arkive-sync sync run <path> | "
+        "arkive-sync sync run-all | arkive-sync sync list | "
+        "arkive-sync sync remove <path-or-id> | arkive-sync queue | "
+        "arkive-sync queue process | arkive-sync queue retry-failed | "
+        "arkive-sync queue clear-done | arkive-sync daemon | "
+        "arkive-sync upload <path>");
     return 1;
   }
 

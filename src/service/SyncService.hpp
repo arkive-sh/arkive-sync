@@ -7,7 +7,8 @@ class SyncService {
 public:
   SyncService(SyncRepo &syncRepo, FileScanner &fileScanner);
 
-  size_t addPath();
+  void addPath();
+  size_t scanRoot();
 
 private:
   SyncRepo &syncRepo_;

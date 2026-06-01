@@ -27,7 +27,8 @@ std::string toMtimeString(const std::filesystem::file_time_type &time) {
 
 bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
                              const LocalEntry &scannedEntry,
-                             const std::string &scannedMtime) {
+                             const std::string &scannedMtime,
+                             const std::optional<std::string> &scannedHash) {
   if (!existingEntry.has_value()) {
     return true;
   }
@@ -48,7 +49,11 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
       scannedEntry.isDirectory
           ? std::nullopt
           : std::optional<int64_t>(static_cast<int64_t>(scannedEntry.size));
-  return existingEntry->localSize != scannedSize;
+  if (existingEntry->localSize != scannedSize) {
+    return true;
+  }
+
+  return existingEntry->localHash != scannedHash;
 }
 
 } // namespace
@@ -56,7 +61,7 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
 SyncService::SyncService(SyncRepo &syncRepo, FileScanner &fileScanner)
     : syncRepo_(syncRepo), fileScanner_(fileScanner) {}
 
-size_t SyncService::addPath() {
+void SyncService::addPath() {
   const std::filesystem::path rootPath =
       std::filesystem::absolute(fileScanner_.rootPath()).lexically_normal();
   const std::string rootPathString = rootPath.string();
@@ -71,6 +76,22 @@ size_t SyncService::addPath() {
   }
 
   syncRepo_.upsertSyncRoot(*syncRoot);
+}
+
+size_t SyncService::scanRoot() {
+  const std::filesystem::path rootPath =
+      std::filesystem::absolute(fileScanner_.rootPath()).lexically_normal();
+  const std::string rootPathString = rootPath.string();
+  auto syncRoot = syncRepo_.getSyncRootByLocalPath(rootPathString);
+  if (!syncRoot.has_value()) {
+    syncRoot = SyncRootRecord{
+        .id = generateId(),
+        .localPath = rootPathString,
+        .folderId = std::nullopt,
+        .enabled = true,
+    };
+    syncRepo_.upsertSyncRoot(*syncRoot);
+  }
 
   const auto existingEntries = syncRepo_.getEntriesForSyncRoot(syncRoot->id);
   std::unordered_map<std::string, EntryRecord> existingEntriesByPath;
@@ -127,7 +148,8 @@ size_t SyncService::addPath() {
         .remoteUpdatedAt = existingEntry.has_value()
                                ? existingEntry->remoteUpdatedAt
                                : std::nullopt,
-        .syncState = shouldMarkPendingUpload(existingEntry, entry, localMtime)
+        .syncState =
+            shouldMarkPendingUpload(existingEntry, entry, localMtime, localHash)
                          ? "pending_upload"
                          : existingEntry->syncState,
         .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
