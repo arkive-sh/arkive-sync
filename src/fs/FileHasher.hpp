@@ -1,5 +1,6 @@
 #pragma once
-#include "../crypto/RustCrypto.hpp"
+
+#include "crypto/RustCrypto.hpp"
 #include <filesystem>
 #include <string>
 

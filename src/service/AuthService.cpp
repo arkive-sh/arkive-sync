@@ -19,7 +19,7 @@ bool hasPersistedAccountData(const AccountRecord &account) {
 
 void AuthService::ensureValidSession() {
   try {
-    client_.getJson("/api/me");
+    api_.me();
   } catch (const HttpError &error) {
     if (isUnauthorized(error)) {
       throw std::runtime_error("No valid session. Run: arkive-sync login");
@@ -29,8 +29,8 @@ void AuthService::ensureValidSession() {
   }
 }
 
-AuthService::AuthService(UserRepo &userRepo, ArkiveHttpClient &client)
-    : userRepo_(userRepo), client_(client) {}
+AuthService::AuthService(UserRepo &userRepo, ArkiveApi &api)
+    : userRepo_(userRepo), api_(api) {}
 
 bool AuthService::login() {
   const auto account = userRepo_.getAccount();
@@ -74,12 +74,7 @@ bool AuthService::login() {
     throw std::invalid_argument("Password cannot be empty!");
   }
 
-  const auto responseJson = client_.postJson(
-      "/api/auth/login", {{"email", email}, {"password", password}});
-  const LoginResponse response{
-      .salt = responseJson.value("salt", ""),
-      .encryptedMasterKey = responseJson.value("encryptedMasterKey", ""),
-  };
+  const LoginResponse response = api_.login(email, password);
 
   userRepo_.upsertAccount(AccountRecord{
       .baseUrl = account->baseUrl,
@@ -109,9 +104,9 @@ bool AuthService::logout() {
     return false;
   }
 
-  client_.postForm("/logout");
+  api_.logout();
   userRepo_.clearAccount();
   return true;
 }
 
-nlohmann::json AuthService::me() { return client_.getJson("/api/me"); }
+nlohmann::json AuthService::me() { return api_.me(); }

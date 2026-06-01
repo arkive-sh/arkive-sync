@@ -1,16 +1,11 @@
 #pragma once
 
-#include "api/ArkiveHttpClient.hpp"
+#include "api/ArkiveApi.hpp"
 #include "repo/UserRepo.hpp"
-
-struct LoginResponse {
-  std::string salt;
-  std::string encryptedMasterKey;
-};
 
 class AuthService {
 public:
-  AuthService(UserRepo &userRepo, ArkiveHttpClient &client);
+  AuthService(UserRepo &userRepo, ArkiveApi &api);
 
   bool login();
   bool logout();
@@ -19,5 +14,5 @@ public:
 
 private:
   UserRepo &userRepo_;
-  ArkiveHttpClient &client_;
+  ArkiveApi &api_;
 };

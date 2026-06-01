@@ -1,6 +1,8 @@
 #pragma once
 
+#include "repo/UserRepo.hpp"
 #include <memory>
+#include <string>
 #include <termios.h>
 
 struct TerminalState {
@@ -14,3 +16,5 @@ struct TerminalEchoRestore {
 using TerminalEchoGuard = std::unique_ptr<TerminalState, TerminalEchoRestore>;
 
 TerminalEchoGuard makeTerminalEchoGuard();
+bool commandAllowsMissingBaseUrl(int argc, char *argv[]);
+std::string requireBaseUrl(const UserRepo &userRepo);

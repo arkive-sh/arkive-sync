@@ -1,5 +1,6 @@
 #include "service/SyncService.hpp"
-#include "sync/FileHasher.hpp"
+#include "fs/FileScanner.hpp"
+#include "fs/FileHasher.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -59,13 +60,13 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
 
 } // namespace
 
-SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo,
-                         FileScanner &fileScanner)
-    : syncRepo_(syncRepo), queueRepo_(queueRepo), fileScanner_(fileScanner) {}
+SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo)
+    : syncRepo_(syncRepo), queueRepo_(queueRepo) {}
 
-void SyncService::addPath() {
+void SyncService::addPath(const std::filesystem::path &rootPathInput) {
+  FileScanner fileScanner(rootPathInput);
   const std::filesystem::path rootPath =
-      std::filesystem::absolute(fileScanner_.rootPath()).lexically_normal();
+      std::filesystem::absolute(fileScanner.rootPath()).lexically_normal();
   const std::string rootPathString = rootPath.string();
   auto syncRoot = syncRepo_.getSyncRootByLocalPath(rootPathString);
   if (!syncRoot.has_value()) {
@@ -80,10 +81,11 @@ void SyncService::addPath() {
   syncRepo_.upsertSyncRoot(*syncRoot);
 }
 
-size_t SyncService::scanRoot() {
+size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
+  FileScanner fileScanner(rootPathInput);
   // 1. Resolve sync root path and make sure root record exists.
   const std::filesystem::path rootPath =
-      std::filesystem::absolute(fileScanner_.rootPath()).lexically_normal();
+      std::filesystem::absolute(fileScanner.rootPath()).lexically_normal();
   const std::string rootPathString = rootPath.string();
   auto syncRoot = syncRepo_.getSyncRootByLocalPath(rootPathString);
   if (!syncRoot.has_value()) {
@@ -105,7 +107,7 @@ size_t SyncService::scanRoot() {
   }
 
   // 3. Scan filesystem and process each unique relative path once.
-  const auto scannedEntries = fileScanner_.scanFiles();
+  const auto scannedEntries = fileScanner.scanFiles();
 
   std::vector<EntryRecord> entryRecords;
   entryRecords.reserve(scannedEntries.size());

@@ -1,7 +1,5 @@
 #include "App.hpp"
-#include "./api/ArkiveHttpClient.hpp"
-#include "./db/Sqlite.hpp"
-#include "./fs/FileScanner.hpp"
+#include "./helpers/Helpers.hpp"
 #include "./repo/QueueRepo.hpp"
 #include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
@@ -10,14 +8,10 @@
 #include "./service/SyncService.hpp"
 #include <filesystem>
 #include <spdlog/spdlog.h>
-#include <sqlite3.h>
 #include <stdexcept>
 #include <string>
 
 namespace {
-
-static constexpr const char *kCookiePath =
-    "/home/archnuman/.local/share/arkive-sync/cookies.txt";
 
 enum class Command {
   Login,
@@ -110,26 +104,18 @@ Command parseCommand(int argc, char *argv[]) {
   return Command::Unknown;
 }
 
-std::string requireBaseUrl(const UserRepo &userRepo) {
-  const auto account = userRepo.getAccount();
-  if (!account.has_value() || account->baseUrl.empty()) {
-    throw std::runtime_error(
-        "Base URL is not configured. Run: arkive-sync set-base-url <url>");
-  }
-
-  return account->baseUrl;
-}
-
 } // namespace
 
-App::App() {}
+App::App(UserRepo &userRepo, SyncRepo &syncRepo, QueueRepo &queueRepo,
+         QueueService &queueService, SyncService &syncService,
+         AuthService &authService, UploadService &uploadService)
+    : userRepo_(userRepo), syncRepo_(syncRepo), queueRepo_(queueRepo),
+      queueService_(queueService), syncService_(syncService),
+      authService_(authService), uploadService_(uploadService) {}
 
 App::~App() {}
 
 int App::run(int argc, char *argv[]) {
-  Database db;
-  sqlite3 *dbInstance = db.getDb();
-  UserRepo userRepo(dbInstance);
   if (argc < 2) {
     spdlog::info("Usage: arkive-sync "
                  "<status|set-base-url|login|logout|sync|queue|daemon|upload>");
@@ -145,25 +131,21 @@ int App::run(int argc, char *argv[]) {
         .encryptedMasterKey = std::nullopt,
     };
 
-    if (const auto existingAccount = userRepo.getAccount();
+    if (const auto existingAccount = userRepo_.getAccount();
         existingAccount.has_value()) {
       account.email = existingAccount->email;
       account.vaultSalt = existingAccount->vaultSalt;
       account.encryptedMasterKey = existingAccount->encryptedMasterKey;
     }
 
-    userRepo.upsertAccount(account);
+    userRepo_.upsertAccount(account);
     spdlog::info("Base URL updated");
     return 0;
   }
 
   case Command::Login: {
     spdlog::info("Logging into arkive");
-
-    const std::string baseUrl = requireBaseUrl(userRepo);
-    ArkiveHttpClient client(baseUrl, kCookiePath);
-    AuthService authService(userRepo, client);
-    if (authService.login()) {
+    if (authService_.login()) {
       spdlog::info("Successfully logged in!");
     } else {
       spdlog::info("Session is already valid. Skipping login.");
@@ -173,11 +155,7 @@ int App::run(int argc, char *argv[]) {
 
   case Command::Logout: {
     spdlog::info("Logging out of arkive");
-
-    const std::string baseUrl = requireBaseUrl(userRepo);
-    ArkiveHttpClient client(baseUrl, kCookiePath);
-    AuthService authService(userRepo, client);
-    if (authService.logout()) {
+    if (authService_.logout()) {
       spdlog::info("Successfully logged out!");
     } else {
       spdlog::info("No valid session found. Cleared local auth state.");
@@ -197,11 +175,7 @@ int App::run(int argc, char *argv[]) {
 
   case Command::SyncAdd: {
     const std::filesystem::path syncPath = argv[3];
-    FileScanner fileScanner(syncPath);
-    QueueRepo queueRepo(dbInstance);
-    SyncRepo syncRepo(dbInstance);
-    SyncService syncService(syncRepo, queueRepo, fileScanner);
-    syncService.addPath();
+    syncService_.addPath(syncPath);
     spdlog::info("Added sync path: {}",
                  std::filesystem::absolute(syncPath).string());
     return 0;
@@ -209,11 +183,7 @@ int App::run(int argc, char *argv[]) {
 
   case Command::SyncRun: {
     const std::filesystem::path syncPath = argv[3];
-    FileScanner fileScanner(syncPath);
-    QueueRepo queueRepo(dbInstance);
-    SyncRepo syncRepo(dbInstance);
-    SyncService syncService(syncRepo, queueRepo, fileScanner);
-    const size_t insertedCount = syncService.scanRoot();
+    const size_t insertedCount = syncService_.scanRoot(syncPath);
     spdlog::info("Ran sync for path: {}",
                  std::filesystem::absolute(syncPath).string());
     spdlog::info("Upserted {} entry records", insertedCount);
@@ -234,10 +204,7 @@ int App::run(int argc, char *argv[]) {
 
   case Command::QueueStats:
     {
-      QueueRepo queueRepo(dbInstance);
-      SyncRepo syncRepo(dbInstance);
-      QueueService queueService(queueRepo, syncRepo);
-      const QueueStats stats = queueService.stats();
+      const QueueStats stats = queueService_.stats();
       spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
                    stats.queued, stats.running, stats.failed, stats.done);
     }
@@ -249,20 +216,14 @@ int App::run(int argc, char *argv[]) {
 
   case Command::QueueRetryFailed:
     {
-      QueueRepo queueRepo(dbInstance);
-      SyncRepo syncRepo(dbInstance);
-      QueueService queueService(queueRepo, syncRepo);
-      queueService.retryFailed();
+      queueService_.retryFailed();
       spdlog::info("Retried failed queue jobs");
     }
     return 0;
 
   case Command::QueueClearDone:
     {
-      QueueRepo queueRepo(dbInstance);
-      SyncRepo syncRepo(dbInstance);
-      QueueService queueService(queueRepo, syncRepo);
-      queueService.clearDone();
+      queueService_.clearDone();
       spdlog::info("Cleared done queue jobs");
     }
     return 0;

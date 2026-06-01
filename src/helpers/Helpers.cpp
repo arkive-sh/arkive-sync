@@ -28,3 +28,34 @@ TerminalEchoGuard makeTerminalEchoGuard() {
 
   return TerminalEchoGuard(state);
 }
+
+bool commandAllowsMissingBaseUrl(int argc, char *argv[]) {
+  if (argc < 2) {
+    return true;
+  }
+
+  const std::string command = argv[1];
+  if (command == "status" && argc == 2) {
+    return true;
+  }
+
+  if (command == "set-base-url" && argc == 3) {
+    return true;
+  }
+
+  return false;
+}
+
+std::string requireBaseUrl(const UserRepo &userRepo) {
+  const auto account = userRepo.getAccount();
+  if (!account.has_value()) {
+    throw std::runtime_error("Base URL account record is missing");
+  }
+
+  if (account->baseUrl.empty()) {
+    throw std::runtime_error(
+        "Base URL is not configured. Run: arkive-sync set-base-url <url>");
+  }
+
+  return account->baseUrl;
+}

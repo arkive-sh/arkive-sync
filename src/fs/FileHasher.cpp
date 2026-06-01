@@ -1,5 +1,4 @@
-#include "./FileHasher.hpp"
-#include "../crypto/RustCrypto.hpp"
+#include "fs/FileHasher.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -11,7 +10,6 @@ FileHasher::FileHasher(const std::filesystem::path &path)
     : path_(std::move(path)) {}
 
 std::string FileHasher::hashFile() {
-  // open file
   std::ifstream file(path_, std::ios::binary);
   if (!file.is_open()) {
     throw std::runtime_error("File cannot be opened");
@@ -23,8 +21,9 @@ std::string FileHasher::hashFile() {
   while (file) {
     file.read(rawBuffer.data(), static_cast<std::streamsize>(rawBuffer.size()));
     const std::streamsize bytesRead = file.gcount();
-    if (bytesRead <= 0)
+    if (bytesRead <= 0) {
       break;
+    }
 
     hasher.update(reinterpret_cast<const uint8_t *>(rawBuffer.data()),
                   static_cast<size_t>(bytesRead));

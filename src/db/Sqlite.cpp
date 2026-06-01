@@ -34,7 +34,7 @@ void Database::createSchema() {
 
     CREATE TABLE IF NOT EXISTS account (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      base_url TEXT NOT NULL,
+      base_url TEXT NOT NULL DEFAULT 'http://localhost:8080',
       email TEXT,
       vault_salt TEXT,
       encrypted_master_key TEXT,
@@ -100,6 +100,9 @@ void Database::createSchema() {
       db,
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path "
       "ON entries(sync_root_id, local_path);");
+  execOrThrow(db,
+              "INSERT INTO account (id, base_url) VALUES (1, 'http://localhost:8080') "
+              "ON CONFLICT(id) DO NOTHING;");
   execOrThrow(db,
               "CREATE INDEX IF NOT EXISTS idx_entries_remote_id ON "
               "entries(remote_id);");
