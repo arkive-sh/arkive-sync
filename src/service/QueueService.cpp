@@ -1,11 +1,15 @@
 #include "service/QueueService.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "service/UploadService.hpp"
+#include <filesystem>
 #include "spdlog/spdlog.h"
 #include <exception>
 
-QueueService::QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo)
-    : queueRepo_(queueRepo), syncRepo_(syncRepo) {}
+QueueService::QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo,
+                           UploadService &uploadService)
+    : queueRepo_(queueRepo), syncRepo_(syncRepo),
+      uploadService_(uploadService) {}
 
 QueueStats QueueService::stats() { return queueRepo_.stats(); }
 
@@ -21,8 +25,21 @@ void QueueService::processQueuedUploads() {
     }
 
     try {
-      // TODO: replace fake upload with real upload worker logic.
-      spdlog::info("file uploaded");
+      const auto entry = syncRepo_.getEntryById(queuedJob->entryId);
+      if (!entry.has_value()) {
+        throw std::runtime_error("Queued upload entry is missing");
+      }
+
+      const auto syncRoot = syncRepo_.getSyncRootById(entry->syncRootId);
+      if (!syncRoot.has_value()) {
+        throw std::runtime_error("Queued upload sync root is missing");
+      }
+
+      const std::filesystem::path absolutePath =
+          std::filesystem::path(syncRoot->localPath) / entry->localPath;
+
+      uploadService_.uploadFile(absolutePath, *entry);
+      spdlog::info("Uploaded file: {}", absolutePath.string());
 
       queueRepo_.markDone(queuedJob->id);
       syncRepo_.markEntrySynced(queuedJob->entryId);

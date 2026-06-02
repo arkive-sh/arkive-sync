@@ -13,6 +13,57 @@ SyncRepo::SyncRepo(sqlite3 *db) : db_(db) {
 }
 
 std::optional<SyncRootRecord>
+SyncRepo::getSyncRootById(const std::string &syncRootId) const {
+  static constexpr const char *getSyncRootByIdSql = R"sql(
+SELECT
+  id,
+  local_path,
+  folder_id,
+  enabled
+FROM sync_roots
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, getSyncRootByIdSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  const char *id =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 0));
+  const char *storedLocalPath =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 1));
+  const char *folderId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 2));
+
+  if (id == nullptr || storedLocalPath == nullptr) {
+    throw std::invalid_argument("sync_roots row contained NULL value");
+  }
+
+  return SyncRootRecord{
+      .id = id,
+      .localPath = storedLocalPath,
+      .folderId = folderId != nullptr ? std::optional<std::string>(folderId)
+                                      : std::nullopt,
+      .enabled = sqlite3_column_int(stmt.get(), 3) != 0,
+  };
+}
+
+std::optional<SyncRootRecord>
 SyncRepo::getSyncRootByLocalPath(const std::string &localPath) const {
   static constexpr const char *getSyncRootSql = R"sql(
 SELECT

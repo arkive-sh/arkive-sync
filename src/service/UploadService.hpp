@@ -1,24 +1,10 @@
 #pragma once
 
 #include "api/ArkiveApi.hpp"
-#include <cstddef>
-#include <optional>
+#include "fs/FileEncryptor.hpp"
+#include "repo/SyncRepo.hpp"
+#include <filesystem>
 #include <string>
-#include <vector>
-
-struct EncryptedUploadPart {
-  int partNumber;
-  std::vector<std::byte> body;
-  std::string encryptedHash;
-};
-
-struct UploadFileRequest {
-  StartUploadRequest start;
-  std::vector<EncryptedUploadPart> parts;
-  std::optional<PresignThumbnailRequest> thumbnail;
-  std::vector<std::byte> encryptedThumbnailBody;
-  UploadCompleteRequest complete;
-};
 
 struct UploadFileResponse {
   std::string fileId;
@@ -29,10 +15,12 @@ struct UploadFileResponse {
 
 class UploadService {
 public:
-  explicit UploadService(ArkiveApi &api);
+  UploadService(ArkiveApi &api, FileEncryptor &fileEncryptor);
 
-  UploadFileResponse uploadFile(const UploadFileRequest &request);
+  UploadFileResponse uploadFile(const std::filesystem::path &path,
+                                const EntryRecord &entry);
 
 private:
   ArkiveApi &api_;
+  FileEncryptor &fileEncryptor_;
 };

@@ -34,6 +34,8 @@ public:
   explicit SyncRepo(sqlite3 *db);
 
   std::optional<SyncRootRecord>
+  getSyncRootById(const std::string &syncRootId) const;
+  std::optional<SyncRootRecord>
   getSyncRootByLocalPath(const std::string &localPath) const;
   std::optional<EntryRecord> getEntryById(const std::string &entryId) const;
   void upsertSyncRoot(const SyncRootRecord &syncRoot) const;

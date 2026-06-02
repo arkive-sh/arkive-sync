@@ -11,6 +11,7 @@
 #include "service/SyncService.hpp"
 #include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
+#include "fs/FileEncryptor.hpp"
 #include <exception>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -31,18 +32,16 @@ int main(int argc, char *argv[]) {
     QueueRepo queueRepo(db.getDb());
     // End Repos
 
-    // Services
-    RustCrypto crypto;
-    QueueService queueService(queueRepo, syncRepo);
-    SyncService syncService(syncRepo, queueRepo, crypto);
-    // End Services
-
     const std::string baseUrl = requireBaseUrl(userRepo);
     ArkiveHttpClient client(baseUrl, kCookiePath);
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
-    UploadService uploadService(api);
+    RustCrypto crypto;
     VaultService vaultService(userRepo, crypto);
+    FileEncryptor fileEncryptor(crypto, vaultService);
+    UploadService uploadService(api, fileEncryptor);
+    QueueService queueService(queueRepo, syncRepo, uploadService);
+    SyncService syncService(syncRepo, queueRepo, crypto);
 
     App app(userRepo, syncRepo, queueRepo, queueService, syncService,
             authService, uploadService, vaultService);

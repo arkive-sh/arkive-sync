@@ -6,6 +6,7 @@
 #include "./service/AuthService.hpp"
 #include "./service/QueueService.hpp"
 #include "./service/SyncService.hpp"
+#include "./service/UploadService.hpp"
 #include "./service/VaultService.hpp"
 #include <filesystem>
 #include <iostream>
@@ -197,8 +198,37 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::Upload: {
-    std::string path = argv[2];
-    spdlog::info("Upload requested for: {}", path);
+    const std::filesystem::path path =
+        std::filesystem::absolute(argv[2]).lexically_normal();
+    if (!std::filesystem::exists(path)) {
+      throw std::runtime_error("Upload path does not exist");
+    }
+    if (!std::filesystem::is_regular_file(path)) {
+      throw std::runtime_error("Upload path must be a file");
+    }
+
+    const auto fileSize = static_cast<int64_t>(std::filesystem::file_size(path));
+    EntryRecord entry{
+        .id = "manual-upload",
+        .remoteId = std::nullopt,
+        .syncRootId = "",
+        .remoteType = "file",
+        .localPath = path.filename().string(),
+        .isDirectory = false,
+        .parentFolderId = std::nullopt,
+        .encryptedName = std::nullopt,
+        .localSize = fileSize,
+        .localMtime = std::nullopt,
+        .localHash = std::nullopt,
+        .remoteUpdatedAt = std::nullopt,
+        .syncState = "pending_upload",
+        .lastSyncedAt = std::nullopt,
+    };
+
+    const UploadFileResponse uploaded = uploadService_.uploadFile(path, entry);
+    spdlog::info("Uploaded file: {}", path.string());
+    spdlog::info("Remote file id: {}", uploaded.fileId);
+    spdlog::info("Upload session id: {}", uploaded.uploadSessionId);
     return 0;
   }
 
@@ -239,7 +269,8 @@ int App::run(int argc, char *argv[]) {
     return 0;
 
   case Command::QueueProcess:
-    spdlog::info("queue process not implemented yet");
+    queueService_.processQueuedUploads();
+    spdlog::info("Processed queued upload jobs");
     return 0;
 
   case Command::QueueRetryFailed: {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/ArkiveApi.hpp"
 #include "crypto/RustCrypto.hpp"
 #include "service/VaultService.hpp"
 #include <cstdint>
@@ -21,6 +22,12 @@ public:
   std::vector<uint8_t> encryptChunk(const std::vector<uint8_t> &plaintextChunk,
                                     const std::vector<uint8_t> &fileKey,
                                     const std::vector<uint8_t> &aad);
+  std::vector<uint8_t> hashBytes(const std::vector<uint8_t> &bytes);
+  std::vector<UploadCompleteSearchToken>
+  createSearchTokenEntries(const std::string &vaultId,
+                           const std::string &name,
+                           const std::string &mime);
+  void zeroize(std::vector<uint8_t> &bytes);
 
 private:
   RustCrypto &crypto_;
