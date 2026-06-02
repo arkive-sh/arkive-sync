@@ -8,7 +8,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(ARKIVE_CRYPTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arkive-crypto")
 
 include(FetchContent)
-find_package(PkgConfig REQUIRED)
 
 FetchContent_Declare(
     spdlog
@@ -59,7 +58,15 @@ add_executable(arkive-sync
     src/fs/FileHasher.cpp
 )
 
-if(UNIX AND NOT APPLE)
+if(APPLE)
+    target_sources(arkive-sync PRIVATE
+        src/platform/macos/SecureStorage.cpp
+    )
+    target_link_libraries(arkive-sync PRIVATE
+        "-framework Security"
+    )
+elseif(UNIX)
+    find_package(PkgConfig REQUIRED)
     pkg_check_modules(LIBSECRET REQUIRED libsecret-1)
     target_include_directories(arkive-sync PRIVATE ${LIBSECRET_INCLUDE_DIRS})
     target_link_libraries(arkive-sync PRIVATE ${LIBSECRET_LIBRARIES})
