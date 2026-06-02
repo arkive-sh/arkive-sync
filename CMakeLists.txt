@@ -40,6 +40,7 @@ add_executable(arkive-sync
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Helpers.cpp
+    src/platform/AppDataPaths.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
     src/repo/SyncRepo.cpp
@@ -63,6 +64,7 @@ if(APPLE)
         src/platform/macos/SecureStorage.cpp
     )
     target_link_libraries(arkive-sync PRIVATE
+        "-framework CoreFoundation"
         "-framework Security"
     )
 elseif(UNIX)

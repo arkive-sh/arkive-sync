@@ -3,6 +3,7 @@
 #include "app/App.hpp"
 #include "db/Sqlite.hpp"
 #include "helpers/Helpers.hpp"
+#include "platform/AppDataPaths.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
@@ -16,13 +17,6 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
-namespace {
-
-static constexpr const char *kCookiePath =
-    "/home/archnuman/.local/share/arkive-sync/cookies.txt";
-
-} // namespace
-
 int main(int argc, char *argv[]) {
   try {
     Database db;
@@ -33,7 +27,7 @@ int main(int argc, char *argv[]) {
     // End Repos
 
     const std::string baseUrl = requireBaseUrl(userRepo);
-    ArkiveHttpClient client(baseUrl, kCookiePath);
+    ArkiveHttpClient client(baseUrl, cookieJarPath().string());
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
     RustCrypto crypto;

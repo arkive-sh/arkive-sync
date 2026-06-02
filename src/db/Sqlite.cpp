@@ -1,5 +1,7 @@
 #include "./Sqlite.hpp"
 #include "db/SqliteHelpers.hpp"
+#include "platform/AppDataPaths.hpp"
+#include <filesystem>
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
 #include <stdexcept>
@@ -12,7 +14,10 @@ Database::~Database() { close(); }
 sqlite3 *Database::getDb() { return db; }
 
 void Database::initDb() {
-  int rc = sqlite3_open("arkive-sync.db", &db);
+  const std::filesystem::path dbPath = databasePath();
+  std::filesystem::create_directories(dbPath.parent_path());
+
+  int rc = sqlite3_open(dbPath.string().c_str(), &db);
   if (rc != SQLITE_OK) {
     const std::string error_message =
         db != nullptr ? sqlite3_errmsg(db) : "unknown SQLite open failure";
