@@ -60,8 +60,9 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
 
 } // namespace
 
-SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo)
-    : syncRepo_(syncRepo), queueRepo_(queueRepo) {}
+SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo,
+                         RustCrypto &crypto)
+    : syncRepo_(syncRepo), queueRepo_(queueRepo), crypto_(crypto) {}
 
 void SyncService::addPath(const std::filesystem::path &rootPathInput) {
   FileScanner fileScanner(rootPathInput);
@@ -131,7 +132,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
 
     std::optional<std::string> localHash = std::nullopt;
     if (!entry.isDirectory) {
-      FileHasher hasher(entry.absolutePath);
+      FileHasher hasher(entry.absolutePath, crypto_);
       localHash = hasher.hashFile();
     }
 

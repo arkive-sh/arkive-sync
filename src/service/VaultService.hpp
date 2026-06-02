@@ -7,7 +7,7 @@
 
 class VaultService {
 public:
-  explicit VaultService(UserRepo &userRepo);
+  VaultService(UserRepo &userRepo, RustCrypto &crypto);
   ~VaultService();
 
   VaultService(const VaultService &) = delete;
@@ -20,6 +20,6 @@ public:
 
 private:
   UserRepo &userRepo_;
-  RustCrypto crypto_;
+  RustCrypto &crypto_;
   std::vector<uint8_t> masterKey_;
 };

@@ -1,10 +1,9 @@
 #include "service/VaultService.hpp"
+#include "crypto/Aad.hpp"
 #include <cctype>
 #include <stdexcept>
 
 namespace {
-
-constexpr const char *kMasterKeyAad = "arkive:master-key:v1";
 
 int decodeBase64Char(char ch) {
   if (ch >= 'A' && ch <= 'Z') {
@@ -55,13 +54,10 @@ std::vector<uint8_t> decodeBase64(const std::string &input) {
   return output;
 }
 
-std::vector<uint8_t> toBytes(const std::string &value) {
-  return std::vector<uint8_t>(value.begin(), value.end());
-}
-
 } // namespace
 
-VaultService::VaultService(UserRepo &userRepo) : userRepo_(userRepo) {}
+VaultService::VaultService(UserRepo &userRepo, RustCrypto &crypto)
+    : userRepo_(userRepo), crypto_(crypto) {}
 
 VaultService::~VaultService() { lock(); }
 
@@ -76,7 +72,7 @@ void VaultService::unlock(const std::string &password) {
   std::vector<uint8_t> salt = decodeBase64(*account->vaultSalt);
   std::vector<uint8_t> encryptedMasterKey =
       decodeBase64(*account->encryptedMasterKey);
-  std::vector<uint8_t> aad = toBytes(kMasterKeyAad);
+  std::vector<uint8_t> aad = ArkiveAad::toBytes(ArkiveAad::kMasterKey);
   std::vector<uint8_t> kek;
   std::vector<uint8_t> unwrappedMasterKey;
 

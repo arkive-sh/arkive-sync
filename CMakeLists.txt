@@ -48,6 +48,7 @@ add_executable(arkive-sync
     src/service/AuthService.cpp
     src/service/UploadService.cpp
     src/service/VaultService.cpp
+    src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp

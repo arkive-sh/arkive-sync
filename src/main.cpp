@@ -32,8 +32,9 @@ int main(int argc, char *argv[]) {
     // End Repos
 
     // Services
+    RustCrypto crypto;
     QueueService queueService(queueRepo, syncRepo);
-    SyncService syncService(syncRepo, queueRepo);
+    SyncService syncService(syncRepo, queueRepo, crypto);
     // End Services
 
     const std::string baseUrl = requireBaseUrl(userRepo);
@@ -41,7 +42,7 @@ int main(int argc, char *argv[]) {
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
     UploadService uploadService(api);
-    VaultService vaultService(userRepo);
+    VaultService vaultService(userRepo, crypto);
 
     App app(userRepo, syncRepo, queueRepo, queueService, syncService,
             authService, uploadService, vaultService);

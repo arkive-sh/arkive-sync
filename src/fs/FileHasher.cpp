@@ -6,8 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
-FileHasher::FileHasher(const std::filesystem::path &path)
-    : path_(std::move(path)) {}
+FileHasher::FileHasher(const std::filesystem::path &path, RustCrypto &crypto)
+    : path_(std::move(path)), crypto_(crypto) {}
 
 std::string FileHasher::hashFile() {
   std::ifstream file(path_, std::ios::binary);
