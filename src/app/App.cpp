@@ -1,8 +1,10 @@
 #include "App.hpp"
 #include "./helpers/Helpers.hpp"
+#include "./platform/SecureStorage.hpp"
 #include "./repo/QueueRepo.hpp"
 #include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
+#include "./crypto/RustCrypto.hpp"
 #include "./service/AuthService.hpp"
 #include "./service/QueueService.hpp"
 #include "./service/SyncService.hpp"
@@ -30,6 +32,7 @@ enum class Command {
   QueueProcess,
   QueueRetryFailed,
   QueueClearDone,
+  SecureStorageSmoke,
   Daemon,
   Upload,
   Unknown,
@@ -93,6 +96,10 @@ Command parseCommand(int argc, char *argv[]) {
 
   if (command == "queue" && argc == 3 && std::string(argv[2]) == "clear-done") {
     return Command::QueueClearDone;
+  }
+
+  if (command == "secure-storage-smoke" && argc == 2) {
+    return Command::SecureStorageSmoke;
   }
 
   if (command == "daemon" && argc == 2) {
@@ -285,6 +292,34 @@ int App::run(int argc, char *argv[]) {
   }
     return 0;
 
+  case Command::SecureStorageSmoke: {
+    RustCrypto crypto;
+    auto storage = SecureStorage::create();
+    const std::string service = "arkive-sync";
+    const std::string account = "smoke-test:vault-session-key";
+    const std::vector<uint8_t> secret = crypto.generateMasterKey();
+
+    storage->storeSecret(service, account, secret);
+    const auto loaded = storage->loadSecret(service, account);
+    if (!loaded.has_value()) {
+      throw std::runtime_error("Secure storage smoke test failed: secret missing");
+    }
+    if (*loaded != secret) {
+      throw std::runtime_error(
+          "Secure storage smoke test failed: secret mismatch");
+    }
+
+    storage->deleteSecret(service, account);
+    const auto deleted = storage->loadSecret(service, account);
+    if (deleted.has_value()) {
+      throw std::runtime_error(
+          "Secure storage smoke test failed: secret still present after delete");
+    }
+
+    spdlog::info("Secure storage smoke test passed");
+    return 0;
+  }
+
   case Command::Daemon:
     spdlog::info("daemon not implemented yet");
     return 0;
@@ -297,7 +332,8 @@ int App::run(int argc, char *argv[]) {
         "arkive-sync sync run-all | arkive-sync sync list | "
         "arkive-sync sync remove <path-or-id> | arkive-sync queue | "
         "arkive-sync queue process | arkive-sync queue retry-failed | "
-        "arkive-sync queue clear-done | arkive-sync daemon | "
+        "arkive-sync queue clear-done | arkive-sync secure-storage-smoke | "
+        "arkive-sync daemon | "
         "arkive-sync upload <path>");
     return 1;
   }

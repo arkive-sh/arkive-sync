@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(ARKIVE_CRYPTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arkive-crypto")
 
 include(FetchContent)
+find_package(PkgConfig REQUIRED)
 
 FetchContent_Declare(
     spdlog
@@ -40,6 +41,7 @@ add_executable(arkive-sync
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Helpers.cpp
+    src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UserRepo.cpp
@@ -56,6 +58,16 @@ add_executable(arkive-sync
     src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp
 )
+
+if(UNIX AND NOT APPLE)
+    pkg_check_modules(LIBSECRET REQUIRED libsecret-1)
+    target_include_directories(arkive-sync PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+    target_link_libraries(arkive-sync PRIVATE ${LIBSECRET_LIBRARIES})
+    target_compile_options(arkive-sync PRIVATE ${LIBSECRET_CFLAGS_OTHER})
+    target_sources(arkive-sync PRIVATE
+        src/platform/linux/SecureStorage.cpp
+    )
+endif()
 
 target_include_directories(arkive-sync PRIVATE
     src
