@@ -1,5 +1,6 @@
 #include "./Helpers.hpp"
 
+#include <iostream>
 #include <stdexcept>
 #include <termios.h>
 #include <unistd.h>
@@ -27,6 +28,19 @@ TerminalEchoGuard makeTerminalEchoGuard() {
   }
 
   return TerminalEchoGuard(state);
+}
+
+std::string readPasswordFromTerminal(const std::string &prompt) {
+  std::string password;
+  std::cout << prompt << std::flush;
+  {
+    auto echoGuard = makeTerminalEchoGuard();
+    std::getline(std::cin, password);
+  } // extra scope so RAII can happen and terminal returns to normal on
+    // exceptions
+  std::cout << '\n';
+
+  return password;
 }
 
 bool commandAllowsMissingBaseUrl(int argc, char *argv[]) {

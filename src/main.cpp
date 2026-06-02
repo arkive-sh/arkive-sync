@@ -10,6 +10,7 @@
 #include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
 #include "service/UploadService.hpp"
+#include "service/VaultService.hpp"
 #include <exception>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -40,9 +41,10 @@ int main(int argc, char *argv[]) {
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
     UploadService uploadService(api);
+    VaultService vaultService(userRepo);
 
     App app(userRepo, syncRepo, queueRepo, queueService, syncService,
-            authService, uploadService);
+            authService, uploadService, vaultService);
     return app.run(argc, argv);
   } catch (const std::exception &ex) {
     spdlog::error("Fatal error: {}", ex.what());

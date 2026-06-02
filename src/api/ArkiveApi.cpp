@@ -58,6 +58,15 @@ LoginResponse ArkiveApi::login(const std::string &email,
   };
 }
 
+LoginResponse ArkiveApi::unlockVault(const std::string &password) {
+  const auto responseJson =
+      client_.postJson("/api/auth/unlock", {{"password", password}});
+  return LoginResponse{
+      .salt = responseJson.value("salt", ""),
+      .encryptedMasterKey = responseJson.value("encryptedMasterKey", ""),
+  };
+}
+
 void ArkiveApi::logout() { client_.postForm("/logout"); }
 
 nlohmann::json ArkiveApi::me() { return client_.getJson("/api/me"); }

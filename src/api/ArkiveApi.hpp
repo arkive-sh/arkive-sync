@@ -74,6 +74,7 @@ public:
   explicit ArkiveApi(ArkiveHttpClient &client);
 
   LoginResponse login(const std::string &email, const std::string &password);
+  LoginResponse unlockVault(const std::string &password);
   void logout();
   nlohmann::json me();
 

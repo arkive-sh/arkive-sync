@@ -16,5 +16,6 @@ struct TerminalEchoRestore {
 using TerminalEchoGuard = std::unique_ptr<TerminalState, TerminalEchoRestore>;
 
 TerminalEchoGuard makeTerminalEchoGuard();
+std::string readPasswordFromTerminal(const std::string &prompt);
 bool commandAllowsMissingBaseUrl(int argc, char *argv[]);
 std::string requireBaseUrl(const UserRepo &userRepo);

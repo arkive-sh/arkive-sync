@@ -6,7 +6,9 @@
 #include "./service/AuthService.hpp"
 #include "./service/QueueService.hpp"
 #include "./service/SyncService.hpp"
+#include "./service/VaultService.hpp"
 #include <filesystem>
+#include <iostream>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -88,8 +90,7 @@ Command parseCommand(int argc, char *argv[]) {
     return Command::QueueRetryFailed;
   }
 
-  if (command == "queue" && argc == 3 &&
-      std::string(argv[2]) == "clear-done") {
+  if (command == "queue" && argc == 3 && std::string(argv[2]) == "clear-done") {
     return Command::QueueClearDone;
   }
 
@@ -108,10 +109,12 @@ Command parseCommand(int argc, char *argv[]) {
 
 App::App(UserRepo &userRepo, SyncRepo &syncRepo, QueueRepo &queueRepo,
          QueueService &queueService, SyncService &syncService,
-         AuthService &authService, UploadService &uploadService)
+         AuthService &authService, UploadService &uploadService,
+         VaultService &vaultService)
     : userRepo_(userRepo), syncRepo_(syncRepo), queueRepo_(queueRepo),
       queueService_(queueService), syncService_(syncService),
-      authService_(authService), uploadService_(uploadService) {}
+      authService_(authService), uploadService_(uploadService),
+      vaultService_(vaultService) {}
 
 App::~App() {}
 
@@ -145,16 +148,42 @@ int App::run(int argc, char *argv[]) {
 
   case Command::Login: {
     spdlog::info("Logging into arkive");
-    if (authService_.login()) {
-      spdlog::info("Successfully logged in!");
+    const auto account = userRepo_.getAccount();
+    if (!account.has_value()) {
+      throw std::runtime_error("Base URL is missing");
+    }
+
+    const bool hasValidSession = authService_.hasValidSession();
+    std::string password;
+
+    if (hasValidSession) {
+      password = readPasswordFromTerminal("Enter your vault password: ");
+      if (!hasPersistedVaultMaterial(*account)) {
+        authService_.refreshVaultMaterial(password);
+      }
+      vaultService_.unlock(password);
+      spdlog::info("Session is already valid. Vault unlocked.");
+      return 0;
+    }
+
+    std::string email;
+    std::cout << "Enter your email: ";
+    std::getline(std::cin, email);
+    password = readPasswordFromTerminal("Enter your password: ");
+
+    authService_.login(email, password);
+    vaultService_.unlock(password);
+    if (vaultService_.isUnlocked()) {
+      spdlog::info("Successfully logged in and unlocked vault!");
     } else {
-      spdlog::info("Session is already valid. Skipping login.");
+      spdlog::info("Successfully logged in!");
     }
     return 0;
   }
 
   case Command::Logout: {
     spdlog::info("Logging out of arkive");
+    vaultService_.lock();
     if (authService_.logout()) {
       spdlog::info("Successfully logged out!");
     } else {
@@ -202,30 +231,27 @@ int App::run(int argc, char *argv[]) {
     spdlog::info("sync remove not implemented yet");
     return 0;
 
-  case Command::QueueStats:
-    {
-      const QueueStats stats = queueService_.stats();
-      spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
-                   stats.queued, stats.running, stats.failed, stats.done);
-    }
+  case Command::QueueStats: {
+    const QueueStats stats = queueService_.stats();
+    spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
+                 stats.queued, stats.running, stats.failed, stats.done);
+  }
     return 0;
 
   case Command::QueueProcess:
     spdlog::info("queue process not implemented yet");
     return 0;
 
-  case Command::QueueRetryFailed:
-    {
-      queueService_.retryFailed();
-      spdlog::info("Retried failed queue jobs");
-    }
+  case Command::QueueRetryFailed: {
+    queueService_.retryFailed();
+    spdlog::info("Retried failed queue jobs");
+  }
     return 0;
 
-  case Command::QueueClearDone:
-    {
-      queueService_.clearDone();
-      spdlog::info("Cleared done queue jobs");
-    }
+  case Command::QueueClearDone: {
+    queueService_.clearDone();
+    spdlog::info("Cleared done queue jobs");
+  }
     return 0;
 
   case Command::Daemon:
