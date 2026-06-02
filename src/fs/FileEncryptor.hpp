@@ -18,7 +18,9 @@ public:
                                        const std::vector<uint8_t> &fileKey,
                                        const std::string &vaultId,
                                        const std::string &fileId);
-  void createEncryptedChunkReader();
+  std::vector<uint8_t> encryptChunk(const std::vector<uint8_t> &plaintextChunk,
+                                    const std::vector<uint8_t> &fileKey,
+                                    const std::vector<uint8_t> &aad);
 
 private:
   RustCrypto &crypto_;

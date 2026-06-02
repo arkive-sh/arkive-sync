@@ -41,3 +41,14 @@ FileEncryptor::encryptMetadata(const std::string &metadataJson,
 
   return crypto_.encryptChunk(fileKey, aad, metadataBytes);
 }
+
+std::vector<uint8_t>
+FileEncryptor::encryptChunk(const std::vector<uint8_t> &plaintextChunk,
+                            const std::vector<uint8_t> &fileKey,
+                            const std::vector<uint8_t> &aad) {
+  if (fileKey.empty()) {
+    throw std::invalid_argument("fileKey cannot be empty");
+  }
+
+  return crypto_.encryptChunk(fileKey, aad, plaintextChunk);
+}
