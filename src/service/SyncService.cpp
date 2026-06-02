@@ -24,7 +24,10 @@ std::string generateId() {
 }
 
 std::string toMtimeString(const std::filesystem::file_time_type &time) {
-  return std::to_string(time.time_since_epoch().count());
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      time.time_since_epoch())
+                      .count();
+  return std::to_string(static_cast<long long>(ms));
 }
 
 bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,

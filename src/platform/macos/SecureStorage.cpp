@@ -75,6 +75,11 @@ ScopedCFTypeRef makeCFData(const std::vector<uint8_t> &value) {
       static_cast<CFIndex>(value.size())));
 }
 
+CFMutableDictionaryRef asMutableDictionary(const ScopedCFTypeRef &ref) {
+  return reinterpret_cast<CFMutableDictionaryRef>(
+      const_cast<void *>(ref.get()));
+}
+
 CFMutableDictionaryRef createBaseQuery(const std::string &service,
                                        const std::string &account) {
   CFMutableDictionaryRef query = CFDictionaryCreateMutable(
@@ -110,9 +115,8 @@ void MacosSecureStorage::storeSecret(const std::string &service,
   }
 
   ScopedCFTypeRef addQuery(createBaseQuery(service, account));
-  CFDictionarySetValue(
-      static_cast<CFMutableDictionaryRef>(addQuery.get()), kSecValueData,
-      secretData.get());
+  CFDictionarySetValue(asMutableDictionary(addQuery), kSecValueData,
+                       secretData.get());
 
   const OSStatus addStatus =
       SecItemAdd(static_cast<CFDictionaryRef>(addQuery.get()), nullptr);
@@ -147,10 +151,10 @@ MacosSecureStorage::loadSecret(const std::string &service,
   validateInputs(service, account);
 
   ScopedCFTypeRef query(createBaseQuery(service, account));
-  CFDictionarySetValue(static_cast<CFMutableDictionaryRef>(query.get()),
-                       kSecReturnData, kCFBooleanTrue);
-  CFDictionarySetValue(static_cast<CFMutableDictionaryRef>(query.get()),
-                       kSecMatchLimit, kSecMatchLimitOne);
+  CFDictionarySetValue(asMutableDictionary(query), kSecReturnData,
+                       kCFBooleanTrue);
+  CFDictionarySetValue(asMutableDictionary(query), kSecMatchLimit,
+                       kSecMatchLimitOne);
 
   CFTypeRef result = nullptr;
   const OSStatus status =
