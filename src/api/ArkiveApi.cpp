@@ -3,6 +3,14 @@
 
 namespace {
 
+UploadLimitsResponse decodeUploadLimitsResponse(const nlohmann::json &json) {
+  return UploadLimitsResponse{
+      .maxQueueItems = json.value("maxQueueItems", 0),
+      .partConcurrency = json.value("partConcurrency", 0),
+      .staleUploadHours = json.value("staleUploadHours", 0),
+  };
+}
+
 StartUploadResponse decodeStartUploadResponse(const nlohmann::json &json) {
   return StartUploadResponse{
       .fileId = json.value("fileId", ""),
@@ -70,6 +78,10 @@ LoginResponse ArkiveApi::unlockVault(const std::string &password) {
 void ArkiveApi::logout() { client_.postForm("/logout"); }
 
 nlohmann::json ArkiveApi::me() { return client_.getJson("/api/me"); }
+
+UploadLimitsResponse ArkiveApi::uploadLimits() {
+  return decodeUploadLimitsResponse(client_.getJson("/api/uploads/limits"));
+}
 
 StartUploadResponse ArkiveApi::startUpload(const StartUploadRequest &request) {
   nlohmann::json payload{

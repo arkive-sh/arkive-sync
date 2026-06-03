@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/ArkiveApi.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
 
@@ -8,7 +9,7 @@ class UploadService;
 class QueueService {
 public:
   QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo,
-               UploadService &uploadService);
+               UploadService &uploadService, ArkiveApi &api);
 
   QueueStats stats();
   std::optional<TransferJob> claimNextQueuedUpload();
@@ -20,7 +21,10 @@ public:
   void processQueuedUploads();
 
 private:
+  size_t fillUploadQueue();
+
   QueueRepo &queueRepo_;
   SyncRepo &syncRepo_;
   UploadService &uploadService_;
+  ArkiveApi &api_;
 };

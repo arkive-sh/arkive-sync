@@ -37,10 +37,12 @@ public:
   getSyncRootById(const std::string &syncRootId) const;
   std::optional<SyncRootRecord>
   getSyncRootByLocalPath(const std::string &localPath) const;
+  std::vector<SyncRootRecord> getSyncRoots() const;
   std::optional<EntryRecord> getEntryById(const std::string &entryId) const;
   void upsertSyncRoot(const SyncRootRecord &syncRoot) const;
   std::vector<EntryRecord>
   getEntriesForSyncRoot(const std::string &syncRootId) const;
+  std::vector<EntryRecord> listPendingUploadEntries(size_t limit) const;
   void upsertEntries(const std::vector<EntryRecord> &entries) const;
   void
   markMissingEntriesDeleted(const std::string &syncRootId,

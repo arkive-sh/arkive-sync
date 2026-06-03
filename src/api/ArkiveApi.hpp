@@ -13,6 +13,12 @@ struct LoginResponse {
   std::string encryptedMasterKey;
 };
 
+struct UploadLimitsResponse {
+  int maxQueueItems;
+  int partConcurrency;
+  int staleUploadHours;
+};
+
 struct StartUploadRequest {
   int64_t originalSize;
   int64_t fileChunkSize;
@@ -78,6 +84,7 @@ public:
   void logout();
   nlohmann::json me();
 
+  UploadLimitsResponse uploadLimits();
   StartUploadResponse startUpload(const StartUploadRequest &request);
   PresignPartsResponse presignParts(const std::string &uploadSessionId,
                                     const std::vector<int> &partNumbers);

@@ -170,20 +170,13 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     });
   }
 
-  // 4. Persist current scan, mark missing entries deleted, queue uploads.
+  // 4. Persist current scan and mark missing entries deleted. Queue admission
+  // is handled separately so desktop sync can process arbitrarily large trees
+  // in server-sized batches instead of flooding transfer_queue.
   syncRepo_.upsertEntries(entryRecords);
   syncRepo_.markMissingEntriesDeleted(
       syncRoot->id,
       std::vector<std::string>(presentPaths.begin(), presentPaths.end()));
-
-  for (const auto &entry : entryRecords) {
-    if (entry.syncState != "pending_upload" || entry.isDirectory) {
-      continue;
-    }
-
-    queueRepo_.enqueueUpload(entry.id, entry.localPath, entry.parentFolderId,
-                             entry.localSize.value_or(0));
-  }
 
   return entryRecords.size();
 }

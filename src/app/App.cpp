@@ -25,7 +25,6 @@ enum class Command {
   Status,
   SyncAdd,
   SyncRun,
-  SyncRunAll,
   SyncList,
   SyncRemove,
   QueueStats,
@@ -65,12 +64,8 @@ Command parseCommand(int argc, char *argv[]) {
     return Command::SyncAdd;
   }
 
-  if (command == "sync" && argc == 4 && std::string(argv[2]) == "run") {
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "run") {
     return Command::SyncRun;
-  }
-
-  if (command == "sync" && argc == 3 && std::string(argv[2]) == "run-all") {
-    return Command::SyncRunAll;
   }
 
   if (command == "sync" && argc == 3 && std::string(argv[2]) == "list") {
@@ -256,17 +251,32 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::SyncRun: {
-    const std::filesystem::path syncPath = argv[3];
-    const size_t insertedCount = syncService_.scanRoot(syncPath);
-    spdlog::info("Ran sync for path: {}",
-                 std::filesystem::absolute(syncPath).string());
-    spdlog::info("Upserted {} entry records", insertedCount);
+    const auto syncRoots = syncRepo_.getSyncRoots();
+    if (syncRoots.empty()) {
+      throw std::runtime_error(
+          "No sync paths configured. Run `arkive-sync sync add <path>` first.");
+    }
+
+    size_t totalInsertedCount = 0;
+    size_t scannedRoots = 0;
+    for (const auto &syncRoot : syncRoots) {
+      if (!syncRoot.enabled) {
+        continue;
+      }
+
+      totalInsertedCount += syncService_.scanRoot(syncRoot.localPath);
+      ++scannedRoots;
+      spdlog::info("Ran sync for path: {}", syncRoot.localPath);
+    }
+
+    if (scannedRoots == 0) {
+      throw std::runtime_error("No enabled sync paths configured.");
+    }
+
+    spdlog::info("Ran sync for {} path(s)", scannedRoots);
+    spdlog::info("Upserted {} entry records", totalInsertedCount);
     return 0;
   }
-
-  case Command::SyncRunAll:
-    spdlog::info("sync run-all not implemented yet");
-    return 0;
 
   case Command::SyncList:
     spdlog::info("sync list not implemented yet");
@@ -336,8 +346,8 @@ int App::run(int argc, char *argv[]) {
     spdlog::error(
         "Usage: arkive-sync login | arkive-sync logout | "
         "arkive-sync set-base-url <url> | arkive-sync status | "
-        "arkive-sync sync add <path> | arkive-sync sync run <path> | "
-        "arkive-sync sync run-all | arkive-sync sync list | "
+        "arkive-sync sync add <path> | arkive-sync sync run | "
+        "arkive-sync sync list | "
         "arkive-sync sync remove <path-or-id> | arkive-sync queue | "
         "arkive-sync queue process | arkive-sync queue retry-failed | "
         "arkive-sync queue clear-done | arkive-sync secure-storage-smoke | "

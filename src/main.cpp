@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
     VaultService vaultService(userRepo, crypto);
     FileEncryptor fileEncryptor(crypto, vaultService);
     UploadService uploadService(api, fileEncryptor);
-    QueueService queueService(queueRepo, syncRepo, uploadService);
+    QueueService queueService(queueRepo, syncRepo, uploadService, api);
     SyncService syncService(syncRepo, queueRepo, crypto);
 
     App app(userRepo, syncRepo, queueRepo, queueService, syncService,
