@@ -34,15 +34,65 @@ void appendHeader(HeaderPtr &headers, const char *header) {
 
 } // namespace
 
+namespace {
+
+std::string extractApiErrorMessage(const std::string &responseBody) {
+  if (responseBody.empty()) {
+    return "";
+  }
+
+  try {
+    const nlohmann::json payload = nlohmann::json::parse(responseBody);
+    if (payload.contains("error")) {
+      const auto &error = payload["error"];
+      if (error.is_string()) {
+        return error.get<std::string>();
+      }
+      if (error.is_object()) {
+        if (error.contains("message") && error["message"].is_string()) {
+          return error["message"].get<std::string>();
+        }
+        if (error.contains("code") && error["code"].is_string()) {
+          return error["code"].get<std::string>();
+        }
+      }
+    }
+    if (payload.contains("message") && payload["message"].is_string()) {
+      return payload["message"].get<std::string>();
+    }
+  } catch (...) {
+  }
+
+  return "";
+}
+
+} // namespace
+
 HttpError::HttpError(long statusCode, std::string responseBody)
-    : std::runtime_error("HTTP " + std::to_string(statusCode) + ": " +
-                         responseBody),
-      statusCode_(statusCode), responseBody_(std::move(responseBody)) {}
+    : std::runtime_error(buildMessage(statusCode, responseBody)),
+      statusCode_(statusCode), responseBody_(std::move(responseBody)),
+      apiError_(extractApiErrorMessage(responseBody_)) {}
 
 long HttpError::statusCode() const noexcept { return statusCode_; }
 
 const std::string &HttpError::responseBody() const noexcept {
   return responseBody_;
+}
+
+const std::string &HttpError::apiError() const noexcept { return apiError_; }
+
+std::string HttpError::buildMessage(long statusCode,
+                                    const std::string &responseBody) {
+  const std::string apiError = extractApiErrorMessage(responseBody);
+  if (!apiError.empty()) {
+    return "HTTP " + std::to_string(statusCode) + ": error: " + apiError;
+  }
+
+  if (!responseBody.empty()) {
+    return "HTTP " + std::to_string(statusCode) + ": " + responseBody;
+  }
+
+  return "HTTP " + std::to_string(statusCode);
 }
 
 ArkiveHttpClient::ArkiveHttpClient(std::string baseUrl, std::string cookiePath)

@@ -10,6 +10,8 @@
 
 namespace {
 
+constexpr uint64_t kMultipartUploadPartSize = 8ull * 1024ull * 1024ull;
+
 constexpr char kBase64Alphabet[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -55,6 +57,11 @@ std::vector<std::byte> toByteVector(const std::vector<uint8_t> &bytes) {
     converted.push_back(static_cast<std::byte>(byte));
   }
   return converted;
+}
+
+void appendBytes(std::vector<uint8_t> &target,
+                 const std::vector<uint8_t> &source) {
+  target.insert(target.end(), source.begin(), source.end());
 }
 
 std::string detectMimeType(const std::filesystem::path &path) {
@@ -109,13 +116,20 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   const uint64_t fileChunkSize = static_cast<uint64_t>(kChunkSize);
   const uint64_t totalChunks =
       std::max<uint64_t>(1, (originalSize + fileChunkSize - 1) / fileChunkSize);
+  const uint64_t uploadPartSize =
+      totalChunks > 1 ? kMultipartUploadPartSize : fileChunkSize;
+  const uint64_t chunksPerUploadPart =
+      std::max<uint64_t>(1, uploadPartSize / fileChunkSize);
+  const uint64_t uploadPartCount =
+      std::max<uint64_t>(1, (totalChunks + chunksPerUploadPart - 1) /
+                                 chunksPerUploadPart);
 
   const StartUploadResponse started = api_.startUpload(StartUploadRequest{
       .originalSize = static_cast<int64_t>(originalSize),
       .fileChunkSize = static_cast<int64_t>(fileChunkSize),
       .totalChunks = static_cast<int>(totalChunks),
-      .uploadPartSize = static_cast<int64_t>(fileChunkSize),
-      .uploadPartCount = static_cast<int>(totalChunks),
+      .uploadPartSize = static_cast<int64_t>(uploadPartSize),
+      .uploadPartCount = static_cast<int>(uploadPartCount),
       .encryptionVersion = 1,
       .folderId = entry.parentFolderId,
   });
@@ -133,41 +147,60 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
                             static_cast<uint64_t>(started.fileChunkSize),
                             static_cast<uint64_t>(started.totalChunks));
 
-    while (reader.hasNextChunk()) {
-      const EncryptedFileChunk chunk = reader.nextEncryptedChunk();
-      const std::vector<uint8_t> encryptedHashBytes =
-          fileEncryptor_.hashBytes(chunk.ciphertext);
-      const std::string encryptedHash = encodeBase64(encryptedHashBytes);
+    for (uint64_t partNumber = 1; partNumber <= uploadPartCount; ++partNumber) {
+      std::vector<uint8_t> uploadBody;
 
-      combinedChunkHashes.insert(combinedChunkHashes.end(),
-                                 encryptedHashBytes.begin(),
-                                 encryptedHashBytes.end());
+      // File encryption stays chunk-based for AAD and manifests, but the
+      // storage upload contract is part-based. Combine multiple encrypted
+      // chunks into each upload part so server part numbers match the declared
+      // uploadPartCount/uploadPartSize window.
+      for (uint64_t chunkIndex = 0;
+           chunkIndex < chunksPerUploadPart && reader.hasNextChunk();
+           ++chunkIndex) {
+        const EncryptedFileChunk chunk = reader.nextEncryptedChunk();
+        const std::vector<uint8_t> encryptedHashBytes =
+            fileEncryptor_.hashBytes(chunk.ciphertext);
+        const std::string encryptedHash = encodeBase64(encryptedHashBytes);
+
+        appendBytes(combinedChunkHashes, encryptedHashBytes);
+        appendBytes(uploadBody, chunk.ciphertext);
+
+        manifestChunks.push_back({
+            {"n", chunk.chunkNo},
+            {"plain_size", chunk.plaintextSize},
+            {"cipher_size", chunk.ciphertext.size()},
+            {"hash", encryptedHash},
+        });
+      }
+
+      if (uploadBody.empty()) {
+        throw std::runtime_error("upload part had no encrypted chunk payload");
+      }
+
+      const std::vector<uint8_t> uploadHashBytes =
+          fileEncryptor_.hashBytes(uploadBody);
+      const std::string uploadHash = encodeBase64(uploadHashBytes);
 
       const PresignPartsResponse presigned =
           api_.presignParts(started.uploadSessionId,
-                            {static_cast<int>(chunk.chunkNo)});
-      const auto urlIt = presigned.urls.find(static_cast<int>(chunk.chunkNo));
+                            {static_cast<int>(partNumber)});
+      const auto urlIt = presigned.urls.find(static_cast<int>(partNumber));
       if (urlIt == presigned.urls.end()) {
         throw std::runtime_error("missing presigned URL for upload part " +
-                                 std::to_string(chunk.chunkNo));
+                                 std::to_string(partNumber));
       }
 
       const std::string etag =
           api_.putEncryptedPartToStorage(urlIt->second,
-                                         toByteVector(chunk.ciphertext));
+                                         toByteVector(uploadBody));
       api_.uploadPart(started.uploadSessionId,
                       UploadPartRequest{
-                          .partNumber = static_cast<int>(chunk.chunkNo),
-                          .encryptedHash = encryptedHash,
+                          .partNumber = static_cast<int>(partNumber),
+                          .encryptedHash = uploadHash,
                           .etag = etag,
                       });
 
-      manifestChunks.push_back({
-          {"n", chunk.chunkNo},
-          {"plain_size", chunk.plaintextSize},
-          {"cipher_size", chunk.ciphertext.size()},
-          {"hash", encryptedHash},
-      });
+      fileEncryptor_.zeroize(uploadBody);
     }
 
     encryptedMetadata = fileEncryptor_.encryptMetadata(
@@ -187,8 +220,9 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
         {"chunk_size", static_cast<uint64_t>(started.fileChunkSize)},
         {"chunks", manifestChunks},
     };
+    const std::string manifestJson = manifest.dump();
     encryptedManifest = fileEncryptor_.encryptChunk(
-        std::vector<uint8_t>(manifest.dump().begin(), manifest.dump().end()),
+        std::vector<uint8_t>(manifestJson.begin(), manifestJson.end()),
         fileKey,
         ArkiveAad::toBytes(
             ArkiveAad::makeFileManifest(started.vaultId, started.fileId)));
