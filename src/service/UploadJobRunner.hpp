@@ -4,17 +4,17 @@
 
 class RustCrypto;
 class SyncRepo;
-class UploadService;
+class IUploadService;
 
 class UploadJobRunner {
 public:
-  UploadJobRunner(SyncRepo &syncRepo, UploadService &uploadService,
+  UploadJobRunner(SyncRepo &syncRepo, IUploadService &uploadService,
                   RustCrypto &crypto);
 
   void run(const TransferJob &job);
 
 private:
   SyncRepo &syncRepo_;
-  UploadService &uploadService_;
+  IUploadService &uploadService_;
   RustCrypto &crypto_;
 };

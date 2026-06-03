@@ -15,12 +15,19 @@ struct UploadFileResponse {
   std::string providerUploadId;
 };
 
-class UploadService {
+class IUploadService {
+public:
+  virtual ~IUploadService() = default;
+  virtual UploadFileResponse uploadFile(const std::filesystem::path &path,
+                                        const EntryRecord &entry) = 0;
+};
+
+class UploadService : public IUploadService {
 public:
   UploadService(ArkiveApi &api, FileEncryptor &fileEncryptor);
 
   UploadFileResponse uploadFile(const std::filesystem::path &path,
-                                const EntryRecord &entry);
+                                const EntryRecord &entry) override;
 
 private:
   ArkiveApi &api_;

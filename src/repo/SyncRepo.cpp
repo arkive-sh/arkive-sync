@@ -357,6 +357,41 @@ void SyncRepo::markEntrySynced(const std::string &entryId) {
   }
 }
 
+void SyncRepo::markEntryUploaded(const std::string &entryId,
+                                 const std::string &remoteId) {
+  static constexpr const char *markEntryUploadedSql = R"sql(
+    UPDATE entries
+    SET
+      remote_id = ?,
+      sync_state = 'synced',
+      last_synced_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?;
+      )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, markEntryUploadedSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, remoteId);
+  bindText(db_, stmt.get(), 2, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  if (sqlite3_changes(db_) != 1) {
+    throw std::runtime_error(std::string("Changes failed") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
 void SyncRepo::upsertSyncRoot(const SyncRootRecord &syncRoot) const {
   static constexpr const char *upsertSyncRootSql = R"sql(
 INSERT INTO sync_roots (

@@ -78,24 +78,27 @@ struct UploadCompleteRequest {
 class ArkiveApi {
 public:
   explicit ArkiveApi(ArkiveHttpClient &client);
+  virtual ~ArkiveApi() = default;
 
-  LoginResponse login(const std::string &email, const std::string &password);
-  LoginResponse unlockVault(const std::string &password);
-  void logout();
-  nlohmann::json me();
+  virtual LoginResponse login(const std::string &email,
+                              const std::string &password);
+  virtual LoginResponse unlockVault(const std::string &password);
+  virtual void logout();
+  virtual nlohmann::json me();
 
-  UploadLimitsResponse uploadLimits();
-  StartUploadResponse startUpload(const StartUploadRequest &request);
-  PresignPartsResponse presignParts(const std::string &uploadSessionId,
-                                    const std::vector<int> &partNumbers);
-  std::string putEncryptedPartToStorage(const std::string &presignedUrl,
-                                        const std::vector<std::byte> &body);
-  std::string presignThumbnail(const std::string &uploadSessionId,
-                               const PresignThumbnailRequest &request);
-  void uploadPart(const std::string &uploadSessionId,
-                  const UploadPartRequest &request);
-  void uploadComplete(const std::string &uploadSessionId,
-                      const UploadCompleteRequest &request);
+  virtual UploadLimitsResponse uploadLimits();
+  virtual StartUploadResponse startUpload(const StartUploadRequest &request);
+  virtual PresignPartsResponse presignParts(
+      const std::string &uploadSessionId, const std::vector<int> &partNumbers);
+  virtual std::string
+  putEncryptedPartToStorage(const std::string &presignedUrl,
+                            const std::vector<std::byte> &body);
+  virtual std::string presignThumbnail(const std::string &uploadSessionId,
+                                       const PresignThumbnailRequest &request);
+  virtual void uploadPart(const std::string &uploadSessionId,
+                          const UploadPartRequest &request);
+  virtual void uploadComplete(const std::string &uploadSessionId,
+                              const UploadCompleteRequest &request);
 
 private:
   ArkiveHttpClient &client_;

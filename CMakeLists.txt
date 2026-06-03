@@ -164,13 +164,20 @@ target_link_libraries(arkive-sync PRIVATE
 enable_testing()
 
 add_executable(arkive-sync-tests
+    src/api/ArkiveApi.cpp
+    src/api/ArkiveHttpClient.cpp
+    src/api/HttpError.cpp
     src/db/Sqlite.cpp
+    src/fs/ArkiveFileReader.cpp
+    src/fs/FileEncryptor.cpp
     src/platform/AppDataPaths.cpp
     tests/path_codec_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
     tests/sync_service_test.cpp
+    tests/upload_job_runner_test.cpp
     tests/upload_planner_test.cpp
+    tests/upload_service_test.cpp
     tests/vault_service_test.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
@@ -178,6 +185,7 @@ add_executable(arkive-sync-tests
     src/helpers/Base64.cpp
     src/helpers/Hex.cpp
     src/helpers/LocalPathProtector.cpp
+    src/helpers/Mime.cpp
     src/helpers/PathCodec.cpp
     src/fs/FileHasher.cpp
     src/fs/FileScanner.cpp
@@ -185,14 +193,21 @@ add_executable(arkive-sync-tests
     src/repo/SyncRepo.cpp
     src/repo/UserRepo.cpp
     src/service/SyncService.cpp
+    src/service/UploadJobRunner.cpp
+    src/service/UploadService.cpp
     src/service/VaultService.cpp
+    src/upload/MultipartUploader.cpp
     src/upload/UploadPlanner.cpp
+    src/upload/UploadFinalizer.cpp
+    src/upload/UploadPolicy.cpp
 )
 
 target_link_libraries(arkive-sync-tests PRIVATE
     arkive_crypto_native
     Catch2::Catch2WithMain
+    nlohmann_json::nlohmann_json
     spdlog::spdlog
+    CURL::libcurl
     SQLite3::SQLite3
 )
 

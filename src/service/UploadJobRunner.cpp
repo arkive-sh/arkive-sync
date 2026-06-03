@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 UploadJobRunner::UploadJobRunner(SyncRepo &syncRepo,
-                                 UploadService &uploadService,
+                                 IUploadService &uploadService,
                                  RustCrypto &crypto)
     : syncRepo_(syncRepo), uploadService_(uploadService), crypto_(crypto) {}
 
@@ -43,6 +43,6 @@ void UploadJobRunner::run(const TransferJob &job) {
     }
   }
 
-  uploadService_.uploadFile(absolutePath, *entry);
-  syncRepo_.markEntrySynced(job.entryId);
+  const UploadFileResponse uploaded = uploadService_.uploadFile(absolutePath, *entry);
+  syncRepo_.markEntryUploaded(job.entryId, uploaded.fileId);
 }

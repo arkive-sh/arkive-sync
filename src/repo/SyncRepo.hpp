@@ -51,6 +51,7 @@ public:
                             const std::vector<std::string> &presentPaths) const;
 
   void markEntrySynced(const std::string &entryId);
+  void markEntryUploaded(const std::string &entryId, const std::string &remoteId);
 
 private:
   sqlite3 *db_;
