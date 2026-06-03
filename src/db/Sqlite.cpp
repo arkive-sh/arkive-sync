@@ -24,7 +24,7 @@ constexpr std::array<MigrationStep, 4> kMigrations{{
 }};
 
 std::filesystem::path migrationsDir() {
-  return std::filesystem::path(ARKIVE_SYNC_SOURCE_DIR) / "db" / "migrations";
+  return std::filesystem::path(ARKIVE_SYNC_SOURCE_DIR) / "migrations";
 }
 
 std::string readTextFile(const std::filesystem::path &path) {
@@ -95,7 +95,8 @@ void Database::migrateSchema() {
       continue;
     }
 
-    const std::filesystem::path migrationPath = migrationsDir() / migration.filename;
+    const std::filesystem::path migrationPath =
+        migrationsDir() / migration.filename;
     const std::string migrationSql = readTextFile(migrationPath);
 
     spdlog::info("Applying database migration {} from {}", migration.version,
