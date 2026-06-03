@@ -6,6 +6,61 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(ARKIVE_CRYPTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/arkive-crypto")
+set(ARKIVE_CRYPTO_FFI_MANIFEST
+    "${ARKIVE_CRYPTO_DIR}/crates/arkive_crypto_ffi/Cargo.toml"
+)
+set(ARKIVE_CRYPTO_TARGET_DIR "${CMAKE_BINARY_DIR}/arkive-crypto-target")
+
+if(NOT EXISTS "${ARKIVE_CRYPTO_DIR}/Cargo.toml")
+    message(FATAL_ERROR
+        "arkive-crypto source is missing. Run `git submodule update --init --recursive`."
+    )
+endif()
+
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+
+if(WIN32 AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(ARKIVE_CRYPTO_STATIC_LIB
+        "${ARKIVE_CRYPTO_TARGET_DIR}/release/arkive_crypto.lib"
+    )
+else()
+    set(ARKIVE_CRYPTO_STATIC_LIB
+        "${ARKIVE_CRYPTO_TARGET_DIR}/release/libarkive_crypto.a"
+    )
+endif()
+
+file(GLOB_RECURSE ARKIVE_CRYPTO_SOURCES CONFIGURE_DEPENDS
+    "${ARKIVE_CRYPTO_DIR}/Cargo.toml"
+    "${ARKIVE_CRYPTO_DIR}/Cargo.lock"
+    "${ARKIVE_CRYPTO_DIR}/include/*.h"
+    "${ARKIVE_CRYPTO_DIR}/crates/*/Cargo.toml"
+    "${ARKIVE_CRYPTO_DIR}/crates/*/src/*.rs"
+)
+
+add_custom_command(
+    OUTPUT "${ARKIVE_CRYPTO_STATIC_LIB}"
+    COMMAND
+        "${CMAKE_COMMAND}" -E env
+        "CARGO_TARGET_DIR=${ARKIVE_CRYPTO_TARGET_DIR}"
+        "${CARGO_EXECUTABLE}" build
+        --manifest-path "${ARKIVE_CRYPTO_FFI_MANIFEST}"
+        --release
+    WORKING_DIRECTORY "${ARKIVE_CRYPTO_DIR}"
+    DEPENDS ${ARKIVE_CRYPTO_SOURCES}
+    COMMENT "Building arkive-crypto native library"
+    VERBATIM
+)
+
+add_custom_target(arkive-crypto-build
+    DEPENDS "${ARKIVE_CRYPTO_STATIC_LIB}"
+)
+
+add_library(arkive_crypto_native STATIC IMPORTED GLOBAL)
+set_target_properties(arkive_crypto_native PROPERTIES
+    IMPORTED_LOCATION "${ARKIVE_CRYPTO_STATIC_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${ARKIVE_CRYPTO_DIR}/include"
+)
+add_dependencies(arkive_crypto_native arkive-crypto-build)
 
 include(FetchContent)
 
@@ -84,11 +139,11 @@ target_include_directories(arkive-sync PRIVATE
 )
 
 target_link_libraries(arkive-sync PRIVATE
+    arkive_crypto_native
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     CURL::libcurl
     SQLite3::SQLite3
-    "${ARKIVE_CRYPTO_DIR}/lib/libarkive_crypto.a"
 )
 
 enable_testing()

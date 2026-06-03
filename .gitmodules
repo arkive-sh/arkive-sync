@@ -1,0 +1,3 @@
+[submodule "third_party/arkive-crypto"]
+	path = third_party/arkive-crypto
+	url = git@github.com:arkive-sh/arkive-crypto.git
