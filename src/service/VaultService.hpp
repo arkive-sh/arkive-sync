@@ -10,6 +10,8 @@
 class VaultService {
 public:
   VaultService(UserRepo &userRepo, RustCrypto &crypto);
+  VaultService(UserRepo &userRepo, RustCrypto &crypto,
+               std::unique_ptr<SecureStorage> secureStorage);
   ~VaultService();
 
   VaultService(const VaultService &) = delete;

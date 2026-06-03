@@ -17,7 +17,8 @@ base_url,
 email,
 vault_salt,
 encrypted_master_key,
-vault_session_key_id
+vault_session_key_id,
+vault_session_blob
 FROM account
 WHERE id = 1;
   )sql";
@@ -50,6 +51,8 @@ WHERE id = 1;
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 3));
   const char *vaultSessionKeyId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 4));
+  const char *vaultSessionBlob =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 5));
 
   if (baseUrl == nullptr) {
     throw std::invalid_argument("account.base_url was NULL");
@@ -68,6 +71,10 @@ WHERE id = 1;
           vaultSessionKeyId != nullptr
               ? std::optional<std::string>(vaultSessionKeyId)
               : std::nullopt,
+      .vaultSessionBlob =
+          vaultSessionBlob != nullptr
+              ? std::optional<std::string>(vaultSessionBlob)
+              : std::nullopt,
   };
 }
 
@@ -80,10 +87,12 @@ INSERT INTO account (
   vault_salt,
   encrypted_master_key,
   vault_session_key_id,
+  vault_session_blob,
   created_at,
   updated_at
 ) VALUES (
   1,
+  ?,
   ?,
   ?,
   ?,
@@ -98,6 +107,7 @@ ON CONFLICT(id) DO UPDATE SET
   vault_salt = excluded.vault_salt,
   encrypted_master_key = excluded.encrypted_master_key,
   vault_session_key_id = excluded.vault_session_key_id,
+  vault_session_blob = excluded.vault_session_blob,
   updated_at = CURRENT_TIMESTAMP;
   )sql";
 
@@ -115,6 +125,62 @@ ON CONFLICT(id) DO UPDATE SET
   bindOptionalText(db_, stmt.get(), 3, account.vaultSalt);
   bindOptionalText(db_, stmt.get(), 4, account.encryptedMasterKey);
   bindOptionalText(db_, stmt.get(), 5, account.vaultSessionKeyId);
+  bindOptionalText(db_, stmt.get(), 6, account.vaultSessionBlob);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void UserRepo::saveVaultSession(const std::string &sessionKeyId,
+                                const std::string &sessionBlob) const {
+  static constexpr const char *saveVaultSessionSql = R"sql(
+UPDATE account
+SET
+  vault_session_key_id = ?,
+  vault_session_blob = ?,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = 1;
+  )sql";
+
+  sqlite3_stmt *raw_stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, saveVaultSessionSql, -1, &raw_stmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(raw_stmt);
+  bindText(db_, stmt.get(), 1, sessionKeyId);
+  bindText(db_, stmt.get(), 2, sessionBlob);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void UserRepo::clearVaultSession() const {
+  static constexpr const char *clearVaultSessionSql = R"sql(
+UPDATE account
+SET
+  vault_session_key_id = NULL,
+  vault_session_blob = NULL,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = 1;
+  )sql";
+
+  sqlite3_stmt *raw_stmt = nullptr;
+  if (sqlite3_prepare_v2(db_, clearVaultSessionSql, -1, &raw_stmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(raw_stmt);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -131,6 +197,7 @@ SET
   vault_salt = NULL,
   encrypted_master_key = NULL,
   vault_session_key_id = NULL,
+  vault_session_blob = NULL,
   updated_at = CURRENT_TIMESTAMP
 WHERE id = 1;
   )sql";

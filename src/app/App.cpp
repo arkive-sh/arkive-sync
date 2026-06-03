@@ -137,6 +137,7 @@ int App::run(int argc, char *argv[]) {
         .vaultSalt = std::nullopt,
         .encryptedMasterKey = std::nullopt,
         .vaultSessionKeyId = std::nullopt,
+        .vaultSessionBlob = std::nullopt,
     };
 
     if (const auto existingAccount = userRepo_.getAccount();
@@ -146,6 +147,7 @@ int App::run(int argc, char *argv[]) {
         account.vaultSalt = existingAccount->vaultSalt;
         account.encryptedMasterKey = existingAccount->encryptedMasterKey;
         account.vaultSessionKeyId = existingAccount->vaultSessionKeyId;
+        account.vaultSessionBlob = existingAccount->vaultSessionBlob;
       } else {
         vaultService_.clearPersistedSession();
       }

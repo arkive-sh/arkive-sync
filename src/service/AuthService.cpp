@@ -64,6 +64,8 @@ bool AuthService::login(const std::string &email, const std::string &password) {
           response.encryptedMasterKey.empty()
               ? std::nullopt
               : std::optional<std::string>(response.encryptedMasterKey),
+      .vaultSessionKeyId = account->vaultSessionKeyId,
+      .vaultSessionBlob = account->vaultSessionBlob,
   });
 
   return true;
@@ -90,6 +92,8 @@ void AuthService::refreshVaultMaterial(const std::string &password) {
           response.encryptedMasterKey.empty()
               ? std::nullopt
               : std::optional<std::string>(response.encryptedMasterKey),
+      .vaultSessionKeyId = account->vaultSessionKeyId,
+      .vaultSessionBlob = account->vaultSessionBlob,
   });
 }
 

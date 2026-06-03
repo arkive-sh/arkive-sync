@@ -10,6 +10,7 @@ struct AccountRecord {
   std::optional<std::string> vaultSalt;
   std::optional<std::string> encryptedMasterKey;
   std::optional<std::string> vaultSessionKeyId;
+  std::optional<std::string> vaultSessionBlob;
 };
 
 inline bool hasPersistedVaultMaterial(const AccountRecord &account) {
@@ -23,6 +24,9 @@ public:
 
   std::optional<AccountRecord> getAccount() const;
   void upsertAccount(const AccountRecord &account) const;
+  void saveVaultSession(const std::string &sessionKeyId,
+                        const std::string &sessionBlob) const;
+  void clearVaultSession() const;
   void clearAccount() const;
 
 private:

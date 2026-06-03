@@ -20,8 +20,12 @@ std::string makeVaultSessionKeyId(RustCrypto &crypto, const AccountRecord &accou
 } // namespace
 
 VaultService::VaultService(UserRepo &userRepo, RustCrypto &crypto)
+    : VaultService(userRepo, crypto, SecureStorage::create()) {}
+
+VaultService::VaultService(UserRepo &userRepo, RustCrypto &crypto,
+                           std::unique_ptr<SecureStorage> secureStorage)
     : userRepo_(userRepo), crypto_(crypto),
-      secureStorage_(SecureStorage::create()) {}
+      secureStorage_(std::move(secureStorage)) {}
 
 VaultService::~VaultService() { lock(); }
 
@@ -84,22 +88,39 @@ bool VaultService::restoreSession() {
 
   const auto account = userRepo_.getAccount();
   if (!account.has_value() || !account->vaultSessionKeyId.has_value() ||
-      account->vaultSessionKeyId->empty()) {
+      account->vaultSessionKeyId->empty() ||
+      !account->vaultSessionBlob.has_value() ||
+      account->vaultSessionBlob->empty()) {
     return false;
   }
 
-  const auto restored =
+  const auto localWrappingKey =
       secureStorage_->loadSecret(kVaultSessionService, *account->vaultSessionKeyId);
-  if (!restored.has_value() || restored->empty()) {
-    AccountRecord updated = *account;
-    updated.vaultSessionKeyId = std::nullopt;
-    userRepo_.upsertAccount(updated);
+  if (!localWrappingKey.has_value() || localWrappingKey->empty()) {
+    userRepo_.clearVaultSession();
     return false;
   }
 
-  lock();
-  masterKey_ = *restored;
-  return true;
+  std::vector<uint8_t> sessionBlob = decodeBase64(*account->vaultSessionBlob);
+  std::vector<uint8_t> aad = ArkiveAad::toBytes(ArkiveAad::kSessionMasterKey);
+  std::vector<uint8_t> restoredMasterKey;
+
+  try {
+    restoredMasterKey = crypto_.unwrapMasterKey(sessionBlob, *localWrappingKey, aad);
+    lock();
+    masterKey_ = restoredMasterKey;
+    crypto_.zeroize(restoredMasterKey);
+    crypto_.zeroize(sessionBlob);
+    return true;
+  } catch (...) {
+    if (!restoredMasterKey.empty()) {
+      crypto_.zeroize(restoredMasterKey);
+    }
+    if (!sessionBlob.empty()) {
+      crypto_.zeroize(sessionBlob);
+    }
+    throw;
+  }
 }
 
 void VaultService::clearPersistedSession() {
@@ -110,6 +131,7 @@ void VaultService::clearPersistedSession() {
   }
 
   secureStorage_->deleteSecret(kVaultSessionService, *account->vaultSessionKeyId);
+  userRepo_.clearVaultSession();
 }
 
 void VaultService::lock() {
@@ -140,15 +162,38 @@ void VaultService::persistSession() {
   }
 
   const std::string sessionKeyId = makeVaultSessionKeyId(crypto_, *account);
+  std::vector<uint8_t> localWrappingKey;
+  std::vector<uint8_t> wrappedSessionBlob;
 
-  if (account->vaultSessionKeyId.has_value() &&
-      *account->vaultSessionKeyId != sessionKeyId) {
-    secureStorage_->deleteSecret(kVaultSessionService, *account->vaultSessionKeyId);
+  try {
+    localWrappingKey = crypto_.generateMasterKey();
+    wrappedSessionBlob = crypto_.wrapMasterKey(
+        masterKey_, localWrappingKey,
+        ArkiveAad::toBytes(ArkiveAad::kSessionMasterKey));
+
+    if (account->vaultSessionKeyId.has_value() &&
+        *account->vaultSessionKeyId != sessionKeyId) {
+      secureStorage_->deleteSecret(kVaultSessionService,
+                                   *account->vaultSessionKeyId);
+    }
+
+    secureStorage_->storeSecret(kVaultSessionService, sessionKeyId,
+                                localWrappingKey);
+    userRepo_.saveVaultSession(sessionKeyId, encodeBase64(wrappedSessionBlob));
+  } catch (...) {
+    if (!localWrappingKey.empty()) {
+      crypto_.zeroize(localWrappingKey);
+    }
+    if (!wrappedSessionBlob.empty()) {
+      crypto_.zeroize(wrappedSessionBlob);
+    }
+    throw;
   }
 
-  secureStorage_->storeSecret(kVaultSessionService, sessionKeyId, masterKey_);
-
-  AccountRecord updated = *account;
-  updated.vaultSessionKeyId = sessionKeyId;
-  userRepo_.upsertAccount(updated);
+  if (!localWrappingKey.empty()) {
+    crypto_.zeroize(localWrappingKey);
+  }
+  if (!wrappedSessionBlob.empty()) {
+    crypto_.zeroize(wrappedSessionBlob);
+  }
 }
