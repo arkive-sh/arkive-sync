@@ -70,4 +70,9 @@ std::string makeMasterKeyPassword(const std::string &userId) {
   return appendScopedAad(kMasterKeyPasswordPrefix, {userId});
 }
 
+std::string makeLocalPath(const std::string &scopeId,
+                          const std::string &pathHash) {
+  return appendScopedAad(kLocalPathPrefix, {scopeId, pathHash});
+}
+
 } // namespace ArkiveAad

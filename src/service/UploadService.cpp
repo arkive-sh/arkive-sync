@@ -2,6 +2,7 @@
 
 #include "crypto/Aad.hpp"
 #include "fs/FileHasher.hpp"
+#include "helpers/Base64.hpp"
 #include "helpers/Mime.hpp"
 #include <atomic>
 #include <filesystem>
@@ -15,44 +16,6 @@
 namespace {
 
 constexpr uint64_t kMultipartUploadPartSize = 8ull * 1024ull * 1024ull;
-
-constexpr char kBase64Alphabet[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string encodeBase64(const std::vector<uint8_t> &bytes) {
-  std::string encoded;
-  encoded.reserve(((bytes.size() + 2) / 3) * 4);
-
-  std::size_t index = 0;
-  while (index + 3 <= bytes.size()) {
-    const uint32_t block = (static_cast<uint32_t>(bytes[index]) << 16) |
-                           (static_cast<uint32_t>(bytes[index + 1]) << 8) |
-                           static_cast<uint32_t>(bytes[index + 2]);
-    encoded.push_back(kBase64Alphabet[(block >> 18) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[(block >> 12) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[(block >> 6) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[block & 0x3F]);
-    index += 3;
-  }
-
-  const std::size_t remainder = bytes.size() - index;
-  if (remainder == 1) {
-    const uint32_t block = static_cast<uint32_t>(bytes[index]) << 16;
-    encoded.push_back(kBase64Alphabet[(block >> 18) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[(block >> 12) & 0x3F]);
-    encoded.push_back('=');
-    encoded.push_back('=');
-  } else if (remainder == 2) {
-    const uint32_t block = (static_cast<uint32_t>(bytes[index]) << 16) |
-                           (static_cast<uint32_t>(bytes[index + 1]) << 8);
-    encoded.push_back(kBase64Alphabet[(block >> 18) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[(block >> 12) & 0x3F]);
-    encoded.push_back(kBase64Alphabet[(block >> 6) & 0x3F]);
-    encoded.push_back('=');
-  }
-
-  return encoded;
-}
 
 std::vector<std::byte> toByteVector(const std::vector<uint8_t> &bytes) {
   std::vector<std::byte> converted;

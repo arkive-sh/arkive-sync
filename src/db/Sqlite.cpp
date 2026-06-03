@@ -2,6 +2,8 @@
 #include "db/SqliteHelpers.hpp"
 #include "platform/AppDataPaths.hpp"
 #include <filesystem>
+#include <fstream>
+#include <array>
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
 #include <stdexcept>
@@ -9,26 +11,55 @@
 
 namespace {
 
-bool tableHasColumn(sqlite3 *db, const char *tableName, const char *columnName) {
-  const std::string sql = "PRAGMA table_info(" + std::string(tableName) + ");";
+struct MigrationStep {
+  int version;
+  const char *filename;
+};
 
+constexpr std::array<MigrationStep, 4> kMigrations{{
+    {1, "001_initial_schema.sql"},
+    {2, "002_account_vault_session.sql"},
+    {3, "003_entries_local_path_hash.sql"},
+    {4, "004_sync_roots_local_path_hash.sql"},
+}};
+
+std::filesystem::path migrationsDir() {
+  return std::filesystem::path(ARKIVE_SYNC_SOURCE_DIR) / "db" / "migrations";
+}
+
+std::string readTextFile(const std::filesystem::path &path) {
+  std::ifstream stream(path);
+  if (!stream.is_open()) {
+    throw std::runtime_error("Failed to open migration file: " + path.string());
+  }
+
+  return std::string(std::istreambuf_iterator<char>(stream),
+                     std::istreambuf_iterator<char>());
+}
+
+int getUserVersion(sqlite3 *db) {
   sqlite3_stmt *stmt = nullptr;
-  const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+  const int rc =
+      sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nullptr);
   if (rc != SQLITE_OK) {
-    throw std::runtime_error("Failed to prepare table_info query: " +
+    throw std::runtime_error("Failed to prepare user_version query: " +
                              std::string(sqlite3_errmsg(db)));
   }
 
   StmtUniquePtr ownedStmt(stmt);
-  while (sqlite3_step(ownedStmt.get()) == SQLITE_ROW) {
-    const char *name =
-        reinterpret_cast<const char *>(sqlite3_column_text(ownedStmt.get(), 1));
-    if (name != nullptr && std::string(name) == columnName) {
-      return true;
-    }
+  const int stepRc = sqlite3_step(ownedStmt.get());
+  if (stepRc != SQLITE_ROW) {
+    throw std::runtime_error("Failed to read user_version: " +
+                             std::string(sqlite3_errmsg(db)));
   }
 
-  return false;
+  return sqlite3_column_int(ownedStmt.get(), 0);
+}
+
+void setUserVersion(sqlite3 *db, int version) {
+  const std::string sql =
+      "PRAGMA user_version = " + std::to_string(version) + ";";
+  execOrThrow(db, sql.c_str());
 }
 
 } // namespace
@@ -51,107 +82,35 @@ void Database::initDb() {
     throw std::runtime_error("Failed to open database: " + error_message);
   }
 
-  createSchema();
+  execOrThrow(db, "PRAGMA journal_mode=WAL;");
+  migrateSchema();
   verifySchema();
 }
 
-void Database::createSchema() {
-  static constexpr const char *schema_sql = R"sql(
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+void Database::migrateSchema() {
+  int currentVersion = getUserVersion(db);
 
-    CREATE TABLE IF NOT EXISTS account (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      base_url TEXT NOT NULL DEFAULT 'http://localhost:8080',
-      email TEXT,
-      vault_salt TEXT,
-      encrypted_master_key TEXT,
-      vault_session_key_id TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+  for (const auto &migration : kMigrations) {
+    if (currentVersion >= migration.version) {
+      continue;
+    }
 
-    CREATE TABLE IF NOT EXISTS sync_roots (
-      id TEXT PRIMARY KEY,
-      local_path TEXT NOT NULL UNIQUE,
-      folder_id TEXT,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+    const std::filesystem::path migrationPath = migrationsDir() / migration.filename;
+    const std::string migrationSql = readTextFile(migrationPath);
 
-    CREATE TABLE IF NOT EXISTS entries (
-      id TEXT PRIMARY KEY,
-      remote_id TEXT,
-      sync_root_id TEXT NOT NULL,
-      remote_type TEXT NOT NULL,
-      local_path TEXT NOT NULL,
-      is_directory INTEGER NOT NULL DEFAULT 0,
-      parent_folder_id TEXT,
-      encrypted_name TEXT,
-      local_size INTEGER,
-      local_mtime TEXT,
-      local_hash TEXT,
-      remote_updated_at TEXT,
-      sync_state TEXT NOT NULL,
-      last_synced_at TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS transfer_queue (
-      id TEXT PRIMARY KEY,
-      entry_id TEXT,
-      direction TEXT NOT NULL,
-      status TEXT NOT NULL,
-      local_path TEXT NOT NULL,
-      remote_id TEXT,
-      folder_id TEXT,
-      bytes_total INTEGER,
-      bytes_done INTEGER NOT NULL DEFAULT 0,
-      error_message TEXT,
-      retry_count INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_transfer_queue_status ON transfer_queue(status);
-  )sql";
-
-  char *error_message = nullptr;
-  const int rc = sqlite3_exec(db, schema_sql, nullptr, nullptr, &error_message);
-  if (rc != SQLITE_OK) {
-    const std::string message =
-        error_message != nullptr ? error_message : "unknown schema error";
-    sqlite3_free(error_message);
-    throw std::runtime_error("Failed to create schema: " + message);
+    spdlog::info("Applying database migration {} from {}", migration.version,
+                 migration.filename);
+    execOrThrow(db, "BEGIN IMMEDIATE;");
+    try {
+      execOrThrow(db, migrationSql.c_str());
+      setUserVersion(db, migration.version);
+      execOrThrow(db, "COMMIT;");
+      currentVersion = migration.version;
+    } catch (...) {
+      sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+      throw;
+    }
   }
-
-  execOrThrow(
-      db,
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path "
-      "ON entries(sync_root_id, local_path);");
-  if (!tableHasColumn(db, "account", "vault_session_key_id")) {
-    execOrThrow(db,
-                "ALTER TABLE account ADD COLUMN vault_session_key_id TEXT;");
-  }
-  execOrThrow(db,
-              "INSERT INTO account (id, base_url) VALUES (1, 'http://localhost:8080') "
-              "ON CONFLICT(id) DO NOTHING;");
-  execOrThrow(db,
-              "CREATE INDEX IF NOT EXISTS idx_entries_remote_id ON "
-              "entries(remote_id);");
-  execOrThrow(db,
-              "CREATE INDEX IF NOT EXISTS idx_entries_sync_state ON "
-              "entries(sync_state);");
-  execOrThrow(db, "DROP INDEX IF EXISTS idx_entries_local_path;");
-  execOrThrow(
-      db,
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_transfer_active_upload "
-      "ON transfer_queue(entry_id, direction) "
-      "WHERE direction = 'upload' "
-      "AND status IN ('queued', 'running');");
 }
 
 void Database::verifySchema() {

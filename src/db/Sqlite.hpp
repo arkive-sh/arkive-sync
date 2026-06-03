@@ -20,7 +20,7 @@ public:
 
 private:
   void initDb();
-  void createSchema();
+  void migrateSchema();
   void verifySchema();
   void close();
 };

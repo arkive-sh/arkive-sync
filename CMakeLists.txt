@@ -94,7 +94,10 @@ add_executable(arkive-sync
     src/api/ArkiveHttpClient.cpp
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
+    src/helpers/Base64.cpp
     src/helpers/Helpers.cpp
+    src/helpers/Hex.cpp
+    src/helpers/LocalPathProtector.cpp
     src/helpers/Mime.cpp
     src/helpers/PathCodec.cpp
     src/platform/AppDataPaths.cpp
@@ -138,6 +141,10 @@ endif()
 target_include_directories(arkive-sync PRIVATE
     src
     "${ARKIVE_CRYPTO_DIR}/include"
+)
+
+target_compile_definitions(arkive-sync PRIVATE
+    ARKIVE_SYNC_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(arkive-sync PRIVATE

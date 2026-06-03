@@ -1,60 +1,11 @@
 #include "service/VaultService.hpp"
 #include "crypto/Aad.hpp"
-#include <cctype>
+#include "helpers/Base64.hpp"
 #include <stdexcept>
 
 namespace {
 
 constexpr char kVaultSessionService[] = "arkive-sync.vault-session";
-
-int decodeBase64Char(char ch) {
-  if (ch >= 'A' && ch <= 'Z') {
-    return ch - 'A';
-  }
-  if (ch >= 'a' && ch <= 'z') {
-    return ch - 'a' + 26;
-  }
-  if (ch >= '0' && ch <= '9') {
-    return ch - '0' + 52;
-  }
-  if (ch == '+') {
-    return 62;
-  }
-  if (ch == '/') {
-    return 63;
-  }
-  return -1;
-}
-
-std::vector<uint8_t> decodeBase64(const std::string &input) {
-  std::vector<uint8_t> output;
-  int val = 0;
-  int valb = -8;
-
-  for (unsigned char rawCh : input) {
-    const char ch = static_cast<char>(rawCh);
-    if (std::isspace(rawCh)) {
-      continue;
-    }
-    if (ch == '=') {
-      break;
-    }
-
-    const int decoded = decodeBase64Char(ch);
-    if (decoded < 0) {
-      throw std::invalid_argument("Invalid base64 input");
-    }
-
-    val = (val << 6) + decoded;
-    valb += 6;
-    if (valb >= 0) {
-      output.push_back(static_cast<uint8_t>((val >> valb) & 0xFF));
-      valb -= 8;
-    }
-  }
-
-  return output;
-}
 
 std::string makeVaultSessionKeyId(RustCrypto &crypto, const AccountRecord &account) {
   if (!account.email.has_value() || account.email->empty()) {

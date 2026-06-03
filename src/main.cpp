@@ -3,6 +3,7 @@
 #include "app/App.hpp"
 #include "db/Sqlite.hpp"
 #include "helpers/Helpers.hpp"
+#include "helpers/LocalPathProtector.hpp"
 #include "platform/AppDataPaths.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
@@ -22,7 +23,10 @@ int main(int argc, char *argv[]) {
     Database db;
     // Repos
     UserRepo userRepo(db.getDb());
-    SyncRepo syncRepo(db.getDb());
+    RustCrypto crypto;
+    VaultService vaultService(userRepo, crypto);
+    LocalPathProtector localPathProtector(crypto, vaultService);
+    SyncRepo syncRepo(db.getDb(), localPathProtector);
     QueueRepo queueRepo(db.getDb());
     // End Repos
 
@@ -30,8 +34,6 @@ int main(int argc, char *argv[]) {
     ArkiveHttpClient client(baseUrl, cookieJarPath().string());
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
-    RustCrypto crypto;
-    VaultService vaultService(userRepo, crypto);
     FileEncryptor fileEncryptor(crypto, vaultService);
     UploadService uploadService(api, fileEncryptor);
     QueueService queueService(queueRepo, syncRepo, uploadService, api);

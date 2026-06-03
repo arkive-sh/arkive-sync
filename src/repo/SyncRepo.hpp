@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+class LocalPathProtector;
+
 struct SyncRootRecord {
   std::string id;
   std::string localPath;
@@ -31,7 +33,7 @@ struct EntryRecord {
 
 class SyncRepo {
 public:
-  explicit SyncRepo(sqlite3 *db);
+  SyncRepo(sqlite3 *db, LocalPathProtector &pathProtector);
 
   std::optional<SyncRootRecord>
   getSyncRootById(const std::string &syncRootId) const;
@@ -52,4 +54,5 @@ public:
 
 private:
   sqlite3 *db_;
+  LocalPathProtector &pathProtector_;
 };

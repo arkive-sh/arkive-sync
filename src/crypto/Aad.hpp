@@ -28,6 +28,10 @@ inline constexpr std::string_view kMasterKeyRecoveryPrefix =
     "arkive:master-key:recovery:v1:";
 inline constexpr std::string_view kMasterKeyPasswordPrefix =
     "arkive:master-key:password:v1:";
+inline constexpr std::string_view kLocalPathPrefix = "arkive:local-path:v1:";
+inline constexpr std::string_view kLocalPathKey = "arkive:local-path-key:v1";
+inline constexpr std::string_view kLocalPathHashKey =
+    "arkive:local-path-hash:v1";
 
 std::vector<uint8_t> toBytes(std::string_view value);
 
@@ -45,5 +49,7 @@ std::string makeShareFileKey(const std::string &fileId,
                              const std::string &token);
 std::string makeMasterKeyRecovery(const std::string &userId);
 std::string makeMasterKeyPassword(const std::string &userId);
+std::string makeLocalPath(const std::string &scopeId,
+                          const std::string &pathHash);
 
 } // namespace ArkiveAad
