@@ -8,10 +8,12 @@
 
 namespace {
 
-bool isUploadQueueLimitError(const std::exception &ex) {
-  const auto *httpError = dynamic_cast<const HttpError *>(&ex);
-  return httpError != nullptr &&
-         httpError->apiError() == "upload queue limit reached";
+bool isRetryableHttpError(const HttpError &error) {
+  return error.statusCode == 429 || error.statusCode >= 500;
+}
+
+bool isUploadQueueLimitError(const HttpError &error) {
+  return error.apiError() == "upload queue limit reached";
 }
 
 } // namespace
@@ -41,13 +43,24 @@ void QueueService::processQueuedUploads() {
       spdlog::info("Uploaded queued file for entry: {}", queuedJob->entryId);
 
       queueRepo_.markDone(queuedJob->id);
-    } catch (const std::exception &ex) {
-      queueRepo_.markFailed(queuedJob->id, ex.what());
-      if (isUploadQueueLimitError(ex)) {
+    } catch (const HttpError &error) {
+      if (isUploadQueueLimitError(error)) {
+        queueRepo_.retryJob(queuedJob->id);
         spdlog::warn(
             "Stopped queue processing because the server upload queue limit was reached");
         break;
       }
+
+      if (isRetryableHttpError(error)) {
+        queueRepo_.retryJob(queuedJob->id);
+        spdlog::warn("Requeued upload job {} after retryable HTTP {}",
+                     queuedJob->id, error.statusCode);
+        break;
+      }
+
+      queueRepo_.markFailed(queuedJob->id, error.what());
+    } catch (const std::exception &ex) {
+      queueRepo_.markFailed(queuedJob->id, ex.what());
     } catch (...) {
       queueRepo_.markFailed(queuedJob->id, "Unknown queue processing error");
     }

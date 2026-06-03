@@ -320,6 +320,35 @@ WHERE id = ?;
   }
 }
 
+void QueueRepo::retryJob(const std::string &jobId) {
+  static constexpr const char *retryJobSql = R"sql(
+UPDATE transfer_queue
+SET
+  status = 'queued',
+  bytes_done = 0,
+  error_message = NULL,
+  retry_count = retry_count + 1,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, retryJobSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, jobId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
 void QueueRepo::incrementProgress(const std::string &jobId,
                                   uint64_t bytesDone) {
   static constexpr const char *incrementProgressSql = R"sql(

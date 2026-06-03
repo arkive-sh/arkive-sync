@@ -42,6 +42,7 @@ public:
   void markDone(const std::string &jobId);
 
   void markFailed(const std::string &jobId, const std::string &errorMessage);
+  void retryJob(const std::string &jobId);
 
   void incrementProgress(const std::string &jobId, uint64_t bytesDone);
 
