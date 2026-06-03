@@ -1,5 +1,6 @@
 #include "service/UploadService.hpp"
 
+#include "upload/UploadPolicy.hpp"
 #include "upload/UploadPlanner.hpp"
 #include <stdexcept>
 
@@ -20,11 +21,8 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   const uint64_t originalSize = static_cast<uint64_t>(*entry.localSize);
   const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
   const UploadLimitsResponse limits = api_.uploadLimits();
-  const uint64_t partConcurrency = std::max<uint64_t>(
-      1,
-      std::min<uint64_t>(uploadPlan.uploadPartCount,
-                         static_cast<uint64_t>(
-                             std::max(1, limits.partConcurrency))));
+  const uint64_t partConcurrency = ArkiveUploadPolicy::resolvePartConcurrency(
+      uploadPlan.uploadPartCount, limits.partConcurrency);
 
   const StartUploadResponse started = api_.startUpload(StartUploadRequest{
       .originalSize = static_cast<int64_t>(uploadPlan.originalSize),

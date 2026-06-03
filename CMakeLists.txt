@@ -112,6 +112,7 @@ add_executable(arkive-sync
     src/service/UploadJobRunner.cpp
     src/service/UploadService.cpp
     src/service/VaultService.cpp
+    src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
     src/upload/UploadFinalizer.cpp
@@ -163,17 +164,38 @@ target_link_libraries(arkive-sync PRIVATE
 enable_testing()
 
 add_executable(arkive-sync-tests
-    tests/main_test.cpp
     tests/path_codec_test.cpp
+    tests/queue_repo_test.cpp
+    tests/secure_storage_stub.cpp
+    tests/sync_service_test.cpp
+    tests/upload_planner_test.cpp
+    tests/vault_service_test.cpp
+    src/crypto/Aad.cpp
+    src/crypto/RustCrypto.cpp
+    src/db/SqliteHelpers.cpp
+    src/helpers/Base64.cpp
+    src/helpers/Hex.cpp
+    src/helpers/LocalPathProtector.cpp
     src/helpers/PathCodec.cpp
+    src/fs/FileHasher.cpp
+    src/fs/FileScanner.cpp
+    src/repo/QueueRepo.cpp
+    src/repo/SyncRepo.cpp
+    src/repo/UserRepo.cpp
+    src/service/SyncService.cpp
+    src/service/VaultService.cpp
+    src/upload/UploadPlanner.cpp
 )
 
 target_link_libraries(arkive-sync-tests PRIVATE
+    arkive_crypto_native
     Catch2::Catch2WithMain
+    SQLite3::SQLite3
 )
 
 target_include_directories(arkive-sync-tests PRIVATE
     src
+    "${ARKIVE_CRYPTO_DIR}/include"
 )
 
 include(CTest)
