@@ -91,6 +91,7 @@ add_executable(arkive-sync
     src/main.cpp
     src/app/App.cpp
     src/api/ArkiveApi.cpp
+    src/api/HttpError.cpp
     src/api/ArkiveHttpClient.cpp
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
@@ -112,6 +113,8 @@ add_executable(arkive-sync
     src/service/UploadService.cpp
     src/service/VaultService.cpp
     src/upload/UploadPlanner.cpp
+    src/upload/MultipartUploader.cpp
+    src/upload/UploadFinalizer.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/fs/ArkiveFileReader.cpp

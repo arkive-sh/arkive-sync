@@ -1,26 +1,9 @@
 #pragma once
 
+#include "api/HttpError.hpp"
 #include <nlohmann/json.hpp>
-#include <stdexcept>
 #include <string>
 #include <vector>
-
-class HttpError : public std::runtime_error {
-public:
-  HttpError(long statusCode, std::string responseBody);
-
-  long statusCode() const noexcept;
-  const std::string &responseBody() const noexcept;
-  const std::string &apiError() const noexcept;
-
-private:
-  static std::string buildMessage(long statusCode,
-                                  const std::string &responseBody);
-
-  long statusCode_;
-  std::string responseBody_;
-  std::string apiError_;
-};
 
 class ArkiveHttpClient {
 public:

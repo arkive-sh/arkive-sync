@@ -3,6 +3,8 @@
 #include "api/ArkiveApi.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "repo/SyncRepo.hpp"
+#include "upload/MultipartUploader.hpp"
+#include "upload/UploadFinalizer.hpp"
 #include <filesystem>
 #include <string>
 
@@ -23,4 +25,6 @@ public:
 private:
   ArkiveApi &api_;
   FileEncryptor &fileEncryptor_;
+  MultipartUploader multipartUploader_;
+  UploadFinalizer uploadFinalizer_;
 };

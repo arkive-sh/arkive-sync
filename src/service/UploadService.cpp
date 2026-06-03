@@ -1,65 +1,12 @@
 #include "service/UploadService.hpp"
 
-#include "crypto/Aad.hpp"
-#include "fs/FileHasher.hpp"
-#include "helpers/Base64.hpp"
-#include "helpers/Mime.hpp"
 #include "upload/UploadPlanner.hpp"
-#include <atomic>
-#include <filesystem>
-#include <fstream>
-#include <mutex>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
-#include <thread>
-#include <vector>
-
-namespace {
-
-std::vector<std::byte> toByteVector(const std::vector<uint8_t> &bytes) {
-  std::vector<std::byte> converted;
-  converted.reserve(bytes.size());
-  for (const uint8_t byte : bytes) {
-    converted.push_back(static_cast<std::byte>(byte));
-  }
-  return converted;
-}
-
-void appendBytes(std::vector<uint8_t> &target,
-                 const std::vector<uint8_t> &source) {
-  target.insert(target.end(), source.begin(), source.end());
-}
-
-struct UploadManifestChunkEntry {
-  uint64_t chunkNo;
-  uint64_t plaintextSize;
-  uint64_t ciphertextSize;
-  std::string encryptedHash;
-};
-
-struct UploadWorkerPartResult {
-  std::vector<UploadManifestChunkEntry> chunks;
-  std::vector<uint8_t> combinedChunkHashes;
-};
-
-nlohmann::json buildMetadata(const std::filesystem::path &path,
-                             const EntryRecord &entry) {
-  const std::string mime = inferSafeMimeType(path);
-  return {
-      {"schema", "arkive.file.metadata"},
-      {"version", 1},
-      {"name", path.filename().string()},
-      {"mime", mime},
-      {"extension", path.has_extension() ? path.extension().string() : ""},
-      {"size", entry.localSize.value_or(0)},
-      {"preview", nullptr},
-  };
-}
-
-} // namespace
 
 UploadService::UploadService(ArkiveApi &api, FileEncryptor &fileEncryptor)
-    : api_(api), fileEncryptor_(fileEncryptor) {}
+    : api_(api), fileEncryptor_(fileEncryptor),
+      multipartUploader_(api, fileEncryptor),
+      uploadFinalizer_(api, fileEncryptor) {}
 
 UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
                                              const EntryRecord &entry) {
@@ -89,243 +36,48 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
       .folderId = entry.parentFolderId,
   });
 
-  std::vector<uint8_t> fileKey = fileEncryptor_.createFileKey();
-  std::vector<uint8_t> encryptedFileKey;
-  std::vector<uint8_t> encryptedMetadata;
-  std::vector<uint8_t> encryptedManifest;
-  std::vector<uint8_t> combinedChunkHashes;
-  std::vector<UploadWorkerPartResult> uploadedParts(
-      static_cast<std::size_t>(uploadPlan.uploadPartCount));
+  UploadArtifacts artifacts;
 
   try {
-    std::atomic<uint64_t> nextPartNumber{1};
-    std::mutex resultsMutex;
-    std::mutex errorMutex;
-    std::exception_ptr firstError;
-    std::atomic<bool> stopWorkers{false};
-
-    auto uploadWorker = [&]() {
-      while (!stopWorkers.load()) {
-        const uint64_t partNumber = nextPartNumber.fetch_add(1);
-        if (partNumber > uploadPlan.uploadPartCount) {
-          return;
-        }
-
-        std::vector<uint8_t> uploadBody;
-        UploadWorkerPartResult partResult;
-
-        try {
-          const uint64_t partStart =
-              (partNumber - 1) * uploadPlan.uploadPartSize;
-          const uint64_t partEnd =
-              std::min<uint64_t>(partStart + uploadPlan.uploadPartSize,
-                                 originalSize);
-          const uint64_t firstChunkNumber =
-              (partStart / uploadPlan.fileChunkSize) + 1;
-          std::ifstream stream(path, std::ios::binary);
-          if (!stream.is_open()) {
-            throw std::runtime_error("File cannot be opened");
-          }
-          stream.seekg(static_cast<std::streamoff>(partStart), std::ios::beg);
-          if (!stream.good()) {
-            throw std::runtime_error("Unable to seek to requested upload part");
-          }
-
-          // Desktop can use real threads here, but it still respects the
-          // server-declared partConcurrency window by only running that many
-          // upload workers per file at once.
-          for (uint64_t chunkStart = partStart, chunkNumber = firstChunkNumber;
-               chunkStart < partEnd;
-               chunkStart += uploadPlan.fileChunkSize, ++chunkNumber) {
-
-            const uint64_t chunkEnd =
-                std::min<uint64_t>(chunkStart + uploadPlan.fileChunkSize,
-                                   partEnd);
-
-            std::vector<uint8_t> plaintextChunk(
-                static_cast<std::size_t>(chunkEnd - chunkStart));
-            stream.read(reinterpret_cast<char *>(plaintextChunk.data()),
-                        static_cast<std::streamsize>(plaintextChunk.size()));
-
-            const std::streamsize bytesRead = stream.gcount();
-            if (bytesRead <= 0 ||
-                static_cast<uint64_t>(bytesRead) != chunkEnd - chunkStart) {
-              throw std::runtime_error("Unable to read upload part chunk");
-            }
-
-            const std::vector<uint8_t> aad =
-                ArkiveAad::toBytes(ArkiveAad::makeFileChunk(
-                    started.vaultId, started.fileId,
-                    static_cast<int>(chunkNumber),
-                    static_cast<int64_t>(started.fileChunkSize),
-                    static_cast<int>(started.totalChunks)));
-
-            const std::vector<uint8_t> ciphertext =
-                fileEncryptor_.encryptChunk(plaintextChunk, fileKey, aad);
-            fileEncryptor_.zeroize(plaintextChunk);
-
-            const std::vector<uint8_t> encryptedHashBytes =
-                fileEncryptor_.hashBytes(ciphertext);
-            const std::string encryptedHash = encodeBase64(encryptedHashBytes);
-
-            appendBytes(partResult.combinedChunkHashes, encryptedHashBytes);
-            appendBytes(uploadBody, ciphertext);
-            partResult.chunks.push_back({
-                .chunkNo = chunkNumber,
-                .plaintextSize = chunkEnd - chunkStart,
-                .ciphertextSize = ciphertext.size(),
-                .encryptedHash = encryptedHash,
-            });
-          }
-
-          if (uploadBody.empty()) {
-            throw std::runtime_error(
-                "upload part had no encrypted chunk payload");
-          }
-
-          const std::vector<uint8_t> uploadHashBytes =
-              fileEncryptor_.hashBytes(uploadBody);
-          const std::string uploadHash = encodeBase64(uploadHashBytes);
-
-          const PresignPartsResponse presigned = api_.presignParts(
-              started.uploadSessionId, {static_cast<int>(partNumber)});
-
-          const auto urlIt = presigned.urls.find(static_cast<int>(partNumber));
-          if (urlIt == presigned.urls.end()) {
-            throw std::runtime_error("missing presigned URL for upload part " +
-                                     std::to_string(partNumber));
-          }
-
-          const std::string etag = api_.putEncryptedPartToStorage(
-              urlIt->second, toByteVector(uploadBody));
-          api_.uploadPart(started.uploadSessionId,
-                          UploadPartRequest{
-                              .partNumber = static_cast<int>(partNumber),
-                              .encryptedHash = uploadHash,
-                              .etag = etag,
-                          });
-
-          {
-            std::lock_guard<std::mutex> lock(resultsMutex);
-            uploadedParts[static_cast<std::size_t>(partNumber - 1)] =
-                std::move(partResult);
-          }
-        } catch (...) {
-          stopWorkers.store(true);
-          std::lock_guard<std::mutex> lock(errorMutex);
-          if (!firstError) {
-            firstError = std::current_exception();
-          }
-        }
-
-        if (!uploadBody.empty()) {
-          fileEncryptor_.zeroize(uploadBody);
-        }
-      }
-    };
-
-    std::vector<std::thread> workers;
-    workers.reserve(static_cast<std::size_t>(partConcurrency));
-    for (uint64_t workerIndex = 0; workerIndex < partConcurrency;
-         ++workerIndex) {
-      workers.emplace_back(uploadWorker);
-    }
-    for (auto &worker : workers) {
-      worker.join();
-    }
-    if (firstError) {
-      std::rethrow_exception(firstError);
-    }
-
-    nlohmann::json manifestChunks = nlohmann::json::array();
-    for (const auto &part : uploadedParts) {
-      for (const auto &chunk : part.chunks) {
-        manifestChunks.push_back({
-            {"n", chunk.chunkNo},
-            {"plain_size", chunk.plaintextSize},
-            {"cipher_size", chunk.ciphertextSize},
-            {"hash", chunk.encryptedHash},
-        });
-      }
-      appendBytes(combinedChunkHashes, part.combinedChunkHashes);
-    }
-
-    encryptedMetadata = fileEncryptor_.encryptMetadata(
-        buildMetadata(path, entry).dump(), fileKey, started.vaultId,
-        started.fileId);
-
-    const nlohmann::json manifest = {
-        {"schema", "arkive.file.manifest"},
-        {"version", 1},
-        {"hash_alg", "blake3"},
-        {"hash_encoding", "base64"},
-        {"file_id", started.fileId},
-        {"name", path.filename().string()},
-        {"mime", inferSafeMimeType(path)},
-        {"extension", path.has_extension() ? path.extension().string() : ""},
-        {"size", originalSize},
-        {"chunk_size", static_cast<uint64_t>(started.fileChunkSize)},
-        {"chunks", manifestChunks},
-    };
-    const std::string manifestJson = manifest.dump();
-    encryptedManifest = fileEncryptor_.encryptChunk(
-        std::vector<uint8_t>(manifestJson.begin(), manifestJson.end()), fileKey,
-        ArkiveAad::toBytes(
-            ArkiveAad::makeFileManifest(started.vaultId, started.fileId)));
-
-    const std::vector<uint8_t> encryptedHash =
-        fileEncryptor_.hashBytes(combinedChunkHashes);
-    encryptedFileKey =
-        fileEncryptor_.wrapFileKey(fileKey, started.vaultId, started.fileId);
-
-    api_.uploadComplete(
-        started.uploadSessionId,
-        UploadCompleteRequest{
-            .encryptedMetadata = encodeBase64(encryptedMetadata),
-            .encryptedFileKey = encodeBase64(encryptedFileKey),
-            .encryptedManifest = encodeBase64(encryptedManifest),
-            .encryptedHash = encodeBase64(encryptedHash),
-            .searchTokens = fileEncryptor_.createSearchTokenEntries(
-                started.vaultId, path.filename().string(),
-                inferSafeMimeType(path)),
-            .hasThumbnail = false,
-            .thumbnailMime = "",
-            .thumbnailWidth = 0,
-            .thumbnailHeight = 0,
-        });
+    artifacts.fileKey = fileEncryptor_.createFileKey();
+    const std::vector<UploadedPartResult> uploadedParts =
+        multipartUploader_.uploadParts(path, artifacts.fileKey, started,
+                                       uploadPlan, partConcurrency);
+    artifacts = uploadFinalizer_.completeUpload(path, entry, started, uploadPlan,
+                                                uploadedParts, artifacts.fileKey);
   } catch (...) {
-    if (!fileKey.empty()) {
-      fileEncryptor_.zeroize(fileKey);
+    if (!artifacts.fileKey.empty()) {
+      fileEncryptor_.zeroize(artifacts.fileKey);
     }
-    if (!encryptedFileKey.empty()) {
-      fileEncryptor_.zeroize(encryptedFileKey);
+    if (!artifacts.encryptedFileKey.empty()) {
+      fileEncryptor_.zeroize(artifacts.encryptedFileKey);
     }
-    if (!encryptedMetadata.empty()) {
-      fileEncryptor_.zeroize(encryptedMetadata);
+    if (!artifacts.encryptedMetadata.empty()) {
+      fileEncryptor_.zeroize(artifacts.encryptedMetadata);
     }
-    if (!encryptedManifest.empty()) {
-      fileEncryptor_.zeroize(encryptedManifest);
+    if (!artifacts.encryptedManifest.empty()) {
+      fileEncryptor_.zeroize(artifacts.encryptedManifest);
     }
-    if (!combinedChunkHashes.empty()) {
-      fileEncryptor_.zeroize(combinedChunkHashes);
+    if (!artifacts.encryptedHash.empty()) {
+      fileEncryptor_.zeroize(artifacts.encryptedHash);
     }
     throw;
   }
 
-  if (!fileKey.empty()) {
-    fileEncryptor_.zeroize(fileKey);
+  if (!artifacts.fileKey.empty()) {
+    fileEncryptor_.zeroize(artifacts.fileKey);
   }
-  if (!encryptedFileKey.empty()) {
-    fileEncryptor_.zeroize(encryptedFileKey);
+  if (!artifacts.encryptedFileKey.empty()) {
+    fileEncryptor_.zeroize(artifacts.encryptedFileKey);
   }
-  if (!encryptedMetadata.empty()) {
-    fileEncryptor_.zeroize(encryptedMetadata);
+  if (!artifacts.encryptedMetadata.empty()) {
+    fileEncryptor_.zeroize(artifacts.encryptedMetadata);
   }
-  if (!encryptedManifest.empty()) {
-    fileEncryptor_.zeroize(encryptedManifest);
+  if (!artifacts.encryptedManifest.empty()) {
+    fileEncryptor_.zeroize(artifacts.encryptedManifest);
   }
-  if (!combinedChunkHashes.empty()) {
-    fileEncryptor_.zeroize(combinedChunkHashes);
+  if (!artifacts.encryptedHash.empty()) {
+    fileEncryptor_.zeroize(artifacts.encryptedHash);
   }
 
   return UploadFileResponse{

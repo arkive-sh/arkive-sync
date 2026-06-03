@@ -1,5 +1,5 @@
 #include "service/QueueService.hpp"
-#include "api/ArkiveHttpClient.hpp"
+#include "api/HttpError.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/UploadJobRunner.hpp"
@@ -41,7 +41,6 @@ void QueueService::processQueuedUploads() {
       spdlog::info("Uploaded queued file for entry: {}", queuedJob->entryId);
 
       queueRepo_.markDone(queuedJob->id);
-      syncRepo_.markEntrySynced(queuedJob->entryId);
     } catch (const std::exception &ex) {
       queueRepo_.markFailed(queuedJob->id, ex.what());
       if (isUploadQueueLimitError(ex)) {

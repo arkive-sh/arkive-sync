@@ -44,4 +44,5 @@ void UploadJobRunner::run(const TransferJob &job) {
   }
 
   uploadService_.uploadFile(absolutePath, *entry);
+  syncRepo_.markEntrySynced(job.entryId);
 }

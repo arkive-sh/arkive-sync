@@ -5,7 +5,7 @@
 namespace {
 
 bool isUnauthorized(const HttpError &error) {
-  return error.statusCode() == 401 || error.statusCode() == 403;
+  return error.statusCode == 401 || error.statusCode == 403;
 }
 
 } // namespace

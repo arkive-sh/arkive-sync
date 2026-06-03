@@ -20,6 +20,11 @@ public:
                    const std::vector<uint8_t> &fileKey,
                    const std::string &vaultId, const std::string &fileId,
                    uint64_t chunkSize, uint64_t totalChunks);
+  ArkiveFileReader(const std::filesystem::path &path, FileEncryptor &encryptor,
+                   const std::vector<uint8_t> &fileKey,
+                   const std::string &vaultId, const std::string &fileId,
+                   uint64_t chunkSize, uint64_t totalChunks,
+                   uint64_t firstChunkNumber, uint64_t chunkCount);
 
   ArkiveFileReader(const ArkiveFileReader &) = delete;
   ArkiveFileReader &operator=(const ArkiveFileReader &) = delete;
@@ -39,4 +44,5 @@ private:
   uint64_t chunkSize_;
   uint64_t totalChunks_;
   uint64_t nextChunkIndex_ = 0;
+  uint64_t endChunkIndex_ = 0;
 };
