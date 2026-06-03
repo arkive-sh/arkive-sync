@@ -1,83 +1,22 @@
 #include "crypto/Aad.hpp"
 #include "crypto/RustCrypto.hpp"
-#include "db/SqliteHelpers.hpp"
 #include "helpers/Base64.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/VaultService.hpp"
 
+#include "support/FakeSecureStorage.hpp"
+#include "support/TestDatabase.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
-#include <sqlite3.h>
+#include <optional>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 
-struct SharedSecrets {
-  std::unordered_map<std::string, std::vector<uint8_t>> values;
-};
-
-class SharedMemorySecureStorage : public SecureStorage {
-public:
-  explicit SharedMemorySecureStorage(std::shared_ptr<SharedSecrets> secrets)
-      : secrets_(std::move(secrets)) {}
-
-  void storeSecret(const std::string &service, const std::string &account,
-                   const std::vector<uint8_t> &secret) override {
-    secrets_->values[service + "\n" + account] = secret;
-  }
-
-  std::optional<std::vector<uint8_t>>
-  loadSecret(const std::string &service,
-             const std::string &account) override {
-    const auto it = secrets_->values.find(service + "\n" + account);
-    if (it == secrets_->values.end()) {
-      return std::nullopt;
-    }
-
-    return it->second;
-  }
-
-  void deleteSecret(const std::string &service,
-                    const std::string &account) override {
-    secrets_->values.erase(service + "\n" + account);
-  }
-
-private:
-  std::shared_ptr<SharedSecrets> secrets_;
-};
-
-class TestDb {
-public:
-  TestDb() {
-    REQUIRE(sqlite3_open(":memory:", &db_) == SQLITE_OK);
-    execOrThrow(db_, R"sql(
-CREATE TABLE account (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  base_url TEXT NOT NULL,
-  email TEXT,
-  vault_salt TEXT,
-  encrypted_master_key TEXT,
-  vault_session_key_id TEXT,
-  vault_session_blob TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO account (id, base_url) VALUES (1, 'http://localhost:8080');
-)sql");
-  }
-
-  ~TestDb() {
-    if (db_ != nullptr) {
-      sqlite3_close(db_);
-    }
-  }
-
-  sqlite3 *get() const { return db_; }
-
-private:
-  sqlite3 *db_ = nullptr;
-};
+using TestDb = TestDatabase;
 
 void seedAccount(UserRepo &userRepo, RustCrypto &crypto) {
   const std::string password = "test-password";
@@ -103,10 +42,10 @@ TEST_CASE("VaultService unlock stores session") {
   TestDb db;
   RustCrypto crypto;
   UserRepo userRepo(db.get());
-  auto sharedSecrets = std::make_shared<SharedSecrets>();
+  auto secureStorage = std::make_unique<FakeSecureStorage>();
+  FakeSecureStorage *secureStoragePtr = secureStorage.get();
   VaultService vaultService(
-      userRepo, crypto,
-      std::make_unique<SharedMemorySecureStorage>(sharedSecrets));
+      userRepo, crypto, std::move(secureStorage));
   seedAccount(userRepo, crypto);
 
   vaultService.unlock("test-password");
@@ -117,21 +56,53 @@ TEST_CASE("VaultService unlock stores session") {
   REQUIRE(account->vaultSessionBlob.has_value());
   REQUIRE(!account->vaultSessionKeyId->empty());
   REQUIRE(!account->vaultSessionBlob->empty());
-  REQUIRE(sharedSecrets->values.contains("arkive-sync.vault-session\n" +
-                                         *account->vaultSessionKeyId));
+  REQUIRE(secureStoragePtr->secrets().contains("arkive-sync.vault-session\n" +
+                                               *account->vaultSessionKeyId));
 }
 
 TEST_CASE("VaultService restoreSession restores after new instance") {
   TestDb db;
   RustCrypto crypto;
   UserRepo userRepo(db.get());
+  struct SharedSecrets {
+    std::unordered_map<std::string, std::vector<uint8_t>> values;
+  };
+
+  class SharedSecretsStorage final : public SecureStorage {
+  public:
+    explicit SharedSecretsStorage(std::shared_ptr<SharedSecrets> secrets)
+        : secrets_(std::move(secrets)) {}
+
+    void storeSecret(const std::string &service, const std::string &account,
+                     const std::vector<uint8_t> &secret) override {
+      secrets_->values[service + "\n" + account] = secret;
+    }
+
+    std::optional<std::vector<uint8_t>>
+    loadSecret(const std::string &service,
+               const std::string &account) override {
+      const auto it = secrets_->values.find(service + "\n" + account);
+      if (it == secrets_->values.end()) {
+        return std::nullopt;
+      }
+      return it->second;
+    }
+
+    void deleteSecret(const std::string &service,
+                      const std::string &account) override {
+      secrets_->values.erase(service + "\n" + account);
+    }
+
+  private:
+    std::shared_ptr<SharedSecrets> secrets_;
+  };
+
   auto sharedSecrets = std::make_shared<SharedSecrets>();
   std::vector<uint8_t> originalMasterKey;
 
   {
     VaultService vaultService(
-        userRepo, crypto,
-        std::make_unique<SharedMemorySecureStorage>(sharedSecrets));
+        userRepo, crypto, std::make_unique<SharedSecretsStorage>(sharedSecrets));
     seedAccount(userRepo, crypto);
     vaultService.unlock("test-password");
     originalMasterKey = vaultService.masterKey();
@@ -139,8 +110,7 @@ TEST_CASE("VaultService restoreSession restores after new instance") {
   }
 
   VaultService restoredService(
-      userRepo, crypto,
-      std::make_unique<SharedMemorySecureStorage>(sharedSecrets));
+      userRepo, crypto, std::make_unique<SharedSecretsStorage>(sharedSecrets));
 
   REQUIRE(restoredService.restoreSession());
   REQUIRE(restoredService.isUnlocked());
@@ -151,10 +121,8 @@ TEST_CASE("VaultService lock clears memory") {
   TestDb db;
   RustCrypto crypto;
   UserRepo userRepo(db.get());
-  auto sharedSecrets = std::make_shared<SharedSecrets>();
   VaultService vaultService(
-      userRepo, crypto,
-      std::make_unique<SharedMemorySecureStorage>(sharedSecrets));
+      userRepo, crypto, std::make_unique<FakeSecureStorage>());
   seedAccount(userRepo, crypto);
 
   vaultService.unlock("test-password");
@@ -170,10 +138,10 @@ TEST_CASE("VaultService clearPersistedSession removes keychain entry") {
   TestDb db;
   RustCrypto crypto;
   UserRepo userRepo(db.get());
-  auto sharedSecrets = std::make_shared<SharedSecrets>();
+  auto secureStorage = std::make_unique<FakeSecureStorage>();
+  FakeSecureStorage *secureStoragePtr = secureStorage.get();
   VaultService vaultService(
-      userRepo, crypto,
-      std::make_unique<SharedMemorySecureStorage>(sharedSecrets));
+      userRepo, crypto, std::move(secureStorage));
   seedAccount(userRepo, crypto);
   vaultService.unlock("test-password");
 
@@ -187,5 +155,5 @@ TEST_CASE("VaultService clearPersistedSession removes keychain entry") {
   REQUIRE(accountAfter.has_value());
   REQUIRE_FALSE(accountAfter->vaultSessionKeyId.has_value());
   REQUIRE_FALSE(accountAfter->vaultSessionBlob.has_value());
-  REQUIRE(sharedSecrets->values.empty());
+  REQUIRE(secureStoragePtr->secrets().empty());
 }

@@ -65,17 +65,22 @@ void setUserVersion(sqlite3 *db, int version) {
 
 } // namespace
 
-Database::Database() { initDb(); }
+Database::Database() : dbPath_(databasePath()) { initDb(); }
+
+Database::Database(std::filesystem::path dbPath) : dbPath_(std::move(dbPath)) {
+  initDb();
+}
 
 Database::~Database() { close(); }
 
 sqlite3 *Database::getDb() { return db; }
 
 void Database::initDb() {
-  const std::filesystem::path dbPath = databasePath();
-  std::filesystem::create_directories(dbPath.parent_path());
+  if (!dbPath_.empty() && dbPath_ != ":memory:") {
+    std::filesystem::create_directories(dbPath_.parent_path());
+  }
 
-  int rc = sqlite3_open(dbPath.string().c_str(), &db);
+  int rc = sqlite3_open(dbPath_.string().c_str(), &db);
   if (rc != SQLITE_OK) {
     const std::string error_message =
         db != nullptr ? sqlite3_errmsg(db) : "unknown SQLite open failure";

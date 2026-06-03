@@ -1,9 +1,12 @@
 #include <sqlite3.h>
 
+#include <filesystem>
+
 #pragma once
 
 class Database {
   sqlite3 *db = nullptr;
+  std::filesystem::path dbPath_;
 
   // Avoid copying
   Database(const Database &) = delete;
@@ -15,6 +18,7 @@ class Database {
 
 public:
   Database();
+  explicit Database(std::filesystem::path dbPath);
   ~Database();
   sqlite3 *getDb();
 

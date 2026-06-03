@@ -1,50 +1,14 @@
 #include "db/SqliteHelpers.hpp"
 #include "repo/QueueRepo.hpp"
 
+#include "support/TestDatabase.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <sqlite3.h>
 
 namespace {
 
-class TestDb {
-public:
-  TestDb() {
-    REQUIRE(sqlite3_open(":memory:", &db_) == SQLITE_OK);
-    execOrThrow(db_, R"sql(
-CREATE TABLE transfer_queue (
-  id TEXT PRIMARY KEY,
-  entry_id TEXT,
-  direction TEXT NOT NULL,
-  status TEXT NOT NULL,
-  local_path TEXT NOT NULL,
-  remote_id TEXT,
-  folder_id TEXT,
-  bytes_total INTEGER,
-  bytes_done INTEGER NOT NULL DEFAULT 0,
-  error_message TEXT,
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX idx_transfer_active_upload
-ON transfer_queue(entry_id, direction)
-WHERE direction = 'upload'
-AND status IN ('queued', 'running');
-)sql");
-  }
-
-  ~TestDb() {
-    if (db_ != nullptr) {
-      sqlite3_close(db_);
-    }
-  }
-
-  sqlite3 *get() const { return db_; }
-
-private:
-  sqlite3 *db_ = nullptr;
-};
+using TestDb = TestDatabase;
 
 int countRows(sqlite3 *db, const char *sql) {
   sqlite3_stmt *rawStmt = nullptr;

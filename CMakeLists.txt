@@ -164,6 +164,8 @@ target_link_libraries(arkive-sync PRIVATE
 enable_testing()
 
 add_executable(arkive-sync-tests
+    src/db/Sqlite.cpp
+    src/platform/AppDataPaths.cpp
     tests/path_codec_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
@@ -190,12 +192,23 @@ add_executable(arkive-sync-tests
 target_link_libraries(arkive-sync-tests PRIVATE
     arkive_crypto_native
     Catch2::Catch2WithMain
+    spdlog::spdlog
     SQLite3::SQLite3
 )
 
 target_include_directories(arkive-sync-tests PRIVATE
     src
     "${ARKIVE_CRYPTO_DIR}/include"
+)
+
+target_compile_definitions(arkive-sync-tests PRIVATE
+    ARKIVE_SYNC_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS arkive-sync-tests
+    COMMENT "Running unit tests..."
 )
 
 include(CTest)
