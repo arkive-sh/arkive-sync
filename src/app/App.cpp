@@ -1,10 +1,10 @@
 #include "App.hpp"
+#include "./crypto/RustCrypto.hpp"
 #include "./helpers/Helpers.hpp"
 #include "./platform/SecureStorage.hpp"
 #include "./repo/QueueRepo.hpp"
 #include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
-#include "./crypto/RustCrypto.hpp"
 #include "./service/AuthService.hpp"
 #include "./service/QueueService.hpp"
 #include "./service/SyncService.hpp"
@@ -217,7 +217,8 @@ int App::run(int argc, char *argv[]) {
       throw std::runtime_error("Upload path must be a file");
     }
 
-    const auto fileSize = static_cast<int64_t>(std::filesystem::file_size(path));
+    const auto fileSize =
+        static_cast<int64_t>(std::filesystem::file_size(path));
     EntryRecord entry{
         .id = "manual-upload",
         .remoteId = std::nullopt,
@@ -235,10 +236,33 @@ int App::run(int argc, char *argv[]) {
         .lastSyncedAt = std::nullopt,
     };
 
+    // Temp
+    // 1. Capture the starting time point
+    auto start_time = std::chrono::steady_clock::now();
+
     const UploadFileResponse uploaded = uploadService_.uploadFile(path, entry);
     spdlog::info("Uploaded file: {}", path.string());
     spdlog::info("Remote file id: {}", uploaded.fileId);
     spdlog::info("Upload session id: {}", uploaded.uploadSessionId);
+
+    // 3. Capture the ending time point
+    auto end_time = std::chrono::steady_clock::now();
+
+    // 4. Calculate the raw elapsed duration
+    auto elapsed = end_time - start_time;
+
+    // 5. Convert to preferred units using duration_cast
+    auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    auto us =
+        std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+
+    // 6. Alternative: Cast to a double for fractional floating-point seconds
+    std::chrono::duration<double> seconds = elapsed;
+
+    std::cout << "Duration: " << ms << " ms\n";
+    std::cout << "Duration: " << us << " us\n";
+    std::cout << "Duration: " << seconds.count() << " s\n";
     return 0;
   }
 
@@ -320,7 +344,8 @@ int App::run(int argc, char *argv[]) {
     storage->storeSecret(service, account, secret);
     const auto loaded = storage->loadSecret(service, account);
     if (!loaded.has_value()) {
-      throw std::runtime_error("Secure storage smoke test failed: secret missing");
+      throw std::runtime_error(
+          "Secure storage smoke test failed: secret missing");
     }
     if (*loaded != secret) {
       throw std::runtime_error(
@@ -330,8 +355,8 @@ int App::run(int argc, char *argv[]) {
     storage->deleteSecret(service, account);
     const auto deleted = storage->loadSecret(service, account);
     if (deleted.has_value()) {
-      throw std::runtime_error(
-          "Secure storage smoke test failed: secret still present after delete");
+      throw std::runtime_error("Secure storage smoke test failed: secret still "
+                               "present after delete");
     }
 
     spdlog::info("Secure storage smoke test passed");

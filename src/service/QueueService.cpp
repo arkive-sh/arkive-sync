@@ -1,5 +1,6 @@
 #include "service/QueueService.hpp"
 #include "api/ArkiveHttpClient.hpp"
+#include "helpers/PathCodec.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/UploadService.hpp"
@@ -49,7 +50,7 @@ void QueueService::processQueuedUploads() {
       }
 
       const std::filesystem::path absolutePath =
-          std::filesystem::path(syncRoot->localPath) / entry->localPath;
+          PathCodec::joinRoot(syncRoot->localPath, entry->localPath);
 
       uploadService_.uploadFile(absolutePath, *entry);
       spdlog::info("Uploaded file: {}", absolutePath.string());

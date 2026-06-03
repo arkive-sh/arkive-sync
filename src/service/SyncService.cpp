@@ -1,6 +1,7 @@
 #include "service/SyncService.hpp"
 #include "fs/FileScanner.hpp"
 #include "fs/FileHasher.hpp"
+#include "helpers/PathCodec.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -120,7 +121,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
   presentPaths.reserve(scannedEntries.size());
 
   for (const auto &entry : scannedEntries) {
-    const std::string relativePath = entry.relativePath.string();
+    const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
     if (!presentPaths.insert(relativePath).second) {
       continue;
     }

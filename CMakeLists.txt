@@ -96,6 +96,7 @@ add_executable(arkive-sync
     src/db/SqliteHelpers.cpp
     src/helpers/Helpers.cpp
     src/helpers/Mime.cpp
+    src/helpers/PathCodec.cpp
     src/platform/AppDataPaths.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
@@ -151,10 +152,16 @@ enable_testing()
 
 add_executable(arkive-sync-tests
     tests/main_test.cpp
+    tests/path_codec_test.cpp
+    src/helpers/PathCodec.cpp
 )
 
 target_link_libraries(arkive-sync-tests PRIVATE
     Catch2::Catch2WithMain
+)
+
+target_include_directories(arkive-sync-tests PRIVATE
+    src
 )
 
 include(CTest)
