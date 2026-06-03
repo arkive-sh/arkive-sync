@@ -5,6 +5,8 @@
 
 namespace {
 
+constexpr char kVaultSessionService[] = "arkive-sync.vault-session";
+
 int decodeBase64Char(char ch) {
   if (ch >= 'A' && ch <= 'Z') {
     return ch - 'A';
@@ -54,10 +56,21 @@ std::vector<uint8_t> decodeBase64(const std::string &input) {
   return output;
 }
 
+std::string makeVaultSessionKeyId(RustCrypto &crypto, const AccountRecord &account) {
+  if (!account.email.has_value() || account.email->empty()) {
+    throw std::runtime_error(
+        "Vault session cannot be persisted without an account email");
+  }
+
+  const std::string scope = account.baseUrl + "\n" + *account.email;
+  return crypto.sha256HashHex(std::vector<uint8_t>(scope.begin(), scope.end()));
+}
+
 } // namespace
 
 VaultService::VaultService(UserRepo &userRepo, RustCrypto &crypto)
-    : userRepo_(userRepo), crypto_(crypto) {}
+    : userRepo_(userRepo), crypto_(crypto),
+      secureStorage_(SecureStorage::create()) {}
 
 VaultService::~VaultService() { lock(); }
 
@@ -82,6 +95,7 @@ void VaultService::unlock(const std::string &password) {
 
     lock();
     masterKey_ = unwrappedMasterKey;
+    persistSession();
   } catch (...) {
     if (!kek.empty()) {
       crypto_.zeroize(kek);
@@ -112,6 +126,41 @@ void VaultService::unlock(const std::string &password) {
   }
 }
 
+bool VaultService::restoreSession() {
+  if (isUnlocked()) {
+    return true;
+  }
+
+  const auto account = userRepo_.getAccount();
+  if (!account.has_value() || !account->vaultSessionKeyId.has_value() ||
+      account->vaultSessionKeyId->empty()) {
+    return false;
+  }
+
+  const auto restored =
+      secureStorage_->loadSecret(kVaultSessionService, *account->vaultSessionKeyId);
+  if (!restored.has_value() || restored->empty()) {
+    AccountRecord updated = *account;
+    updated.vaultSessionKeyId = std::nullopt;
+    userRepo_.upsertAccount(updated);
+    return false;
+  }
+
+  lock();
+  masterKey_ = *restored;
+  return true;
+}
+
+void VaultService::clearPersistedSession() {
+  const auto account = userRepo_.getAccount();
+  if (!account.has_value() || !account->vaultSessionKeyId.has_value() ||
+      account->vaultSessionKeyId->empty()) {
+    return;
+  }
+
+  secureStorage_->deleteSecret(kVaultSessionService, *account->vaultSessionKeyId);
+}
+
 void VaultService::lock() {
   if (!masterKey_.empty()) {
     crypto_.zeroize(masterKey_);
@@ -127,4 +176,28 @@ const std::vector<uint8_t> &VaultService::masterKey() const {
   }
 
   return masterKey_;
+}
+
+void VaultService::persistSession() {
+  if (masterKey_.empty()) {
+    throw std::runtime_error("Cannot persist a locked vault session");
+  }
+
+  const auto account = userRepo_.getAccount();
+  if (!account.has_value()) {
+    throw std::runtime_error("Cannot persist a vault session without an account");
+  }
+
+  const std::string sessionKeyId = makeVaultSessionKeyId(crypto_, *account);
+
+  if (account->vaultSessionKeyId.has_value() &&
+      *account->vaultSessionKeyId != sessionKeyId) {
+    secureStorage_->deleteSecret(kVaultSessionService, *account->vaultSessionKeyId);
+  }
+
+  secureStorage_->storeSecret(kVaultSessionService, sessionKeyId, masterKey_);
+
+  AccountRecord updated = *account;
+  updated.vaultSessionKeyId = sessionKeyId;
+  userRepo_.upsertAccount(updated);
 }

@@ -153,11 +153,12 @@ FileEncryptor::wrapFileKey(const std::vector<uint8_t> &fileKey,
     throw std::invalid_argument("fileKey cannot be empty");
   }
 
-  // Temporary test bypass: allow upload plumbing to run before persisted
-  // vault-session restore exists. This stores the raw file key bytes instead
-  // of a master-key-wrapped file key when the vault is locked.
   if (!vaultService_.isUnlocked()) {
-    return fileKey;
+    vaultService_.restoreSession();
+  }
+  if (!vaultService_.isUnlocked()) {
+    throw std::runtime_error(
+        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
   }
 
   const std::vector<uint8_t> aad =
@@ -212,6 +213,9 @@ FileEncryptor::createSearchTokenEntries(const std::string &vaultId,
   std::unordered_set<std::string> seen;
 
   try {
+    if (!vaultService_.isUnlocked()) {
+      vaultService_.restoreSession();
+    }
     if (vaultService_.isUnlocked()) {
       searchKey = crypto_.deriveSearchKey(vaultService_.masterKey());
     }
@@ -229,12 +233,8 @@ FileEncryptor::createSearchTokenEntries(const std::string &vaultId,
                                     std::vector<uint8_t>(payload.begin(),
                                                          payload.end()));
       } else {
-        // Temporary test fallback: produce structurally valid token bytes so
-        // upload completion can be exercised before persisted vault-session
-        // restore and real search-key derivation are wired into the native
-        // runtime.
-        digest = crypto_.sha256Hash(
-            std::vector<uint8_t>(payload.begin(), payload.end()));
+        throw std::runtime_error(
+            "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
       }
 
       entries.push_back({

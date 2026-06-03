@@ -9,6 +9,7 @@ struct AccountRecord {
   std::optional<std::string> email;
   std::optional<std::string> vaultSalt;
   std::optional<std::string> encryptedMasterKey;
+  std::optional<std::string> vaultSessionKeyId;
 };
 
 inline bool hasPersistedVaultMaterial(const AccountRecord &account) {

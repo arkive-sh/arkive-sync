@@ -16,7 +16,8 @@ SELECT
 base_url,
 email,
 vault_salt,
-encrypted_master_key
+encrypted_master_key,
+vault_session_key_id
 FROM account
 WHERE id = 1;
   )sql";
@@ -47,6 +48,8 @@ WHERE id = 1;
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 2));
   const char *encryptedMasterKey =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 3));
+  const char *vaultSessionKeyId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 4));
 
   if (baseUrl == nullptr) {
     throw std::invalid_argument("account.base_url was NULL");
@@ -61,6 +64,10 @@ WHERE id = 1;
       .encryptedMasterKey = encryptedMasterKey != nullptr
                                 ? std::optional<std::string>(encryptedMasterKey)
                                 : std::nullopt,
+      .vaultSessionKeyId =
+          vaultSessionKeyId != nullptr
+              ? std::optional<std::string>(vaultSessionKeyId)
+              : std::nullopt,
   };
 }
 
@@ -72,10 +79,12 @@ INSERT INTO account (
   email,
   vault_salt,
   encrypted_master_key,
+  vault_session_key_id,
   created_at,
   updated_at
 ) VALUES (
   1,
+  ?,
   ?,
   ?,
   ?,
@@ -88,6 +97,7 @@ ON CONFLICT(id) DO UPDATE SET
   email = excluded.email,
   vault_salt = excluded.vault_salt,
   encrypted_master_key = excluded.encrypted_master_key,
+  vault_session_key_id = excluded.vault_session_key_id,
   updated_at = CURRENT_TIMESTAMP;
   )sql";
 
@@ -104,6 +114,7 @@ ON CONFLICT(id) DO UPDATE SET
   bindOptionalText(db_, stmt.get(), 2, account.email);
   bindOptionalText(db_, stmt.get(), 3, account.vaultSalt);
   bindOptionalText(db_, stmt.get(), 4, account.encryptedMasterKey);
+  bindOptionalText(db_, stmt.get(), 5, account.vaultSessionKeyId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -119,6 +130,7 @@ SET
   email = NULL,
   vault_salt = NULL,
   encrypted_master_key = NULL,
+  vault_session_key_id = NULL,
   updated_at = CURRENT_TIMESTAMP
 WHERE id = 1;
   )sql";

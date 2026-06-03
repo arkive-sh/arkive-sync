@@ -7,6 +7,32 @@
 #include <stdexcept>
 #include <string>
 
+namespace {
+
+bool tableHasColumn(sqlite3 *db, const char *tableName, const char *columnName) {
+  const std::string sql = "PRAGMA table_info(" + std::string(tableName) + ");";
+
+  sqlite3_stmt *stmt = nullptr;
+  const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+  if (rc != SQLITE_OK) {
+    throw std::runtime_error("Failed to prepare table_info query: " +
+                             std::string(sqlite3_errmsg(db)));
+  }
+
+  StmtUniquePtr ownedStmt(stmt);
+  while (sqlite3_step(ownedStmt.get()) == SQLITE_ROW) {
+    const char *name =
+        reinterpret_cast<const char *>(sqlite3_column_text(ownedStmt.get(), 1));
+    if (name != nullptr && std::string(name) == columnName) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+} // namespace
+
 Database::Database() { initDb(); }
 
 Database::~Database() { close(); }
@@ -43,6 +69,7 @@ void Database::createSchema() {
       email TEXT,
       vault_salt TEXT,
       encrypted_master_key TEXT,
+      vault_session_key_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -105,6 +132,10 @@ void Database::createSchema() {
       db,
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path "
       "ON entries(sync_root_id, local_path);");
+  if (!tableHasColumn(db, "account", "vault_session_key_id")) {
+    execOrThrow(db,
+                "ALTER TABLE account ADD COLUMN vault_session_key_id TEXT;");
+  }
   execOrThrow(db,
               "INSERT INTO account (id, base_url) VALUES (1, 'http://localhost:8080') "
               "ON CONFLICT(id) DO NOTHING;");

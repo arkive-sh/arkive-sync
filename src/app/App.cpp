@@ -135,18 +135,25 @@ int App::run(int argc, char *argv[]) {
 
   switch (parseCommand(argc, argv)) {
   case Command::SetBaseUrl: {
+    const std::string newBaseUrl = argv[2];
     AccountRecord account{
-        .baseUrl = argv[2],
+        .baseUrl = newBaseUrl,
         .email = std::nullopt,
         .vaultSalt = std::nullopt,
         .encryptedMasterKey = std::nullopt,
+        .vaultSessionKeyId = std::nullopt,
     };
 
     if (const auto existingAccount = userRepo_.getAccount();
         existingAccount.has_value()) {
-      account.email = existingAccount->email;
-      account.vaultSalt = existingAccount->vaultSalt;
-      account.encryptedMasterKey = existingAccount->encryptedMasterKey;
+      if (existingAccount->baseUrl == newBaseUrl) {
+        account.email = existingAccount->email;
+        account.vaultSalt = existingAccount->vaultSalt;
+        account.encryptedMasterKey = existingAccount->encryptedMasterKey;
+        account.vaultSessionKeyId = existingAccount->vaultSessionKeyId;
+      } else {
+        vaultService_.clearPersistedSession();
+      }
     }
 
     userRepo_.upsertAccount(account);
@@ -192,6 +199,7 @@ int App::run(int argc, char *argv[]) {
   case Command::Logout: {
     spdlog::info("Logging out of arkive");
     vaultService_.lock();
+    vaultService_.clearPersistedSession();
     if (authService_.logout()) {
       spdlog::info("Successfully logged out!");
     } else {
