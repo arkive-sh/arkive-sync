@@ -4,6 +4,7 @@
 #include "fs/FileHasher.hpp"
 #include "helpers/Base64.hpp"
 #include "helpers/Mime.hpp"
+#include "upload/UploadPlanner.hpp"
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -14,8 +15,6 @@
 #include <vector>
 
 namespace {
-
-constexpr uint64_t kMultipartUploadPartSize = 8ull * 1024ull * 1024ull;
 
 std::vector<std::byte> toByteVector(const std::vector<uint8_t> &bytes) {
   std::vector<std::byte> converted;
@@ -31,15 +30,15 @@ void appendBytes(std::vector<uint8_t> &target,
   target.insert(target.end(), source.begin(), source.end());
 }
 
-struct UploadedChunkManifestEntry {
+struct UploadManifestChunkEntry {
   uint64_t chunkNo;
   uint64_t plaintextSize;
   uint64_t ciphertextSize;
   std::string encryptedHash;
 };
 
-struct UploadedPartResult {
-  std::vector<UploadedChunkManifestEntry> chunks;
+struct UploadWorkerPartResult {
+  std::vector<UploadManifestChunkEntry> chunks;
   std::vector<uint8_t> combinedChunkHashes;
 };
 
@@ -72,26 +71,20 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   }
 
   const uint64_t originalSize = static_cast<uint64_t>(*entry.localSize);
-  const uint64_t fileChunkSize = static_cast<uint64_t>(kChunkSize);
-  const uint64_t totalChunks =
-      std::max<uint64_t>(1, (originalSize + fileChunkSize - 1) / fileChunkSize);
-  const uint64_t uploadPartSize =
-      totalChunks > 1 ? kMultipartUploadPartSize : fileChunkSize;
-  const uint64_t chunksPerUploadPart =
-      std::max<uint64_t>(1, uploadPartSize / fileChunkSize);
-  const uint64_t uploadPartCount = std::max<uint64_t>(
-      1, (totalChunks + chunksPerUploadPart - 1) / chunksPerUploadPart);
+  const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
   const UploadLimitsResponse limits = api_.uploadLimits();
   const uint64_t partConcurrency = std::max<uint64_t>(
-      1, std::min<uint64_t>(uploadPartCount, static_cast<uint64_t>(std::max(
-                                                 1, limits.partConcurrency))));
+      1,
+      std::min<uint64_t>(uploadPlan.uploadPartCount,
+                         static_cast<uint64_t>(
+                             std::max(1, limits.partConcurrency))));
 
   const StartUploadResponse started = api_.startUpload(StartUploadRequest{
-      .originalSize = static_cast<int64_t>(originalSize),
-      .fileChunkSize = static_cast<int64_t>(fileChunkSize),
-      .totalChunks = static_cast<int>(totalChunks),
-      .uploadPartSize = static_cast<int64_t>(uploadPartSize),
-      .uploadPartCount = static_cast<int>(uploadPartCount),
+      .originalSize = static_cast<int64_t>(uploadPlan.originalSize),
+      .fileChunkSize = static_cast<int64_t>(uploadPlan.fileChunkSize),
+      .totalChunks = static_cast<int>(uploadPlan.totalChunks),
+      .uploadPartSize = static_cast<int64_t>(uploadPlan.uploadPartSize),
+      .uploadPartCount = static_cast<int>(uploadPlan.uploadPartCount),
       .encryptionVersion = 1,
       .folderId = entry.parentFolderId,
   });
@@ -101,8 +94,8 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   std::vector<uint8_t> encryptedMetadata;
   std::vector<uint8_t> encryptedManifest;
   std::vector<uint8_t> combinedChunkHashes;
-  std::vector<UploadedPartResult> uploadedParts(
-      static_cast<std::size_t>(uploadPartCount));
+  std::vector<UploadWorkerPartResult> uploadedParts(
+      static_cast<std::size_t>(uploadPlan.uploadPartCount));
 
   try {
     std::atomic<uint64_t> nextPartNumber{1};
@@ -114,18 +107,21 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
     auto uploadWorker = [&]() {
       while (!stopWorkers.load()) {
         const uint64_t partNumber = nextPartNumber.fetch_add(1);
-        if (partNumber > uploadPartCount) {
+        if (partNumber > uploadPlan.uploadPartCount) {
           return;
         }
 
         std::vector<uint8_t> uploadBody;
-        UploadedPartResult partResult;
+        UploadWorkerPartResult partResult;
 
         try {
-          const uint64_t partStart = (partNumber - 1) * uploadPartSize;
+          const uint64_t partStart =
+              (partNumber - 1) * uploadPlan.uploadPartSize;
           const uint64_t partEnd =
-              std::min<uint64_t>(partStart + uploadPartSize, originalSize);
-          const uint64_t firstChunkNumber = (partStart / fileChunkSize) + 1;
+              std::min<uint64_t>(partStart + uploadPlan.uploadPartSize,
+                                 originalSize);
+          const uint64_t firstChunkNumber =
+              (partStart / uploadPlan.fileChunkSize) + 1;
           std::ifstream stream(path, std::ios::binary);
           if (!stream.is_open()) {
             throw std::runtime_error("File cannot be opened");
@@ -140,10 +136,11 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
           // upload workers per file at once.
           for (uint64_t chunkStart = partStart, chunkNumber = firstChunkNumber;
                chunkStart < partEnd;
-               chunkStart += fileChunkSize, ++chunkNumber) {
+               chunkStart += uploadPlan.fileChunkSize, ++chunkNumber) {
 
             const uint64_t chunkEnd =
-                std::min<uint64_t>(chunkStart + fileChunkSize, partEnd);
+                std::min<uint64_t>(chunkStart + uploadPlan.fileChunkSize,
+                                   partEnd);
 
             std::vector<uint8_t> plaintextChunk(
                 static_cast<std::size_t>(chunkEnd - chunkStart));

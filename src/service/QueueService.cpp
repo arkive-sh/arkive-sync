@@ -1,10 +1,8 @@
 #include "service/QueueService.hpp"
 #include "api/ArkiveHttpClient.hpp"
-#include "helpers/PathCodec.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
-#include "service/UploadService.hpp"
-#include <filesystem>
+#include "service/UploadJobRunner.hpp"
 #include "spdlog/spdlog.h"
 #include <exception>
 
@@ -19,9 +17,9 @@ bool isUploadQueueLimitError(const std::exception &ex) {
 } // namespace
 
 QueueService::QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo,
-                           UploadService &uploadService, ArkiveApi &api)
+                           UploadJobRunner &uploadJobRunner, ArkiveApi &api)
     : queueRepo_(queueRepo), syncRepo_(syncRepo),
-      uploadService_(uploadService), api_(api) {}
+      uploadJobRunner_(uploadJobRunner), api_(api) {}
 
 QueueStats QueueService::stats() { return queueRepo_.stats(); }
 
@@ -39,21 +37,8 @@ void QueueService::processQueuedUploads() {
     }
 
     try {
-      const auto entry = syncRepo_.getEntryById(queuedJob->entryId);
-      if (!entry.has_value()) {
-        throw std::runtime_error("Queued upload entry is missing");
-      }
-
-      const auto syncRoot = syncRepo_.getSyncRootById(entry->syncRootId);
-      if (!syncRoot.has_value()) {
-        throw std::runtime_error("Queued upload sync root is missing");
-      }
-
-      const std::filesystem::path absolutePath =
-          PathCodec::joinRoot(syncRoot->localPath, entry->localPath);
-
-      uploadService_.uploadFile(absolutePath, *entry);
-      spdlog::info("Uploaded file: {}", absolutePath.string());
+      uploadJobRunner_.run(*queuedJob);
+      spdlog::info("Uploaded queued file for entry: {}", queuedJob->entryId);
 
       queueRepo_.markDone(queuedJob->id);
       syncRepo_.markEntrySynced(queuedJob->entryId);

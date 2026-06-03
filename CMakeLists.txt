@@ -108,8 +108,10 @@ add_executable(arkive-sync
     src/service/QueueService.cpp
     src/service/SyncService.cpp
     src/service/AuthService.cpp
+    src/service/UploadJobRunner.cpp
     src/service/UploadService.cpp
     src/service/VaultService.cpp
+    src/upload/UploadPlanner.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/fs/ArkiveFileReader.cpp
