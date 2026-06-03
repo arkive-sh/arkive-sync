@@ -3,6 +3,7 @@
 #include "crypto/Aad.hpp"
 #include "fs/ArkiveFileReader.hpp"
 #include "fs/FileHasher.hpp"
+#include "helpers/Mime.hpp"
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -64,34 +65,14 @@ void appendBytes(std::vector<uint8_t> &target,
   target.insert(target.end(), source.begin(), source.end());
 }
 
-std::string detectMimeType(const std::filesystem::path &path) {
-  const std::string extension = path.extension().string();
-  if (extension == ".jpg" || extension == ".jpeg") {
-    return "image/jpeg";
-  }
-  if (extension == ".png") {
-    return "image/png";
-  }
-  if (extension == ".gif") {
-    return "image/gif";
-  }
-  if (extension == ".txt") {
-    return "text/plain";
-  }
-  if (extension == ".json") {
-    return "application/json";
-  }
-
-  return "application/octet-stream";
-}
-
 nlohmann::json buildMetadata(const std::filesystem::path &path,
                              const EntryRecord &entry) {
+  const std::string mime = inferSafeMimeType(path);
   return {
       {"schema", "arkive.file.metadata"},
       {"version", 1},
       {"name", path.filename().string()},
-      {"mime", detectMimeType(path)},
+      {"mime", mime},
       {"extension", path.has_extension() ? path.extension().string() : ""},
       {"size", entry.localSize.value_or(0)},
       {"preview", nullptr},
@@ -214,7 +195,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
         {"hash_encoding", "base64"},
         {"file_id", started.fileId},
         {"name", path.filename().string()},
-        {"mime", detectMimeType(path)},
+        {"mime", inferSafeMimeType(path)},
         {"extension", path.has_extension() ? path.extension().string() : ""},
         {"size", originalSize},
         {"chunk_size", static_cast<uint64_t>(started.fileChunkSize)},
@@ -240,7 +221,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
                             .encryptedHash = encodeBase64(encryptedHash),
                             .searchTokens = fileEncryptor_.createSearchTokenEntries(
                                 started.vaultId, path.filename().string(),
-                                detectMimeType(path)),
+                                inferSafeMimeType(path)),
                             .hasThumbnail = false,
                             .thumbnailMime = "",
                             .thumbnailWidth = 0,

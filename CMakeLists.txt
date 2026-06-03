@@ -95,6 +95,7 @@ add_executable(arkive-sync
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Helpers.cpp
+    src/helpers/Mime.cpp
     src/platform/AppDataPaths.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
