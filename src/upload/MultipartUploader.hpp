@@ -3,6 +3,7 @@
 #include "api/ArkiveApi.hpp"
 #include "upload/UploadTypes.hpp"
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 class FileEncryptor;
@@ -16,7 +17,9 @@ public:
               const std::vector<uint8_t> &fileKey,
               const StartUploadResponse &started,
               const UploadPlan &plan,
-              uint64_t partConcurrency);
+              uint64_t partConcurrency,
+              const std::vector<UploadedPartResult> &completedParts = {},
+              const std::function<void(const UploadedPartResult &)> &onPartUploaded = {});
 
 private:
   ArkiveApi &api_;

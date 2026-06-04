@@ -2,7 +2,7 @@
 
 #include "api/ArkiveHttpClient.hpp"
 
-#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 
 class NullArkiveHttpClient final : public ArkiveHttpClient {
@@ -21,7 +21,7 @@ public:
     throw std::runtime_error("NullArkiveHttpClient.postForm called");
   }
 
-  std::string putBytes(const std::string &, const std::vector<std::byte> &) {
+  std::string putBytes(const std::string &, const std::vector<uint8_t> &) {
     throw std::runtime_error("NullArkiveHttpClient.putBytes called");
   }
 };

@@ -7,6 +7,7 @@
 #include "platform/AppDataPaths.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "repo/UploadResumeRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/AuthService.hpp"
 #include "service/QueueService.hpp"
@@ -29,6 +30,7 @@ int main(int argc, char *argv[]) {
     LocalPathProtector localPathProtector(crypto, vaultService);
     SyncRepo syncRepo(db.getDb(), localPathProtector);
     QueueRepo queueRepo(db.getDb());
+    UploadResumeRepo uploadResumeRepo(db.getDb());
     // End Repos
 
     const std::string baseUrl = requireBaseUrl(userRepo);
@@ -36,7 +38,7 @@ int main(int argc, char *argv[]) {
     ArkiveApi api(client);
     AuthService authService(userRepo, api);
     FileEncryptor fileEncryptor(crypto, vaultService);
-    UploadService uploadService(api, fileEncryptor);
+    UploadService uploadService(api, fileEncryptor, uploadResumeRepo);
     UploadJobRunner uploadJobRunner(syncRepo, uploadService, crypto);
     QueueService queueService(queueRepo, syncRepo, uploadJobRunner, api);
     SyncService syncService(syncRepo, queueRepo, crypto);

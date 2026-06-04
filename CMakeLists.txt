@@ -105,6 +105,7 @@ add_executable(arkive-sync
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
     src/repo/SyncRepo.cpp
+    src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/QueueService.cpp
     src/service/SyncService.cpp
@@ -191,6 +192,7 @@ add_executable(arkive-sync-tests
     src/fs/FileScanner.cpp
     src/repo/QueueRepo.cpp
     src/repo/SyncRepo.cpp
+    src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/SyncService.cpp
     src/service/UploadJobRunner.cpp

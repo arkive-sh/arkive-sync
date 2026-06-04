@@ -22,6 +22,12 @@ public:
   std::vector<uint8_t> encryptChunk(const std::vector<uint8_t> &plaintextChunk,
                                     const std::vector<uint8_t> &fileKey,
                                     const std::vector<uint8_t> &aad);
+  std::vector<uint8_t>
+  encryptResumeFileKey(const std::vector<uint8_t> &fileKey,
+                       const std::string &uploadSessionId);
+  std::vector<uint8_t>
+  decryptResumeFileKey(const std::vector<uint8_t> &encryptedFileKeyBlob,
+                       const std::string &uploadSessionId);
   std::vector<uint8_t> hashBytes(const std::vector<uint8_t> &bytes);
   std::vector<UploadCompleteSearchToken>
   createSearchTokenEntries(const std::string &vaultId,

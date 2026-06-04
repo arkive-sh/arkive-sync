@@ -195,6 +195,47 @@ FileEncryptor::encryptChunk(const std::vector<uint8_t> &plaintextChunk,
   return crypto_.encryptChunk(fileKey, aad, plaintextChunk);
 }
 
+std::vector<uint8_t>
+FileEncryptor::encryptResumeFileKey(const std::vector<uint8_t> &fileKey,
+                                    const std::string &uploadSessionId) {
+  if (fileKey.empty()) {
+    throw std::invalid_argument("fileKey cannot be empty");
+  }
+
+  if (!vaultService_.isUnlocked()) {
+    vaultService_.restoreSession();
+  }
+  if (!vaultService_.isUnlocked()) {
+    throw std::runtime_error("Vault is locked");
+  }
+
+  return crypto_.encryptChunk(vaultService_.masterKey(),
+                              ArkiveAad::toBytes(
+                                  ArkiveAad::makeResumeFileKey(uploadSessionId)),
+                              fileKey);
+}
+
+std::vector<uint8_t>
+FileEncryptor::decryptResumeFileKey(
+    const std::vector<uint8_t> &encryptedFileKeyBlob,
+    const std::string &uploadSessionId) {
+  if (encryptedFileKeyBlob.empty()) {
+    throw std::invalid_argument("encryptedFileKeyBlob cannot be empty");
+  }
+
+  if (!vaultService_.isUnlocked()) {
+    vaultService_.restoreSession();
+  }
+  if (!vaultService_.isUnlocked()) {
+    throw std::runtime_error("Vault is locked");
+  }
+
+  return crypto_.decryptChunk(vaultService_.masterKey(),
+                              ArkiveAad::toBytes(
+                                  ArkiveAad::makeResumeFileKey(uploadSessionId)),
+                              encryptedFileKeyBlob);
+}
+
 std::vector<uint8_t> FileEncryptor::hashBytes(const std::vector<uint8_t> &bytes) {
   return crypto_.blake3Hash(bytes);
 }

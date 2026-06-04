@@ -75,4 +75,8 @@ std::string makeLocalPath(const std::string &scopeId,
   return appendScopedAad(kLocalPathPrefix, {scopeId, pathHash});
 }
 
+std::string makeResumeFileKey(const std::string &uploadSessionId) {
+  return appendScopedAad(kResumeFileKeyPrefix, {uploadSessionId});
+}
+
 } // namespace ArkiveAad

@@ -92,7 +92,7 @@ public:
       const std::string &uploadSessionId, const std::vector<int> &partNumbers);
   virtual std::string
   putEncryptedPartToStorage(const std::string &presignedUrl,
-                            const std::vector<std::byte> &body);
+                            const std::vector<uint8_t> &body);
   virtual std::string presignThumbnail(const std::string &uploadSessionId,
                                        const PresignThumbnailRequest &request);
   virtual void uploadPart(const std::string &uploadSessionId,

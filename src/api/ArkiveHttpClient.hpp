@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/HttpError.hpp"
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -19,7 +20,7 @@ public:
   virtual nlohmann::json getJson(const std::string &path);
   virtual void postForm(const std::string &path);
   virtual std::string putBytes(const std::string &pathOrUrl,
-                               const std::vector<std::byte> &body);
+                               const std::vector<uint8_t> &body);
 
 private:
   std::string baseUrl_;

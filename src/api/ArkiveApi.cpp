@@ -110,7 +110,7 @@ ArkiveApi::presignParts(const std::string &uploadSessionId,
 
 std::string
 ArkiveApi::putEncryptedPartToStorage(const std::string &presignedUrl,
-                                     const std::vector<std::byte> &body) {
+                                     const std::vector<uint8_t> &body) {
   return client_.putBytes(presignedUrl, body);
 }
 

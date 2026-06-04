@@ -24,15 +24,12 @@ struct EncryptedChunkResult {
   uint64_t chunkNumber = 0;
   uint64_t plaintextSize = 0;
   uint64_t ciphertextSize = 0;
-  std::vector<uint8_t> ciphertext;
-  std::vector<uint8_t> encryptedHashBytes;
   std::string encryptedHash;
 };
 
 struct UploadedPartResult {
   UploadPartPlan plan;
   std::vector<EncryptedChunkResult> chunks;
-  std::vector<uint8_t> uploadHashBytes;
   std::string uploadHash;
   std::string etag;
   std::vector<uint8_t> combinedChunkHashes;

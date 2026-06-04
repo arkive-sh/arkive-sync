@@ -223,7 +223,7 @@ void ArkiveHttpClient::postForm(const std::string &path) {
 }
 
 std::string ArkiveHttpClient::putBytes(const std::string &pathOrUrl,
-                                       const std::vector<std::byte> &body) {
+                                       const std::vector<uint8_t> &body) {
   CurlPtr curl = makeCurlHandle();
   HeaderPtr headers(nullptr, &curl_slist_free_all);
 

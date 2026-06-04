@@ -2,7 +2,9 @@
 #include "crypto/RustCrypto.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "helpers/Base64.hpp"
+#include "repo/UploadResumeRepo.hpp"
 #include "repo/UserRepo.hpp"
+#include "api/HttpError.hpp"
 #include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
 
@@ -13,7 +15,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -24,6 +25,14 @@ namespace {
 class FakeArkiveApi final : public ArkiveApi {
 public:
   FakeArkiveApi() : ArkiveApi(client_) {}
+
+  void failPutCall(int putCall, int statusCode, std::string body) {
+    failPutCall_ = putCall;
+    failStatusCode_ = statusCode;
+    failBody_ = std::move(body);
+  }
+
+  void clearPutFailure() { failPutCall_.reset(); }
 
   UploadLimitsResponse uploadLimits() override {
     ++uploadLimitsCalls;
@@ -60,10 +69,13 @@ public:
 
   std::string
   putEncryptedPartToStorage(const std::string &presignedUrl,
-                            const std::vector<std::byte> &body) override {
+                            const std::vector<uint8_t> &body) override {
     ++putCalls;
     lastPutUrl = presignedUrl;
     lastPutBody = body;
+    if (failPutCall_.has_value() && putCalls == *failPutCall_) {
+      throw HttpError(failStatusCode_, failBody_);
+    }
     return "etag-1";
   }
 
@@ -92,11 +104,14 @@ public:
   std::optional<std::string> lastPresignSession;
   std::vector<int> lastPresignParts;
   std::optional<std::string> lastPutUrl;
-  std::vector<std::byte> lastPutBody;
+  std::vector<uint8_t> lastPutBody;
   std::optional<std::string> lastUploadPartSession;
   std::optional<UploadPartRequest> lastUploadPart;
   std::optional<std::string> lastCompleteSession;
   std::optional<UploadCompleteRequest> lastComplete;
+  std::optional<int> failPutCall_;
+  int failStatusCode_ = 503;
+  std::string failBody_;
 
 private:
   NullArkiveHttpClient client_;
@@ -123,7 +138,7 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
   vaultService.unlock(password);
 }
 
-bool bytesContainAsciiSubstring(const std::vector<std::byte> &bytes,
+bool bytesContainAsciiSubstring(const std::vector<uint8_t> &bytes,
                                 const std::string &needle) {
   if (needle.empty() || bytes.empty() || needle.size() > bytes.size()) {
     return false;
@@ -158,7 +173,8 @@ TEST_CASE("UploadService happy path calls start/presign/put/part/complete") {
 
   FakeArkiveApi api;
   FileEncryptor encryptor(crypto, vaultService);
-  UploadService uploadService(api, encryptor);
+  UploadResumeRepo uploadResumeRepo(db.get());
+  UploadService uploadService(api, encryptor, uploadResumeRepo);
 
   const auto filePath = tempDir.path() / "movie.txt";
   const std::string plaintext = "hello";
@@ -200,4 +216,69 @@ TEST_CASE("UploadService happy path calls start/presign/put/part/complete") {
 
   // Safety check: encrypted PUT body should not contain plaintext.
   REQUIRE_FALSE(bytesContainAsciiSubstring(api.lastPutBody, plaintext));
+}
+
+TEST_CASE("UploadService resumes persisted multipart upload after retryable failure") {
+  TestDatabase db;
+  TempDir tempDir;
+  RustCrypto crypto;
+
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+
+  FakeArkiveApi api;
+  FileEncryptor encryptor(crypto, vaultService);
+  UploadResumeRepo uploadResumeRepo(db.get());
+  UploadService uploadService(api, encryptor, uploadResumeRepo);
+
+  const auto filePath = tempDir.path() / "movie.bin";
+  const std::string plaintext(9 * 1024 * 1024, 'x');
+  writeFile(filePath, plaintext);
+
+  const EntryRecord entry{
+      .id = "entry-1",
+      .remoteId = std::nullopt,
+      .syncRootId = "root-1",
+      .remoteType = "file",
+      .localPath = filePath.filename().string(),
+      .isDirectory = false,
+      .parentFolderId = std::nullopt,
+      .encryptedName = std::nullopt,
+      .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)),
+      .localMtime = std::nullopt,
+      .localHash = std::string("hash-1"),
+      .remoteUpdatedAt = std::nullopt,
+      .syncState = "pending_upload",
+      .lastSyncedAt = std::nullopt,
+  };
+
+  api.failPutCall(2, 503, R"({"error":"temporary failure"})");
+  REQUIRE_THROWS_AS(uploadService.uploadFile(filePath, entry), HttpError);
+
+  const auto persistedSession =
+      uploadResumeRepo.getSessionByLocalPath(std::filesystem::absolute(filePath)
+                                                 .lexically_normal()
+                                                 .string());
+  REQUIRE(persistedSession.has_value());
+  const auto persistedParts =
+      uploadResumeRepo.listParts(persistedSession->uploadSessionId);
+  REQUIRE(persistedParts.size() == 1);
+  REQUIRE(persistedParts.front().partNumber == 1);
+
+  api.clearPutFailure();
+  const UploadFileResponse resumed = uploadService.uploadFile(filePath, entry);
+
+  REQUIRE(resumed.uploadSessionId == "session-1");
+  REQUIRE(api.startUploadCalls == 1);
+  REQUIRE(api.putCalls == 3);
+  REQUIRE(api.uploadPartCalls == 2);
+  REQUIRE(api.completeCalls == 1);
+  REQUIRE_FALSE(
+      uploadResumeRepo
+          .getSessionByLocalPath(std::filesystem::absolute(filePath)
+                                     .lexically_normal()
+                                     .string())
+          .has_value());
 }
