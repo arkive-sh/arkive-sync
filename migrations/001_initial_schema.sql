@@ -21,6 +21,8 @@ ON CONFLICT(id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS sync_roots (
   id TEXT PRIMARY KEY,
   local_path TEXT NOT NULL UNIQUE,
+  encrypted_local_path TEXT NOT NULL,
+  local_path_hash TEXT NOT NULL UNIQUE,
   folder_id TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -32,6 +34,8 @@ CREATE TABLE IF NOT EXISTS entries (
   sync_root_id TEXT NOT NULL,
   remote_type TEXT NOT NULL,
   local_path TEXT NOT NULL,
+  encrypted_local_path TEXT NOT NULL,
+  local_path_hash TEXT NOT NULL,
   is_directory INTEGER NOT NULL DEFAULT 0,
   parent_folder_id TEXT,
   encrypted_name TEXT,
@@ -62,6 +66,18 @@ CREATE TABLE IF NOT EXISTS transfer_queue (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path
 ON entries(sync_root_id, local_path);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path_hash
+ON entries(sync_root_id, local_path_hash);
+
+CREATE INDEX IF NOT EXISTS idx_entries_root_path
+ON entries(sync_root_id, local_path);
+
+CREATE INDEX IF NOT EXISTS idx_entries_root_state_path
+ON entries(sync_root_id, sync_state, local_path);
+
+CREATE INDEX IF NOT EXISTS idx_entries_root_path_hash
+ON entries(sync_root_id, local_path_hash);
 
 CREATE INDEX IF NOT EXISTS idx_transfer_queue_status
 ON transfer_queue(status);

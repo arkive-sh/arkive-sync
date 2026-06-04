@@ -3,6 +3,7 @@
 #include "fs/FileWatcher.hpp"
 #include "service/SyncScheduler.hpp"
 
+#include <csignal>
 #include <cerrno>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -12,6 +13,10 @@
 #include <vector>
 
 namespace {
+
+volatile std::sig_atomic_t gStopRequested = 0;
+
+void handleStopSignal(int) { gStopRequested = 1; }
 
 class ScopedFd {
 public:
@@ -32,12 +37,35 @@ private:
   int fd_{-1};
 };
 
+class ScopedSignalHandlers {
+public:
+  ScopedSignalHandlers()
+      : previousSigint_(std::signal(SIGINT, handleStopSignal)),
+        previousSigterm_(std::signal(SIGTERM, handleStopSignal)) {}
+
+  ~ScopedSignalHandlers() {
+    std::signal(SIGINT, previousSigint_);
+    std::signal(SIGTERM, previousSigterm_);
+  }
+
+  ScopedSignalHandlers(const ScopedSignalHandlers &) = delete;
+  ScopedSignalHandlers &operator=(const ScopedSignalHandlers &) = delete;
+
+private:
+  using SignalHandler = void (*)(int);
+
+  SignalHandler previousSigint_;
+  SignalHandler previousSigterm_;
+};
+
 } // namespace
 
 LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler)
     : syncScheduler_(syncScheduler) {}
 
 int LinuxDaemon::run() {
+  gStopRequested = 0;
+  ScopedSignalHandlers signalHandlers;
   const std::vector<WatchRoot> watchRoots = syncScheduler_.watchRoots();
   if (watchRoots.empty()) {
     throw std::runtime_error("No enabled sync paths configured.");
@@ -64,7 +92,9 @@ int LinuxDaemon::run() {
                             "epoll_ctl add watcher failed");
   }
 
-  while (true) {
+  spdlog::info("Daemon watching {} sync root(s)", watchRoots.size());
+
+  while (!gStopRequested) {
     const int timeoutMs = syncScheduler_.nextWaitTimeoutMs();
     epoll_event readyEvents[8]{};
     const int readyCount =
@@ -89,9 +119,15 @@ int LinuxDaemon::run() {
     }
 
     const auto scanResult = syncScheduler_.runDueScans();
-    if (scanResult.scannedRoots > 0) {
-      spdlog::info("Daemon scanned {} root(s), detected {} change(s)",
-                   scanResult.scannedRoots, scanResult.changedEntries);
+    if (scanResult.scannedRoots > 0 || scanResult.scannedPaths > 0) {
+      spdlog::info(
+          "Daemon scanned {} root(s) and {} path(s), detected {} change(s)",
+          scanResult.scannedRoots, scanResult.scannedPaths,
+          scanResult.changedEntries);
     }
   }
+
+  watcher->stop();
+  spdlog::info("Daemon stopped");
+  return 0;
 }

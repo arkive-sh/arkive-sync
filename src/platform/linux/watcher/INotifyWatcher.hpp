@@ -4,8 +4,10 @@
 
 #include <array>
 #include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <optional>
+#include <spdlog/spdlog.h>
 #include <system_error>
 #include <unordered_map>
 #include <vector>
@@ -92,6 +94,8 @@ private:
     int wd = inotify_add_watch(fd_.get(), path.c_str(), Mask);
 
     if (wd < 0) {
+      spdlog::warn("Failed to watch {}: {}", path.string(),
+                   std::strerror(errno));
       return;
     }
 
@@ -112,6 +116,8 @@ private:
              root.path,
              std::filesystem::directory_options::skip_permission_denied, ec)) {
       if (ec) {
+        spdlog::warn("Failed to walk {} for watches: {}", root.path.string(),
+                     ec.message());
         break;
       }
 

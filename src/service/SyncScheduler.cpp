@@ -7,9 +7,10 @@
 #include <optional>
 
 SyncScheduler::SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
-                             std::chrono::milliseconds debounceWindow)
+                             std::chrono::milliseconds debounceWindow,
+                             std::chrono::milliseconds maxDelay)
     : syncRepo_(syncRepo), syncService_(syncService),
-      debounceWindow_(debounceWindow) {
+      debounceWindow_(debounceWindow), maxDelay_(maxDelay) {
   for (const auto &syncRoot : syncRepo_.getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
@@ -18,6 +19,7 @@ SyncScheduler::SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
     scheduledRoots_[syncRoot.id] = ScheduledRoot{
         .path = syncRoot.localPath,
         .pending = false,
+        .firstEventAt = Clock::time_point{},
         .dueAt = Clock::time_point{},
     };
   }
@@ -38,12 +40,19 @@ std::vector<WatchRoot> SyncScheduler::watchRoots() const {
 }
 
 void SyncScheduler::schedule(const FileEvent &event) {
-  if (event.type == FileEventType::Overflow || event.rootId.empty()) {
+  if (event.rootId.empty()) {
     scheduleAll();
     return;
   }
 
-  scheduleRoot(event.rootId, Clock::now());
+  const Clock::time_point now = Clock::now();
+  if (event.type == FileEventType::Overflow ||
+      event.type == FileEventType::Unknown) {
+    scheduleRoot(event.rootId, now);
+    return;
+  }
+
+  schedulePath(event.rootId, event.path, now);
 }
 
 void SyncScheduler::scheduleAll() {
@@ -56,14 +65,20 @@ void SyncScheduler::scheduleAll() {
 int SyncScheduler::nextWaitTimeoutMs() const {
   std::optional<Clock::time_point> nextDueAt;
 
-  for (const auto &[_, root] : scheduledRoots_) {
-    if (!root.pending) {
-      continue;
+  auto updateNextDueAt = [&](Clock::time_point dueAt) {
+    if (!nextDueAt.has_value() || dueAt < *nextDueAt) {
+      nextDueAt = dueAt;
     }
+  };
 
-    if (!nextDueAt.has_value() || root.dueAt < *nextDueAt) {
-      nextDueAt = root.dueAt;
+  for (const auto &[_, root] : scheduledRoots_) {
+    if (root.pending) {
+      updateNextDueAt(root.dueAt);
     }
+  }
+
+  for (const auto &[_, path] : scheduledPaths_) {
+    updateNextDueAt(path.dueAt);
   }
 
   if (!nextDueAt.has_value()) {
@@ -84,7 +99,7 @@ SyncScheduler::ScanResult SyncScheduler::runDueScans() {
   const Clock::time_point now = Clock::now();
   ScanResult result;
 
-  for (auto &[_, root] : scheduledRoots_) {
+  for (auto &[rootId, root] : scheduledRoots_) {
     if (!root.pending || root.dueAt > now) {
       continue;
     }
@@ -92,9 +107,52 @@ SyncScheduler::ScanResult SyncScheduler::runDueScans() {
     result.changedEntries += syncService_.scanRoot(root.path);
     result.scannedRoots += 1;
     root.pending = false;
+    root.firstEventAt = Clock::time_point{};
+    root.dueAt = Clock::time_point{};
+    clearScheduledPathsForRoot(rootId);
+  }
+
+  for (auto it = scheduledPaths_.begin(); it != scheduledPaths_.end();) {
+    if (it->second.dueAt > now) {
+      ++it;
+      continue;
+    }
+
+    result.changedEntries +=
+        syncService_.scanPath(it->second.rootId, it->second.path);
+    result.scannedPaths += 1;
+    it = scheduledPaths_.erase(it);
   }
 
   return result;
+}
+
+void SyncScheduler::schedulePath(const std::string &rootId,
+                                 const std::filesystem::path &path,
+                                 Clock::time_point now) {
+  const auto rootIt = scheduledRoots_.find(rootId);
+  if (rootIt == scheduledRoots_.end() || rootIt->second.pending) {
+    return;
+  }
+
+  const std::filesystem::path normalizedPath =
+      std::filesystem::absolute(path).lexically_normal();
+  const std::string pathKey = rootId + "\n" + normalizedPath.string();
+  auto [it, inserted] = scheduledPaths_.try_emplace(
+      pathKey, ScheduledPath{
+                   .rootId = rootId,
+                   .path = normalizedPath,
+                   .firstSeenAt = now,
+                   .dueAt = Clock::time_point{},
+               });
+
+  if (inserted) {
+    it->second.firstSeenAt = now;
+  }
+
+  const Clock::time_point maxDueAt = it->second.firstSeenAt + maxDelay_;
+  const Clock::time_point debounceDueAt = now + debounceWindow_;
+  it->second.dueAt = std::min(debounceDueAt, maxDueAt);
 }
 
 void SyncScheduler::scheduleRoot(const std::string &rootId, Clock::time_point now) {
@@ -103,6 +161,23 @@ void SyncScheduler::scheduleRoot(const std::string &rootId, Clock::time_point no
     return;
   }
 
+  if (!it->second.pending) {
+    it->second.firstEventAt = now;
+  }
+
+  const Clock::time_point maxDueAt = it->second.firstEventAt + maxDelay_;
+  const Clock::time_point debounceDueAt = now + debounceWindow_;
   it->second.pending = true;
-  it->second.dueAt = now + debounceWindow_;
+  it->second.dueAt = std::min(debounceDueAt, maxDueAt);
+  clearScheduledPathsForRoot(rootId);
+}
+
+void SyncScheduler::clearScheduledPathsForRoot(const std::string &rootId) {
+  for (auto it = scheduledPaths_.begin(); it != scheduledPaths_.end();) {
+    if (it->second.rootId == rootId) {
+      it = scheduledPaths_.erase(it);
+      continue;
+    }
+    ++it;
+  }
 }

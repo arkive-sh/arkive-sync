@@ -86,6 +86,34 @@ TEST_CASE("SyncService marks new file pending upload without queue row") {
   REQUIRE(queueRepo.stats().queued == 0);
 }
 
+TEST_CASE("SyncService scanPath upserts a single changed file") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, crypto);
+
+  syncService.addPath(tempDir.path());
+  const auto roots = syncRepo.getSyncRoots();
+  REQUIRE(roots.size() == 1);
+
+  const auto filePath = tempDir.path() / "movie.txt";
+  writeFile(filePath, "hello");
+
+  REQUIRE(syncService.scanPath(roots.front().id, filePath) == 1);
+
+  const EntryRecord entry = onlyEntryForRoot(syncRepo, roots.front().id);
+  REQUIRE(entry.localPath == "movie.txt");
+  REQUIRE(entry.syncState == "pending_upload");
+  REQUIRE(queueRepo.stats().queued == 0);
+}
+
 TEST_CASE("SyncService second unchanged scan creates no duplicate entry or queue row") {
   TestDb db;
   TempDir tempDir;
@@ -241,6 +269,102 @@ TEST_CASE("SyncService marks deleted file entry deleted") {
   const EntryRecord deletedEntry = onlyEntryForRoot(syncRepo, roots.front().id);
   REQUIRE(deletedEntry.id == firstEntry.id);
   REQUIRE(deletedEntry.syncState == "deleted");
+}
+
+TEST_CASE("SyncService scanPath marks deleted file entry deleted") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, crypto);
+
+  const auto filePath = tempDir.path() / "movie.txt";
+  writeFile(filePath, "hello");
+  REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
+
+  const auto roots = syncRepo.getSyncRoots();
+  REQUIRE(roots.size() == 1);
+  const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  syncRepo.markEntrySynced(firstEntry.id);
+
+  std::filesystem::remove(filePath);
+  REQUIRE(syncService.scanPath(roots.front().id, filePath) == 1);
+
+  const EntryRecord deletedEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  REQUIRE(deletedEntry.id == firstEntry.id);
+  REQUIRE(deletedEntry.syncState == "deleted");
+}
+
+TEST_CASE("SyncService marks root entries deleted when root directory is removed") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, crypto);
+
+  const auto filePath = tempDir.path() / "movie.txt";
+  writeFile(filePath, "hello");
+  REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
+
+  const auto roots = syncRepo.getSyncRoots();
+  REQUIRE(roots.size() == 1);
+  const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  syncRepo.markEntrySynced(firstEntry.id);
+
+  std::filesystem::remove(filePath);
+  std::filesystem::remove(tempDir.path());
+  REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
+
+  const EntryRecord deletedEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  REQUIRE(deletedEntry.id == firstEntry.id);
+  REQUIRE(deletedEntry.syncState == "deleted");
+}
+
+TEST_CASE("SyncService scanPath marks deleted directory subtree deleted") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, crypto);
+
+  std::filesystem::create_directories(tempDir.path() / "docs");
+  writeFile(tempDir.path() / "docs" / "movie.txt", "hello");
+  REQUIRE(syncService.scanRoot(tempDir.path()) == 2);
+
+  const auto roots = syncRepo.getSyncRoots();
+  REQUIRE(roots.size() == 1);
+  const auto initialEntries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  REQUIRE(initialEntries.size() == 2);
+  for (const auto &entry : initialEntries) {
+    syncRepo.markEntrySynced(entry.id);
+  }
+
+  std::filesystem::remove_all(tempDir.path() / "docs");
+  REQUIRE(syncService.scanPath(roots.front().id, tempDir.path() / "docs") == 2);
+
+  const auto deletedEntries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  REQUIRE(deletedEntries.size() == 2);
+  for (const auto &entry : deletedEntries) {
+    REQUIRE(entry.syncState == "deleted");
+  }
 }
 
 TEST_CASE("SyncService marks restored deleted file pending upload again") {
