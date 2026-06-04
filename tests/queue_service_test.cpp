@@ -111,7 +111,7 @@ TEST_CASE("QueueService retries stale upload after rescan and then uploads refre
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
   FakeUploadService uploadService;
   UploadJobRunner uploadJobRunner(syncRepo, uploadService);
   FakeArkiveApi api;

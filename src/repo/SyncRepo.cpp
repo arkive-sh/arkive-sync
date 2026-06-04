@@ -205,7 +205,7 @@ INSERT OR IGNORE INTO scan_seen_paths (
 }
 
 std::optional<EntryIdentity>
-SyncScanSession::getEntryIdentityByLocalPathHash(
+SyncScanSession::findEntryIdentityByPathHash(
     const std::string &syncRootId, const std::string &localPathHash) const {
   sqlite3_reset(lookupStmt_.get());
   sqlite3_clear_bindings(lookupStmt_.get());
@@ -224,7 +224,7 @@ SyncScanSession::getEntryIdentityByLocalPathHash(
   return readEntryIdentity(lookupStmt_.get());
 }
 
-void SyncScanSession::markPathSeen(const std::string &localPathHash) const {
+void SyncScanSession::recordSeenPath(const std::string &localPathHash) const {
   sqlite3_reset(markSeenPathStmt_.get());
   sqlite3_clear_bindings(markSeenPathStmt_.get());
   bindText(db_, markSeenPathStmt_.get(), 1, localPathHash);
@@ -351,12 +351,12 @@ ORDER BY created_at ASC, local_path ASC;
   return roots;
 }
 
-std::vector<EntryRecord> SyncRepo::listPendingUploadEntries(size_t limit) const {
+std::vector<EntryRecord> SyncRepo::listEntriesPendingUpload(size_t limit) const {
   if (limit == 0) {
     return {};
   }
 
-  static constexpr const char *listPendingUploadEntriesSql = R"sql(
+  static constexpr const char *listEntriesPendingUploadSql = R"sql(
 SELECT
   e.id,
   e.remote_id,
@@ -386,7 +386,7 @@ LIMIT ?;
   )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, listPendingUploadEntriesSql, -1, &rawStmt,
+  if (sqlite3_prepare_v2(db_, listEntriesPendingUploadSql, -1, &rawStmt,
                          nullptr) != SQLITE_OK) {
     throw std::runtime_error(std::string("Prepare failed: ") +
                              sqlite3_errmsg(db_));
@@ -459,88 +459,12 @@ WHERE id = ?;
   return readEntryRecord(stmt.get(), pathProtector_);
 }
 
-std::optional<EntryRecord>
-SyncRepo::getEntryByLocalPath(const std::string &syncRootId,
-                              const std::string &localPath) const {
-  static constexpr const char *getEntryByLocalPathSql = R"sql(
-SELECT
-  id,
-  remote_id,
-  sync_root_id,
-  remote_type,
-  local_path,
-  local_path_hash,
-  is_directory,
-  parent_folder_id,
-  encrypted_name,
-  local_size,
-  local_mtime,
-  local_hash,
-  remote_updated_at,
-  sync_state,
-  last_synced_at
-FROM entries
-WHERE sync_root_id = ?
-  AND local_path_hash = ?;
-  )sql";
-
-  sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, getEntryByLocalPathSql, -1, &rawStmt, nullptr) !=
-      SQLITE_OK) {
-    throw std::runtime_error(std::string("Prepare failed: ") +
-                             sqlite3_errmsg(db_));
-  }
-
-  StmtUniquePtr stmt(rawStmt);
-  bindText(db_, stmt.get(), 1, syncRootId);
-  bindText(db_, stmt.get(), 2, pathProtector_.hashPath(localPath));
-
-  const int rc = sqlite3_step(stmt.get());
-  if (rc == SQLITE_DONE) {
-    return std::nullopt;
-  }
-  if (rc != SQLITE_ROW) {
-    throw std::runtime_error(std::string("Step failed: ") +
-                             sqlite3_errmsg(db_));
-  }
-
-  return readEntryRecord(stmt.get(), pathProtector_);
-}
-
-SyncScanSession SyncRepo::createScanSession() const {
+SyncScanSession SyncRepo::beginScan() const {
   return SyncScanSession(db_);
 }
 
-std::string SyncRepo::hashLocalPath(const std::string &localPath) const {
+std::string SyncRepo::computeLocalPathHash(const std::string &localPath) const {
   return pathProtector_.hashPath(localPath);
-}
-
-int64_t SyncRepo::advanceScanGeneration(const std::string &syncRootId) const {
-  static constexpr const char *advanceScanGenerationSql = R"sql(
-UPDATE sync_roots
-SET
-  scan_generation = COALESCE(scan_generation, 0) + 1
-WHERE id = ?
-RETURNING scan_generation;
-  )sql";
-
-  sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, advanceScanGenerationSql, -1, &rawStmt,
-                         nullptr) != SQLITE_OK) {
-    throw std::runtime_error(std::string("Prepare failed: ") +
-                             sqlite3_errmsg(db_));
-  }
-
-  StmtUniquePtr stmt(rawStmt);
-  bindText(db_, stmt.get(), 1, syncRootId);
-
-  const int rc = sqlite3_step(stmt.get());
-  if (rc != SQLITE_ROW) {
-    throw std::runtime_error(std::string("Step failed: ") +
-                             sqlite3_errmsg(db_));
-  }
-
-  return sqlite3_column_int64(stmt.get(), 0);
 }
 
 void SyncRepo::markEntrySynced(const std::string &entryId) {
@@ -660,9 +584,7 @@ ON CONFLICT(id) DO UPDATE SET
   }
 }
 
-size_t SyncRepo::upsertEntries(
-    const std::vector<EntryRecord> &entries,
-    std::optional<int64_t> lastSeenGeneration) const {
+size_t SyncRepo::upsertEntries(const std::vector<EntryRecord> &entries) const {
   std::vector<EntryUpsertRecord> upsertRecords;
   upsertRecords.reserve(entries.size());
   for (const auto &entry : entries) {
@@ -672,12 +594,11 @@ size_t SyncRepo::upsertEntries(
     });
   }
 
-  return upsertEntries(upsertRecords, lastSeenGeneration);
+  return upsertScannedEntries(upsertRecords);
 }
 
-size_t SyncRepo::upsertEntries(
-    const std::vector<EntryUpsertRecord> &entries,
-    std::optional<int64_t> lastSeenGeneration) const {
+size_t
+SyncRepo::upsertScannedEntries(const std::vector<EntryUpsertRecord> &entries) const {
   if (entries.empty()) {
     return 0;
   }
@@ -699,10 +620,8 @@ INSERT INTO entries (
   remote_updated_at,
   sync_state,
   last_synced_at,
-  last_seen_generation,
   updated_at
 ) VALUES (
-  ?,
   ?,
   ?,
   ?,
@@ -729,7 +648,6 @@ ON CONFLICT(id) DO UPDATE SET
   local_mtime = excluded.local_mtime,
   local_hash = excluded.local_hash,
   sync_state = excluded.sync_state,
-  last_seen_generation = COALESCE(excluded.last_seen_generation, last_seen_generation),
   updated_at = CURRENT_TIMESTAMP;
   )sql";
 
@@ -768,7 +686,6 @@ ON CONFLICT(id) DO UPDATE SET
       bindOptionalText(db_, stmt.get(), 13, entry.remoteUpdatedAt);
       bindText(db_, stmt.get(), 14, entry.syncState);
       bindOptionalText(db_, stmt.get(), 15, entry.lastSyncedAt);
-      bindOptionalInt64(db_, stmt.get(), 16, lastSeenGeneration);
 
       const int rc = sqlite3_step(stmt.get());
       if (rc != SQLITE_DONE) {
@@ -836,7 +753,8 @@ WHERE sync_root_id = ?;
   return entries;
 }
 
-size_t SyncRepo::markMissingEntriesDeleted(const std::string &syncRootId) const {
+size_t SyncRepo::markMissingEntriesDeletedForCurrentScan(
+    const std::string &syncRootId) const {
   static constexpr const char *markDeletedSql = R"sql(
 UPDATE entries
 SET

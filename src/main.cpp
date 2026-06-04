@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     AuthService authService(userRepo, api);
     FileEncryptor fileEncryptor(crypto, vaultService);
     UploadService uploadService(api, fileEncryptor, uploadResumeRepo);
-    SyncService syncService(syncRepo, queueRepo, crypto);
+    SyncService syncService(syncRepo, crypto);
     UploadJobRunner uploadJobRunner(syncRepo, uploadService);
     QueueService queueService(queueRepo, syncRepo, uploadJobRunner, syncService,
                               api);

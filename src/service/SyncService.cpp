@@ -89,9 +89,8 @@ bool isUnchanged(const EntryIdentity &existingEntry, bool isDirectory,
 
 } // namespace
 
-SyncService::SyncService(SyncRepo &syncRepo, QueueRepo &queueRepo,
-                         RustCrypto &crypto)
-    : syncRepo_(syncRepo), queueRepo_(queueRepo), crypto_(crypto) {}
+SyncService::SyncService(SyncRepo &syncRepo, RustCrypto &crypto)
+    : syncRepo_(syncRepo), crypto_(crypto) {}
 
 void SyncService::addPath(const std::filesystem::path &rootPathInput) {
   FileScanner fileScanner(rootPathInput);
@@ -127,18 +126,18 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     syncRepo_.upsertSyncRoot(*syncRoot);
   }
 
-  auto scanSession = syncRepo_.createScanSession();
+  auto scanSession = syncRepo_.beginScan();
   std::vector<EntryUpsertRecord> entryRecords;
   entryRecords.reserve(kScanUpsertBatchSize);
   size_t changedCount = 0;
 
   fileScanner.scanFiles([&](const LocalEntry &entry) {
     const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
-    const std::string localPathHash = syncRepo_.hashLocalPath(relativePath);
-    scanSession.markPathSeen(localPathHash);
+    const std::string localPathHash = syncRepo_.computeLocalPathHash(relativePath);
+    scanSession.recordSeenPath(localPathHash);
     const std::string localMtime = toMtimeString(entry.modifiedTime);
     const std::optional<EntryIdentity> existingScanState =
-        scanSession.getEntryIdentityByLocalPathHash(syncRoot->id, localPathHash);
+        scanSession.findEntryIdentityByPathHash(syncRoot->id, localPathHash);
     const std::optional<EntryRecord> existingEntry =
         toEntryRecord(existingScanState, syncRoot->id, relativePath);
 
@@ -208,15 +207,15 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     });
 
     if (entryRecords.size() >= kScanUpsertBatchSize) {
-      changedCount += syncRepo_.upsertEntries(entryRecords);
+      changedCount += syncRepo_.upsertScannedEntries(entryRecords);
       entryRecords.clear();
     }
   });
 
   if (!entryRecords.empty()) {
-    changedCount += syncRepo_.upsertEntries(entryRecords);
+    changedCount += syncRepo_.upsertScannedEntries(entryRecords);
   }
-  changedCount += syncRepo_.markMissingEntriesDeleted(syncRoot->id);
+  changedCount += syncRepo_.markMissingEntriesDeletedForCurrentScan(syncRoot->id);
   syncRepo_.releaseMemory();
 
   return changedCount;

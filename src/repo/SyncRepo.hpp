@@ -57,9 +57,9 @@ public:
   SyncScanSession(sqlite3 *db);
 
   std::optional<EntryIdentity>
-  getEntryIdentityByLocalPathHash(const std::string &syncRootId,
-                                  const std::string &localPathHash) const;
-  void markPathSeen(const std::string &localPathHash) const;
+  findEntryIdentityByPathHash(const std::string &syncRootId,
+                              const std::string &localPathHash) const;
+  void recordSeenPath(const std::string &localPathHash) const;
 
 private:
   sqlite3 *db_;
@@ -77,23 +77,16 @@ public:
   getSyncRootByLocalPath(const std::string &localPath) const;
   std::vector<SyncRootRecord> getSyncRoots() const;
   std::optional<EntryRecord> getEntryById(const std::string &entryId) const;
-  std::optional<EntryRecord>
-  getEntryByLocalPath(const std::string &syncRootId,
-                      const std::string &localPath) const;
-  SyncScanSession createScanSession() const;
-  std::string hashLocalPath(const std::string &localPath) const;
-  int64_t advanceScanGeneration(const std::string &syncRootId) const;
+  SyncScanSession beginScan() const;
+  std::string computeLocalPathHash(const std::string &localPath) const;
   void upsertSyncRoot(const SyncRootRecord &syncRoot) const;
   std::vector<EntryRecord>
   getEntriesForSyncRoot(const std::string &syncRootId) const;
-  std::vector<EntryRecord> listPendingUploadEntries(size_t limit) const;
-  size_t upsertEntries(
-      const std::vector<EntryRecord> &entries,
-      std::optional<int64_t> lastSeenGeneration = std::nullopt) const;
-  size_t upsertEntries(
-      const std::vector<EntryUpsertRecord> &entries,
-      std::optional<int64_t> lastSeenGeneration = std::nullopt) const;
-  size_t markMissingEntriesDeleted(const std::string &syncRootId) const;
+  std::vector<EntryRecord> listEntriesPendingUpload(size_t limit) const;
+  size_t upsertEntries(const std::vector<EntryRecord> &entries) const;
+  size_t upsertScannedEntries(const std::vector<EntryUpsertRecord> &entries) const;
+  size_t markMissingEntriesDeletedForCurrentScan(
+      const std::string &syncRootId) const;
   void releaseMemory() const;
 
   void markEntrySynced(const std::string &entryId);

@@ -283,14 +283,14 @@ int App::run(int argc, char *argv[]) {
           "No sync paths configured. Run `arkive-sync sync add <path>` first.");
     }
 
-    size_t totalInsertedCount = 0;
+    size_t totalChangedCount = 0;
     size_t scannedRoots = 0;
     for (const auto &syncRoot : syncRoots) {
       if (!syncRoot.enabled) {
         continue;
       }
 
-      totalInsertedCount += syncService_.scanRoot(syncRoot.localPath);
+      totalChangedCount += syncService_.scanRoot(syncRoot.localPath);
       ++scannedRoots;
       spdlog::info("Ran sync for path: {}", syncRoot.localPath);
     }
@@ -300,7 +300,7 @@ int App::run(int argc, char *argv[]) {
     }
 
     spdlog::info("Ran sync for {} path(s)", scannedRoots);
-    spdlog::info("Upserted {} entry records", totalInsertedCount);
+    spdlog::info("Detected {} entry changes", totalChangedCount);
     return 0;
   }
 

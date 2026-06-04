@@ -71,7 +71,7 @@ TEST_CASE("SyncService marks new file pending upload without queue row") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -97,7 +97,7 @@ TEST_CASE("SyncService second unchanged scan creates no duplicate entry or queue
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -128,7 +128,7 @@ TEST_CASE("SyncService second unchanged scan keeps pending upload as one entry")
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -157,7 +157,7 @@ TEST_CASE("SyncService marks changed file pending upload") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -188,7 +188,7 @@ TEST_CASE("SyncService updates metadata only when mtime changes but hash stays s
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -224,7 +224,7 @@ TEST_CASE("SyncService marks deleted file entry deleted") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -254,7 +254,7 @@ TEST_CASE("SyncService marks restored deleted file pending upload again") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -288,7 +288,7 @@ TEST_CASE("SyncService rename marks old path deleted and new path pending upload
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   const auto oldPath = tempDir.path() / "movie.txt";
   const auto newPath = tempDir.path() / "movie-renamed.txt";
@@ -335,7 +335,7 @@ TEST_CASE("SyncService marks multiple files pending upload") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   writeFile(tempDir.path() / "movie.txt", "movie");
   writeFile(tempDir.path() / "music.mp3", "music");
@@ -363,7 +363,7 @@ TEST_CASE("SyncService stores nested file paths as portable relative paths") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
   QueueRepo queueRepo(db.get());
-  SyncService syncService(syncRepo, queueRepo, crypto);
+  SyncService syncService(syncRepo, crypto);
 
   std::filesystem::create_directories(tempDir.path() / "docs");
   std::filesystem::create_directories(tempDir.path() / "images");

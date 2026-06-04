@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS sync_roots (
   local_path TEXT NOT NULL UNIQUE,
   folder_id TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
-  scan_generation INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -42,7 +41,6 @@ CREATE TABLE IF NOT EXISTS entries (
   remote_updated_at TEXT,
   sync_state TEXT NOT NULL,
   last_synced_at TEXT,
-  last_seen_generation INTEGER,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
