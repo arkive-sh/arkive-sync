@@ -81,3 +81,15 @@ std::string inferSafeMimeType(const std::filesystem::path &path) {
 
   return std::string(it->mime);
 }
+
+std::string fileExtensionString(const std::filesystem::path &path) {
+  return path.has_extension() ? path.extension().string() : "";
+}
+
+FileMimeDetails describeFileMime(const std::filesystem::path &path) {
+  return FileMimeDetails{
+      .name = path.filename().string(),
+      .extension = fileExtensionString(path),
+      .mime = inferSafeMimeType(path),
+  };
+}

@@ -15,13 +15,13 @@ void appendBytes(std::vector<uint8_t> &target,
 
 nlohmann::json buildMetadata(const std::filesystem::path &path,
                              const EntryRecord &entry) {
-  const std::string mime = inferSafeMimeType(path);
+  const FileMimeDetails details = describeFileMime(path);
   return {
       {"schema", "arkive.file.metadata"},
       {"version", 1},
-      {"name", path.filename().string()},
-      {"mime", mime},
-      {"extension", path.has_extension() ? path.extension().string() : ""},
+      {"name", details.name},
+      {"mime", details.mime},
+      {"extension", details.extension},
       {"size", entry.localSize.value_or(0)},
       {"preview", nullptr},
   };
@@ -54,6 +54,7 @@ UploadArtifacts UploadFinalizer::completeUpload(
       appendBytes(combinedChunkHashes, part.combinedChunkHashes);
     }
 
+    const FileMimeDetails details = describeFileMime(path);
     artifacts.fileKey = fileKey;
     artifacts.encryptedMetadata = fileEncryptor_.encryptMetadata(
         buildMetadata(path, entry).dump(), artifacts.fileKey, started.vaultId,
@@ -65,9 +66,9 @@ UploadArtifacts UploadFinalizer::completeUpload(
         {"hash_alg", "blake3"},
         {"hash_encoding", "base64"},
         {"file_id", started.fileId},
-        {"name", path.filename().string()},
-        {"mime", inferSafeMimeType(path)},
-        {"extension", path.has_extension() ? path.extension().string() : ""},
+        {"name", details.name},
+        {"mime", details.mime},
+        {"extension", details.extension},
         {"size", plan.originalSize},
         {"chunk_size", static_cast<uint64_t>(started.fileChunkSize)},
         {"chunks", manifestChunks},
@@ -92,8 +93,7 @@ UploadArtifacts UploadFinalizer::completeUpload(
             .encryptedManifest = encodeBase64(artifacts.encryptedManifest),
             .encryptedHash = encodeBase64(artifacts.encryptedHash),
             .searchTokens = fileEncryptor_.createSearchTokenEntries(
-                started.vaultId, path.filename().string(),
-                inferSafeMimeType(path)),
+                started.vaultId, details.name, details.mime),
             .hasThumbnail = false,
             .thumbnailMime = "",
             .thumbnailWidth = 0,

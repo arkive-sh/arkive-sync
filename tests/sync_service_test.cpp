@@ -50,6 +50,14 @@ EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) 
   return entries.front();
 }
 
+std::string mtimeStringFor(const std::filesystem::path &path) {
+  const auto mtime = std::filesystem::last_write_time(path);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      mtime.time_since_epoch())
+                      .count();
+  return std::to_string(static_cast<long long>(ms));
+}
+
 } // namespace
 
 TEST_CASE("SyncService marks new file pending upload without queue row") {
@@ -167,6 +175,42 @@ TEST_CASE("SyncService marks changed file pending upload") {
   REQUIRE(changedEntry.id == firstEntry.id);
   REQUIRE(changedEntry.syncState == "pending_upload");
   REQUIRE(changedEntry.localHash != firstEntry.localHash);
+}
+
+TEST_CASE("SyncService updates metadata only when mtime changes but hash stays same") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, queueRepo, crypto);
+
+  const auto filePath = tempDir.path() / "movie.txt";
+  writeFile(filePath, "hello");
+  syncService.scanRoot(tempDir.path());
+
+  const auto roots = syncRepo.getSyncRoots();
+  REQUIRE(roots.size() == 1);
+  const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  syncRepo.markEntrySynced(firstEntry.id);
+
+  std::filesystem::last_write_time(
+      filePath, std::filesystem::last_write_time(filePath) + std::chrono::seconds(2));
+  const std::string updatedMtime = mtimeStringFor(filePath);
+
+  syncService.scanRoot(tempDir.path());
+
+  const EntryRecord rescannedEntry = onlyEntryForRoot(syncRepo, roots.front().id);
+  REQUIRE(rescannedEntry.id == firstEntry.id);
+  REQUIRE(rescannedEntry.syncState == "synced");
+  REQUIRE(rescannedEntry.localHash == firstEntry.localHash);
+  REQUIRE(rescannedEntry.localMtime == updatedMtime);
+  REQUIRE(rescannedEntry.localMtime != firstEntry.localMtime);
 }
 
 TEST_CASE("SyncService marks deleted file entry deleted") {

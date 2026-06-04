@@ -7,7 +7,6 @@
 #include "service/VaultService.hpp"
 
 #include "crypto/Aad.hpp"
-#include "fs/FileHasher.hpp"
 #include "helpers/Base64.hpp"
 
 #include "support/FakeSecureStorage.hpp"
@@ -16,6 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <stdexcept>
 
@@ -85,6 +85,14 @@ EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) 
   return entries.front();
 }
 
+std::string mtimeStringFor(const std::filesystem::path &path) {
+  const auto mtime = std::filesystem::last_write_time(path);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      mtime.time_since_epoch())
+                      .count();
+  return std::to_string(static_cast<long long>(ms));
+}
+
 } // namespace
 
 TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remote_id") {
@@ -111,10 +119,6 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
 
-  // Hash it so UploadJobRunner does the pre-upload hash check.
-  FileHasher hasher(filePath, crypto);
-  const std::string hash = hasher.hashFile();
-
   const EntryRecord entry{
       .id = "entry-1",
       .remoteId = std::nullopt,
@@ -125,8 +129,8 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
       .parentFolderId = std::nullopt,
       .encryptedName = std::nullopt,
       .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)),
-      .localMtime = std::nullopt,
-      .localHash = hash,
+      .localMtime = mtimeStringFor(filePath),
+      .localHash = "scan-hash-1",
       .remoteUpdatedAt = std::nullopt,
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
@@ -134,7 +138,7 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
   syncRepo.upsertEntries({entry});
 
   FakeUploadService fakeUpload;
-  UploadJobRunner runner(syncRepo, fakeUpload, crypto);
+  UploadJobRunner runner(syncRepo, fakeUpload);
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
@@ -183,9 +187,6 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
-  FileHasher hasher(filePath, crypto);
-  const std::string hash = hasher.hashFile();
-
   const EntryRecord entry{
       .id = "entry-1",
       .remoteId = std::nullopt,
@@ -196,8 +197,8 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
       .parentFolderId = std::nullopt,
       .encryptedName = std::nullopt,
       .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)),
-      .localMtime = std::nullopt,
-      .localHash = hash,
+      .localMtime = mtimeStringFor(filePath),
+      .localHash = "scan-hash-1",
       .remoteUpdatedAt = std::nullopt,
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
@@ -206,7 +207,7 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
 
   FakeUploadService fakeUpload;
   fakeUpload.failNext("network boom");
-  UploadJobRunner runner(syncRepo, fakeUpload, crypto);
+  UploadJobRunner runner(syncRepo, fakeUpload);
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
@@ -267,7 +268,7 @@ TEST_CASE("UploadJobRunner missing local file throws") {
   syncRepo.upsertEntries({entry});
 
   FakeUploadService fakeUpload;
-  UploadJobRunner runner(syncRepo, fakeUpload, crypto);
+  UploadJobRunner runner(syncRepo, fakeUpload);
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
@@ -285,7 +286,7 @@ TEST_CASE("UploadJobRunner missing local file throws") {
   REQUIRE(fakeUpload.callCount() == 0);
 }
 
-TEST_CASE("UploadJobRunner hash mismatch before upload throws") {
+TEST_CASE("UploadJobRunner size mismatch before upload throws stale error") {
   TestDatabase db;
   TempDir tempDir;
   RustCrypto crypto;
@@ -307,8 +308,6 @@ TEST_CASE("UploadJobRunner hash mismatch before upload throws") {
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
-  const std::string staleHash = "not-the-real-hash";
-
   const EntryRecord entry{
       .id = "entry-1",
       .remoteId = std::nullopt,
@@ -318,9 +317,9 @@ TEST_CASE("UploadJobRunner hash mismatch before upload throws") {
       .isDirectory = false,
       .parentFolderId = std::nullopt,
       .encryptedName = std::nullopt,
-      .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)),
-      .localMtime = std::nullopt,
-      .localHash = staleHash,
+      .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)) + 1,
+      .localMtime = mtimeStringFor(filePath),
+      .localHash = "scan-hash-1",
       .remoteUpdatedAt = std::nullopt,
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
@@ -328,7 +327,7 @@ TEST_CASE("UploadJobRunner hash mismatch before upload throws") {
   syncRepo.upsertEntries({entry});
 
   FakeUploadService fakeUpload;
-  UploadJobRunner runner(syncRepo, fakeUpload, crypto);
+  UploadJobRunner runner(syncRepo, fakeUpload);
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
@@ -342,7 +341,74 @@ TEST_CASE("UploadJobRunner hash mismatch before upload throws") {
       .retryCount = 0,
   };
 
-  REQUIRE_THROWS(runner.run(job));
+  REQUIRE_THROWS_AS(runner.run(job), StaleUploadError);
+  REQUIRE(fakeUpload.callCount() == 0);
+
+  const auto updated = syncRepo.getEntryById(entry.id);
+  REQUIRE(updated.has_value());
+  REQUIRE(updated->syncState == "pending_upload");
+}
+
+TEST_CASE("UploadJobRunner mtime mismatch before upload throws stale error") {
+  TestDatabase db;
+  TempDir tempDir;
+  RustCrypto crypto;
+
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+
+  const SyncRootRecord root{
+      .id = "root-1",
+      .localPath = tempDir.path().string(),
+      .folderId = std::nullopt,
+      .enabled = true,
+  };
+  syncRepo.upsertSyncRoot(root);
+
+  const auto filePath = tempDir.path() / "movie.txt";
+  writeFile(filePath, "hello");
+  const std::string originalMtime = mtimeStringFor(filePath);
+  std::filesystem::last_write_time(
+      filePath, std::filesystem::last_write_time(filePath) + std::chrono::seconds(2));
+
+  const EntryRecord entry{
+      .id = "entry-1",
+      .remoteId = std::nullopt,
+      .syncRootId = root.id,
+      .remoteType = "file",
+      .localPath = "movie.txt",
+      .isDirectory = false,
+      .parentFolderId = std::nullopt,
+      .encryptedName = std::nullopt,
+      .localSize = static_cast<int64_t>(std::filesystem::file_size(filePath)),
+      .localMtime = originalMtime,
+      .localHash = "scan-hash-1",
+      .remoteUpdatedAt = std::nullopt,
+      .syncState = "pending_upload",
+      .lastSyncedAt = std::nullopt,
+  };
+  syncRepo.upsertEntries({entry});
+
+  FakeUploadService fakeUpload;
+  UploadJobRunner runner(syncRepo, fakeUpload);
+  const TransferJob job{
+      .id = "job-1",
+      .entryId = entry.id,
+      .direction = "upload",
+      .status = "running",
+      .localPath = entry.localPath,
+      .remoteId = std::nullopt,
+      .remoteFolderId = std::nullopt,
+      .bytesTotal = static_cast<uint64_t>(*entry.localSize),
+      .bytesDone = 0,
+      .retryCount = 0,
+  };
+
+  REQUIRE_THROWS_AS(runner.run(job), StaleUploadError);
   REQUIRE(fakeUpload.callCount() == 0);
 
   const auto updated = syncRepo.getEntryById(entry.id);

@@ -5,11 +5,13 @@
 #include "repo/SyncRepo.hpp"
 
 class UploadJobRunner;
+class SyncService;
 
 class QueueService {
 public:
   QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo,
-               UploadJobRunner &uploadJobRunner, ArkiveApi &api);
+               UploadJobRunner &uploadJobRunner, SyncService &syncService,
+               ArkiveApi &api);
 
   QueueStats stats();
   std::optional<TransferJob> claimNextQueuedUpload();
@@ -26,5 +28,6 @@ private:
   QueueRepo &queueRepo_;
   SyncRepo &syncRepo_;
   UploadJobRunner &uploadJobRunner_;
+  SyncService &syncService_;
   ArkiveApi &api_;
 };

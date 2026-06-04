@@ -173,6 +173,7 @@ add_executable(arkive-sync-tests
     src/fs/FileEncryptor.cpp
     src/platform/AppDataPaths.cpp
     tests/path_codec_test.cpp
+    tests/queue_service_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
     tests/sync_service_test.cpp
@@ -195,6 +196,7 @@ add_executable(arkive-sync-tests
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/SyncService.cpp
+    src/service/QueueService.cpp
     src/service/UploadJobRunner.cpp
     src/service/UploadService.cpp
     src/service/VaultService.cpp

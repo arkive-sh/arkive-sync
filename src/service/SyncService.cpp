@@ -32,9 +32,7 @@ std::string toMtimeString(const std::filesystem::file_time_type &time) {
 }
 
 bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
-                             const LocalEntry &scannedEntry,
-                             const std::string &scannedMtime,
-                             const std::optional<std::string> &scannedHash) {
+                             const LocalEntry &scannedEntry) {
   if (!existingEntry.has_value()) {
     return true;
   }
@@ -46,20 +44,7 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
   if (existingEntry->isDirectory != scannedEntry.isDirectory) {
     return true;
   }
-
-  if (existingEntry->localMtime != scannedMtime) {
-    return true;
-  }
-
-  const std::optional<int64_t> scannedSize =
-      scannedEntry.isDirectory
-          ? std::nullopt
-          : std::optional<int64_t>(static_cast<int64_t>(scannedEntry.size));
-  if (existingEntry->localSize != scannedSize) {
-    return true;
-  }
-
-  return existingEntry->localHash != scannedHash;
+  return false;
 }
 
 } // namespace
@@ -134,10 +119,33 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
             ? std::optional<EntryRecord>(existingEntryIt->second)
             : std::nullopt;
 
-    std::optional<std::string> localHash = std::nullopt;
-    if (!entry.isDirectory) {
+    const std::optional<int64_t> localSize =
+        entry.isDirectory
+            ? std::nullopt
+            : std::optional<int64_t>(static_cast<int64_t>(entry.size));
+
+    std::optional<std::string> localHash =
+        existingEntry.has_value() ? existingEntry->localHash : std::nullopt;
+    std::string syncState =
+        existingEntry.has_value() ? existingEntry->syncState : "pending_upload";
+
+    const bool needsHash =
+        !entry.isDirectory &&
+        (!existingEntry.has_value() || existingEntry->localSize != localSize ||
+         existingEntry->localMtime != localMtime ||
+         existingEntry->localHash == std::nullopt ||
+         existingEntry->syncState == "deleted");
+
+    if (needsHash) {
       FileHasher hasher(entry.absolutePath, crypto_);
       localHash = hasher.hashFile();
+
+      if (!existingEntry.has_value() || existingEntry->syncState == "deleted" ||
+          existingEntry->localHash != localHash) {
+        syncState = "pending_upload";
+      }
+    } else if (shouldMarkPendingUpload(existingEntry, entry)) {
+      syncState = "pending_upload";
     }
 
     entryRecords.push_back(EntryRecord{
@@ -154,18 +162,13 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
         .encryptedName = existingEntry.has_value()
                              ? existingEntry->encryptedName
                              : std::nullopt,
-        .localSize = entry.isDirectory ? std::nullopt
-                                       : std::optional<int64_t>(
-                                             static_cast<int64_t>(entry.size)),
+        .localSize = localSize,
         .localMtime = localMtime,
         .localHash = localHash,
         .remoteUpdatedAt = existingEntry.has_value()
                                ? existingEntry->remoteUpdatedAt
                                : std::nullopt,
-        .syncState =
-            shouldMarkPendingUpload(existingEntry, entry, localMtime, localHash)
-                ? "pending_upload"
-                : existingEntry->syncState,
+        .syncState = syncState,
         .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
                                                   : std::nullopt,
     });

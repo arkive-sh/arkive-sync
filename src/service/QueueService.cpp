@@ -2,6 +2,7 @@
 #include "api/HttpError.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "service/SyncService.hpp"
 #include "service/UploadJobRunner.hpp"
 #include "spdlog/spdlog.h"
 #include <exception>
@@ -19,9 +20,10 @@ bool isUploadQueueLimitError(const HttpError &error) {
 } // namespace
 
 QueueService::QueueService(QueueRepo &queueRepo, SyncRepo &syncRepo,
-                           UploadJobRunner &uploadJobRunner, ArkiveApi &api)
+                           UploadJobRunner &uploadJobRunner,
+                           SyncService &syncService, ArkiveApi &api)
     : queueRepo_(queueRepo), syncRepo_(syncRepo),
-      uploadJobRunner_(uploadJobRunner), api_(api) {}
+      uploadJobRunner_(uploadJobRunner), syncService_(syncService), api_(api) {}
 
 QueueStats QueueService::stats() { return queueRepo_.stats(); }
 
@@ -43,6 +45,11 @@ void QueueService::processQueuedUploads() {
       spdlog::info("Uploaded queued file for entry: {}", queuedJob->entryId);
 
       queueRepo_.markDone(queuedJob->id);
+    } catch (const StaleUploadError &error) {
+      queueRepo_.retryJob(queuedJob->id);
+      syncService_.scanRoot(error.syncRootPath());
+      spdlog::warn("Requeued stale upload job {} and rescanned root {}",
+                   queuedJob->id, error.syncRootPath());
     } catch (const HttpError &error) {
       if (isUploadQueueLimitError(error)) {
         queueRepo_.retryJob(queuedJob->id);
