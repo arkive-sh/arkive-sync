@@ -11,6 +11,7 @@
 #include "repo/UserRepo.hpp"
 #include "service/AuthService.hpp"
 #include "service/QueueService.hpp"
+#include "service/SyncScheduler.hpp"
 #include "service/SyncService.hpp"
 #include "service/UploadJobRunner.hpp"
 #include "service/UploadService.hpp"
@@ -40,11 +41,13 @@ int main(int argc, char *argv[]) {
     FileEncryptor fileEncryptor(crypto, vaultService);
     UploadService uploadService(api, fileEncryptor, uploadResumeRepo);
     SyncService syncService(syncRepo, crypto);
+    SyncScheduler syncScheduler(syncRepo, syncService);
     UploadJobRunner uploadJobRunner(syncRepo, uploadService);
     QueueService queueService(queueRepo, syncRepo, uploadJobRunner, syncService,
                               api);
 
-    App app(userRepo, syncRepo, queueRepo, queueService, syncService,
+    App app(userRepo, syncRepo, queueRepo, queueService, syncScheduler,
+            syncService,
             authService, uploadService, vaultService);
     return app.run(argc, argv);
   } catch (const std::exception &ex) {

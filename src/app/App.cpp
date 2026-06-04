@@ -1,15 +1,18 @@
 #include "App.hpp"
 #include "./crypto/RustCrypto.hpp"
 #include "./helpers/Helpers.hpp"
+#include "./platform/Daemon.hpp"
 #include "./platform/SecureStorage.hpp"
 #include "./repo/QueueRepo.hpp"
 #include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
 #include "./service/QueueService.hpp"
+#include "./service/SyncScheduler.hpp"
 #include "./service/SyncService.hpp"
 #include "./service/UploadService.hpp"
 #include "./service/VaultService.hpp"
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <spdlog/spdlog.h>
@@ -111,11 +114,13 @@ Command parseCommand(int argc, char *argv[]) {
 } // namespace
 
 App::App(UserRepo &userRepo, SyncRepo &syncRepo, QueueRepo &queueRepo,
-         QueueService &queueService, SyncService &syncService,
+         QueueService &queueService, SyncScheduler &syncScheduler,
+         SyncService &syncService,
          AuthService &authService, UploadService &uploadService,
          VaultService &vaultService)
     : userRepo_(userRepo), syncRepo_(syncRepo), queueRepo_(queueRepo),
-      queueService_(queueService), syncService_(syncService),
+      queueService_(queueService), syncScheduler_(syncScheduler),
+      syncService_(syncService),
       authService_(authService), uploadService_(uploadService),
       vaultService_(vaultService) {}
 
@@ -366,8 +371,7 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Daemon:
-    spdlog::info("daemon not implemented yet");
-    return 0;
+    return Daemon::create(syncScheduler_)->run();
 
   case Command::Unknown:
     spdlog::error(

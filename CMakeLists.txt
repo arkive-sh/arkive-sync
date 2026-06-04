@@ -102,12 +102,14 @@ add_executable(arkive-sync
     src/helpers/Mime.cpp
     src/helpers/PathCodec.cpp
     src/platform/AppDataPaths.cpp
+    src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/QueueService.cpp
+    src/service/SyncScheduler.cpp
     src/service/SyncService.cpp
     src/service/AuthService.cpp
     src/service/UploadJobRunner.cpp
@@ -122,6 +124,7 @@ add_executable(arkive-sync
     src/fs/ArkiveFileReader.cpp
     src/fs/ArkiveFileWriter.cpp
     src/fs/FileEncryptor.cpp
+    src/fs/FileWatcher.cpp
     src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp
 )
@@ -141,6 +144,7 @@ elseif(UNIX)
     target_link_libraries(arkive-sync PRIVATE ${LIBSECRET_LIBRARIES})
     target_compile_options(arkive-sync PRIVATE ${LIBSECRET_CFLAGS_OTHER})
     target_sources(arkive-sync PRIVATE
+        src/platform/linux/daemon/LinuxDaemon.cpp
         src/platform/linux/SecureStorage.cpp
     )
 endif()
@@ -171,6 +175,7 @@ add_executable(arkive-sync-tests
     src/db/Sqlite.cpp
     src/fs/ArkiveFileReader.cpp
     src/fs/FileEncryptor.cpp
+    src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
     tests/path_codec_test.cpp
     tests/queue_service_test.cpp
@@ -195,6 +200,7 @@ add_executable(arkive-sync-tests
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
+    src/service/SyncScheduler.cpp
     src/service/SyncService.cpp
     src/service/QueueService.cpp
     src/service/UploadJobRunner.cpp
