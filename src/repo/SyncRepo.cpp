@@ -5,7 +5,6 @@
 #include <optional>
 #include <sqlite3.h>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace {
 
@@ -325,6 +324,54 @@ WHERE id = ?;
   return readEntryRecord(stmt.get(), pathProtector_);
 }
 
+std::optional<EntryRecord>
+SyncRepo::getEntryByLocalPath(const std::string &syncRootId,
+                              const std::string &localPath) const {
+  static constexpr const char *getEntryByLocalPathSql = R"sql(
+SELECT
+  id,
+  remote_id,
+  sync_root_id,
+  remote_type,
+  local_path,
+  local_path_hash,
+  is_directory,
+  parent_folder_id,
+  encrypted_name,
+  local_size,
+  local_mtime,
+  local_hash,
+  remote_updated_at,
+  sync_state,
+  last_synced_at
+FROM entries
+WHERE sync_root_id = ?
+  AND local_path_hash = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, getEntryByLocalPathSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+  bindText(db_, stmt.get(), 2, pathProtector_.hashPath(localPath));
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  return readEntryRecord(stmt.get(), pathProtector_);
+}
+
 void SyncRepo::markEntrySynced(const std::string &entryId) {
   static constexpr const char *markEntrySyncedSql = R"sql(
     UPDATE entries
@@ -460,6 +507,7 @@ INSERT INTO entries (
   remote_updated_at,
   sync_state,
   last_synced_at,
+  scan_seen,
   updated_at
 ) VALUES (
   ?,
@@ -477,6 +525,7 @@ INSERT INTO entries (
   ?,
   ?,
   ?,
+  1,
   CURRENT_TIMESTAMP
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -488,6 +537,7 @@ ON CONFLICT(id) DO UPDATE SET
   local_mtime = excluded.local_mtime,
   local_hash = excluded.local_hash,
   sync_state = excluded.sync_state,
+  scan_seen = 1,
   updated_at = CURRENT_TIMESTAMP;
   )sql";
 
@@ -591,21 +641,43 @@ WHERE sync_root_id = ?;
   return entries;
 }
 
-void SyncRepo::markMissingEntriesDeleted(
-    const std::string &syncRootId,
-    const std::vector<std::string> &presentPaths) const {
-  const auto existingEntries = getEntriesForSyncRoot(syncRootId);
-  std::unordered_set<std::string> presentPathSet(presentPaths.begin(),
-                                                 presentPaths.end());
+void SyncRepo::markEntriesUnseen(const std::string &syncRootId) const {
+  static constexpr const char *markEntriesUnseenSql = R"sql(
+UPDATE entries
+SET
+  scan_seen = 0,
+  updated_at = CURRENT_TIMESTAMP
+WHERE sync_root_id = ?;
+  )sql";
 
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, markEntriesUnseenSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void SyncRepo::markUnseenEntriesDeleted(const std::string &syncRootId) const {
   static constexpr const char *markDeletedSql = R"sql(
 UPDATE entries
 SET
-  sync_state = 'deleted',
+  sync_state = CASE
+    WHEN sync_state = 'deleted' THEN sync_state
+    ELSE 'deleted'
+  END,
   updated_at = CURRENT_TIMESTAMP
 WHERE sync_root_id = ?
-  AND local_path_hash = ?
-  AND sync_state != 'deleted';
+  AND scan_seen = 0;
   )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
@@ -616,20 +688,11 @@ WHERE sync_root_id = ?
   }
 
   StmtUniquePtr stmt(rawStmt);
-  for (const auto &entry : existingEntries) {
-    if (presentPathSet.contains(entry.localPath)) {
-      continue;
-    }
+  bindText(db_, stmt.get(), 1, syncRootId);
 
-    sqlite3_reset(stmt.get());
-    sqlite3_clear_bindings(stmt.get());
-    bindText(db_, stmt.get(), 1, syncRootId);
-    bindText(db_, stmt.get(), 2, pathProtector_.hashPath(entry.localPath));
-
-    const int rc = sqlite3_step(stmt.get());
-    if (rc != SQLITE_DONE) {
-      throw std::runtime_error(std::string("Step failed: ") +
-                               sqlite3_errmsg(db_));
-    }
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
   }
 }

@@ -1,7 +1,5 @@
 #include "platform/SecureStorage.hpp"
 
-#include <stdexcept>
-
 #if defined(__linux__)
 #include "platform/linux/SecureStorage.hpp"
 #elif defined(__APPLE__)

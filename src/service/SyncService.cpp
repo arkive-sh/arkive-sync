@@ -9,11 +9,11 @@
 #include <random>
 #include <sstream>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace {
+
+constexpr size_t kScanUpsertBatchSize = 1000;
 
 std::string generateId() {
   static std::mt19937_64 rng(std::random_device{}());
@@ -73,7 +73,6 @@ void SyncService::addPath(const std::filesystem::path &rootPathInput) {
 
 size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
   FileScanner fileScanner(rootPathInput);
-  // 1. Resolve sync root path and make sure root record exists.
   const std::filesystem::path rootPath =
       std::filesystem::absolute(fileScanner.rootPath()).lexically_normal();
   const std::string rootPathString = rootPath.string();
@@ -88,36 +87,16 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     syncRepo_.upsertSyncRoot(*syncRoot);
   }
 
-  // 2. Load current DB view for this root.
-  const auto existingEntries = syncRepo_.getEntriesForSyncRoot(syncRoot->id);
-  std::unordered_map<std::string, EntryRecord> existingEntriesByPath;
-  existingEntriesByPath.reserve(existingEntries.size());
-  for (const auto &entry : existingEntries) {
-    existingEntriesByPath.emplace(entry.localPath, entry);
-  }
-
-  // 3. Scan filesystem and process each unique relative path once.
-  const auto scannedEntries = fileScanner.scanFiles();
-
+  syncRepo_.markEntriesUnseen(syncRoot->id);
   std::vector<EntryRecord> entryRecords;
-  entryRecords.reserve(scannedEntries.size());
+  entryRecords.reserve(kScanUpsertBatchSize);
+  size_t scannedCount = 0;
 
-  std::unordered_set<std::string> presentPaths;
-  presentPaths.reserve(scannedEntries.size());
-
-  for (const auto &entry : scannedEntries) {
+  fileScanner.scanFiles([&](const LocalEntry &entry) {
     const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
-    if (!presentPaths.insert(relativePath).second) {
-      continue;
-    }
-
     const std::string localMtime = toMtimeString(entry.modifiedTime);
-    const auto existingEntryIt = existingEntriesByPath.find(relativePath);
-
     const std::optional<EntryRecord> existingEntry =
-        existingEntryIt != existingEntriesByPath.end()
-            ? std::optional<EntryRecord>(existingEntryIt->second)
-            : std::nullopt;
+        syncRepo_.getEntryByLocalPath(syncRoot->id, relativePath);
 
     const std::optional<int64_t> localSize =
         entry.isDirectory
@@ -172,15 +151,18 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
         .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
                                                   : std::nullopt,
     });
+    ++scannedCount;
+
+    if (entryRecords.size() >= kScanUpsertBatchSize) {
+      syncRepo_.upsertEntries(entryRecords);
+      entryRecords.clear();
+    }
+  });
+
+  if (!entryRecords.empty()) {
+    syncRepo_.upsertEntries(entryRecords);
   }
+  syncRepo_.markUnseenEntriesDeleted(syncRoot->id);
 
-  // 4. Persist current scan and mark missing entries deleted. Queue admission
-  // is handled separately so desktop sync can process arbitrarily large trees
-  // in server-sized batches instead of flooding transfer_queue.
-  syncRepo_.upsertEntries(entryRecords);
-  syncRepo_.markMissingEntriesDeleted(
-      syncRoot->id,
-      std::vector<std::string>(presentPaths.begin(), presentPaths.end()));
-
-  return entryRecords.size();
+  return scannedCount;
 }

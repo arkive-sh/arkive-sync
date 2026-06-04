@@ -1,6 +1,6 @@
 #pragma once
+#include <functional>
 #include <filesystem>
-#include <vector>
 
 struct LocalEntry {
   std::filesystem::path absolutePath;
@@ -21,7 +21,7 @@ public:
   FileScanner &operator=(const FileScanner &) = delete;
 
   const std::filesystem::path &rootPath() const;
-  std::vector<LocalEntry> scanFiles();
+  void scanFiles(const std::function<void(const LocalEntry &)> &onEntry);
 
 private:
   const std::filesystem::path path_;

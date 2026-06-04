@@ -2,7 +2,6 @@
 #include <filesystem>
 #include <system_error>
 #include <stdexcept>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -10,8 +9,7 @@ FileScanner::FileScanner(const fs::path &fsPath) : path_(fsPath) {}
 
 const fs::path &FileScanner::rootPath() const { return path_; }
 
-std::vector<LocalEntry> FileScanner::scanFiles() {
-  std::vector<LocalEntry> entries;
+void FileScanner::scanFiles(const std::function<void(const LocalEntry &)> &onEntry) {
   if (!fs::exists(path_) || !fs::is_directory(path_)) {
     throw std::invalid_argument("Invalid. The path needs to be a folder");
   }
@@ -40,7 +38,7 @@ std::vector<LocalEntry> FileScanner::scanFiles() {
       continue;
     }
 
-    entries.push_back({
+    onEntry({
         .absolutePath = fs::absolute(entry.path()),
         .relativePath = entry.path().lexically_relative(path_),
         .size = size,
@@ -48,6 +46,4 @@ std::vector<LocalEntry> FileScanner::scanFiles() {
         .isDirectory = isDirectory,
     });
   }
-
-  return entries;
 }
