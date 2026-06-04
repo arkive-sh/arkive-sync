@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,9 @@ enum class FileEventType {
   Created,
   Modified,
   Deleted,
-  Moved,
+  MovedFrom,
+  MovedTo,
+  Renamed,
   AttributeChanged,
   Overflow,
   Unknown
@@ -23,8 +26,10 @@ enum class FileEventType {
 struct FileEvent {
   std::string rootId;
   std::filesystem::path path;
+  std::optional<std::filesystem::path> oldPath;
   FileEventType type;
   bool isDirectory{false};
+  uint32_t cookie{0};
 };
 
 class IFileWatcher {

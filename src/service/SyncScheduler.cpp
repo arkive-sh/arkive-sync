@@ -52,6 +52,12 @@ void SyncScheduler::schedule(const FileEvent &event) {
     return;
   }
 
+  if (event.type == FileEventType::Renamed && event.oldPath.has_value()) {
+    schedulePath(event.rootId, *event.oldPath, now);
+    schedulePath(event.rootId, event.path, now);
+    return;
+  }
+
   schedulePath(event.rootId, event.path, now);
 }
 
