@@ -90,6 +90,8 @@ void Database::initDb() {
     throw std::runtime_error("Failed to open database: " + error_message);
   }
 
+  execOrThrow(db, "PRAGMA cache_size=-65536;");
+  execOrThrow(db, "PRAGMA temp_store=FILE;");
   execOrThrow(db, "PRAGMA journal_mode=WAL;");
   migrateSchema();
   verifySchema();

@@ -13,7 +13,7 @@
 
 namespace {
 
-constexpr size_t kScanUpsertBatchSize = 1000;
+constexpr size_t kScanUpsertBatchSize = 500;
 
 std::string generateId() {
   static std::mt19937_64 rng(std::random_device{}());
@@ -45,6 +45,46 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
     return true;
   }
   return false;
+}
+
+std::optional<EntryRecord>
+toEntryRecord(const std::optional<EntryIdentity> &existingEntry,
+              const std::string &syncRootId, const std::string &localPath) {
+  if (!existingEntry.has_value()) {
+    return std::nullopt;
+  }
+
+  return EntryRecord{
+      .id = existingEntry->id,
+      .remoteId = existingEntry->remoteId,
+      .syncRootId = syncRootId,
+      .remoteType = existingEntry->isDirectory ? "folder" : "file",
+      .localPath = localPath,
+      .isDirectory = existingEntry->isDirectory,
+      .parentFolderId = existingEntry->parentFolderId,
+      .encryptedName = existingEntry->encryptedName,
+      .localSize = existingEntry->localSize,
+      .localMtime = existingEntry->localMtime,
+      .localHash = existingEntry->localHash,
+      .remoteUpdatedAt = existingEntry->remoteUpdatedAt,
+      .syncState = existingEntry->syncState,
+      .lastSyncedAt = existingEntry->lastSyncedAt,
+  };
+}
+
+bool isUnchanged(const EntryIdentity &existingEntry, bool isDirectory,
+                 const std::optional<int64_t> &localSize,
+                 const std::string &localMtime) {
+  if (existingEntry.syncState == "deleted") {
+    return false;
+  }
+  if (existingEntry.isDirectory != isDirectory) {
+    return false;
+  }
+  if (existingEntry.localSize != localSize) {
+    return false;
+  }
+  return existingEntry.localMtime == localMtime;
 }
 
 } // namespace
@@ -87,21 +127,31 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     syncRepo_.upsertSyncRoot(*syncRoot);
   }
 
-  syncRepo_.markEntriesUnseen(syncRoot->id);
-  std::vector<EntryRecord> entryRecords;
+  auto scanSession = syncRepo_.createScanSession();
+  std::vector<EntryUpsertRecord> entryRecords;
   entryRecords.reserve(kScanUpsertBatchSize);
-  size_t scannedCount = 0;
+  size_t changedCount = 0;
 
   fileScanner.scanFiles([&](const LocalEntry &entry) {
     const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
+    const std::string localPathHash = syncRepo_.hashLocalPath(relativePath);
+    scanSession.markPathSeen(localPathHash);
     const std::string localMtime = toMtimeString(entry.modifiedTime);
+    const std::optional<EntryIdentity> existingScanState =
+        scanSession.getEntryIdentityByLocalPathHash(syncRoot->id, localPathHash);
     const std::optional<EntryRecord> existingEntry =
-        syncRepo_.getEntryByLocalPath(syncRoot->id, relativePath);
+        toEntryRecord(existingScanState, syncRoot->id, relativePath);
 
     const std::optional<int64_t> localSize =
         entry.isDirectory
             ? std::nullopt
             : std::optional<int64_t>(static_cast<int64_t>(entry.size));
+
+    if (existingScanState.has_value() &&
+        isUnchanged(*existingScanState, entry.isDirectory, localSize,
+                    localMtime)) {
+      return;
+    }
 
     std::optional<std::string> localHash =
         existingEntry.has_value() ? existingEntry->localHash : std::nullopt;
@@ -127,42 +177,47 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
       syncState = "pending_upload";
     }
 
-    entryRecords.push_back(EntryRecord{
-        .id = existingEntry.has_value() ? existingEntry->id : generateId(),
-        .remoteId =
-            existingEntry.has_value() ? existingEntry->remoteId : std::nullopt,
-        .syncRootId = syncRoot->id,
-        .remoteType = entry.isDirectory ? "folder" : "file",
-        .localPath = relativePath,
-        .isDirectory = entry.isDirectory,
-        .parentFolderId = existingEntry.has_value()
-                              ? existingEntry->parentFolderId
-                              : std::nullopt,
-        .encryptedName = existingEntry.has_value()
-                             ? existingEntry->encryptedName
-                             : std::nullopt,
-        .localSize = localSize,
-        .localMtime = localMtime,
-        .localHash = localHash,
-        .remoteUpdatedAt = existingEntry.has_value()
-                               ? existingEntry->remoteUpdatedAt
-                               : std::nullopt,
-        .syncState = syncState,
-        .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
-                                                  : std::nullopt,
+    entryRecords.push_back(EntryUpsertRecord{
+        .entry =
+            EntryRecord{
+                .id = existingEntry.has_value() ? existingEntry->id : generateId(),
+                .remoteId = existingEntry.has_value() ? existingEntry->remoteId
+                                                      : std::nullopt,
+                .syncRootId = syncRoot->id,
+                .remoteType = entry.isDirectory ? "folder" : "file",
+                .localPath = relativePath,
+                .isDirectory = entry.isDirectory,
+                .parentFolderId = existingEntry.has_value()
+                                      ? existingEntry->parentFolderId
+                                      : std::nullopt,
+                .encryptedName = existingEntry.has_value()
+                                     ? existingEntry->encryptedName
+                                     : std::nullopt,
+                .localSize = localSize,
+                .localMtime = localMtime,
+                .localHash = localHash,
+                .remoteUpdatedAt = existingEntry.has_value()
+                                       ? existingEntry->remoteUpdatedAt
+                                       : std::nullopt,
+                .syncState = syncState,
+                .lastSyncedAt = existingEntry.has_value()
+                                    ? existingEntry->lastSyncedAt
+                                    : std::nullopt,
+            },
+        .localPathHash = localPathHash,
     });
-    ++scannedCount;
 
     if (entryRecords.size() >= kScanUpsertBatchSize) {
-      syncRepo_.upsertEntries(entryRecords);
+      changedCount += syncRepo_.upsertEntries(entryRecords);
       entryRecords.clear();
     }
   });
 
   if (!entryRecords.empty()) {
-    syncRepo_.upsertEntries(entryRecords);
+    changedCount += syncRepo_.upsertEntries(entryRecords);
   }
-  syncRepo_.markUnseenEntriesDeleted(syncRoot->id);
+  changedCount += syncRepo_.markMissingEntriesDeleted(syncRoot->id);
+  syncRepo_.releaseMemory();
 
-  return scannedCount;
+  return changedCount;
 }

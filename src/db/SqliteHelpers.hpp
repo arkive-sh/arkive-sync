@@ -13,6 +13,7 @@ using StmtUniquePtr = std::unique_ptr<sqlite3_stmt, SQLiteStmtDeleter>;
 
 void throwIfBindFailed(sqlite3 *db, int rc);
 void execOrThrow(sqlite3 *db, const char *sql);
+void releaseMemory(sqlite3 *db);
 void bindText(sqlite3 *db, sqlite3_stmt *stmt, int index,
               const std::string &value);
 void bindOptionalText(sqlite3 *db, sqlite3_stmt *stmt, int index,

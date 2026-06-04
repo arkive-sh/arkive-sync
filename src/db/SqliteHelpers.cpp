@@ -25,6 +25,11 @@ void execOrThrow(sqlite3 *db, const char *sql) {
   }
 }
 
+void releaseMemory(sqlite3 *db) {
+  execOrThrow(db, "PRAGMA shrink_memory;");
+  sqlite3_db_release_memory(db);
+}
+
 void bindText(sqlite3 *db, sqlite3_stmt *stmt, int index,
               const std::string &value) {
   throwIfBindFailed(
