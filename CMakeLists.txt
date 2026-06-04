@@ -178,6 +178,7 @@ add_executable(arkive-sync-tests
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
     tests/path_codec_test.cpp
+    tests/inotify_watcher_test.cpp
     tests/queue_service_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
