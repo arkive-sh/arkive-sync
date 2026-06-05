@@ -14,19 +14,23 @@ static constexpr int kDebounceWindowMS = 1000;
 static constexpr int kMaxDelayMS = 20 * 1000;
 
 class SyncRepo;
-class SyncService;
 
 class SyncScheduler {
 public:
   using Clock = std::chrono::steady_clock;
 
-  struct ScanResult {
-    size_t scannedRoots{0};
-    size_t scannedPaths{0};
-    size_t changedEntries{0};
+  enum class ScanJobType {
+    Root,
+    Path,
   };
 
-  SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
+  struct ScanJob {
+    ScanJobType type;
+    std::string rootId;
+    std::filesystem::path path;
+  };
+
+  SyncScheduler(SyncRepo &syncRepo,
                 std::chrono::milliseconds debounceWindow =
                     std::chrono::milliseconds(kDebounceWindowMS),
                 std::chrono::milliseconds maxDelay =
@@ -36,7 +40,7 @@ public:
   void enqueueEvent(const FileEvent &event);
   void enqueueFullRescan();
   int nextRunDelayMs() const;
-  ScanResult runReadyScans();
+  std::vector<ScanJob> drainDueJobs();
 
 private:
   struct RecentEvent {
@@ -70,7 +74,6 @@ private:
   static constexpr size_t kRecentEventBufferSize = 32;
 
   SyncRepo &syncRepo_;
-  SyncService &syncService_;
   std::chrono::milliseconds debounceWindow_;
   std::chrono::milliseconds maxDelay_;
   std::array<std::optional<RecentEvent>, kRecentEventBufferSize> recentEvents_;

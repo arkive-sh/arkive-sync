@@ -2,14 +2,17 @@
 
 #include "fs/FileWatcher.hpp"
 #include "service/SyncScheduler.hpp"
+#include "service/SyncService.hpp"
+#include "sync/ScanWorker.hpp"
 
-#include <csignal>
 #include <cerrno>
+#include <csignal>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <system_error>
 #include <sys/epoll.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -60,8 +63,12 @@ private:
 
 } // namespace
 
-LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler)
-    : syncScheduler_(syncScheduler) {}
+LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler, SyncService &syncService,
+                         std::unique_ptr<IFileWatcher> watcher)
+    : syncScheduler_(syncScheduler), watcher_(std::move(watcher)),
+      scanWorker_(std::make_unique<ScanWorker>(syncService)) {}
+
+LinuxDaemon::~LinuxDaemon() = default;
 
 int LinuxDaemon::run() {
   gStopRequested = 0;
@@ -71,9 +78,8 @@ int LinuxDaemon::run() {
     throw std::runtime_error("No enabled sync paths configured.");
   }
 
-  auto watcher = IFileWatcher::create();
   for (const auto &root : watchRoots) {
-    watcher->addRoot(root);
+    watcher_->addRoot(root);
   }
   syncScheduler_.enqueueFullRescan();
 
@@ -85,9 +91,9 @@ int LinuxDaemon::run() {
 
   epoll_event event{};
   event.events = EPOLLIN;
-  event.data.fd = watcher->fd();
+  event.data.fd = watcher_->fd();
 
-  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, watcher->fd(), &event) < 0) {
+  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, watcher_->fd(), &event) < 0) {
     throw std::system_error(errno, std::generic_category(),
                             "epoll_ctl add watcher failed");
   }
@@ -109,25 +115,26 @@ int LinuxDaemon::run() {
     }
 
     for (int i = 0; i < readyCount; ++i) {
-      if (readyEvents[i].data.fd != watcher->fd()) {
+      if (readyEvents[i].data.fd != watcher_->fd()) {
         continue;
       }
 
-      for (const auto &fileEvent : watcher->poll()) {
+      for (const auto &fileEvent : watcher_->poll()) {
         syncScheduler_.enqueueEvent(fileEvent);
       }
     }
 
-    const auto scanResult = syncScheduler_.runReadyScans();
-    if (scanResult.scannedRoots > 0 || scanResult.scannedPaths > 0) {
-      spdlog::info(
-          "Daemon scanned {} root(s) and {} path(s), detected {} change(s)",
-          scanResult.scannedRoots, scanResult.scannedPaths,
-          scanResult.changedEntries);
+    const auto jobs = syncScheduler_.drainDueJobs();
+    if (!jobs.empty()) {
+      spdlog::info("Daemon enqueuing {} scan job(s)", jobs.size());
+      for (auto &job : jobs) {
+        scanWorker_->enqueue(std::move(job));
+      }
     }
   }
 
-  watcher->stop();
+  watcher_->stop();
+  scanWorker_->stop();
   spdlog::info("Daemon stopped");
   return 0;
 }

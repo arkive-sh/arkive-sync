@@ -51,6 +51,20 @@ WatchRoot onlyWatchRoot(SyncScheduler &scheduler) {
   return roots.front();
 }
 
+size_t runJobs(SyncService &syncService,
+               const std::vector<SyncScheduler::ScanJob> &jobs) {
+  size_t changedEntries = 0;
+  for (const auto &job : jobs) {
+    if (job.type == SyncScheduler::ScanJobType::Root) {
+      changedEntries += syncService.scanRoot(job.path);
+      continue;
+    }
+
+    changedEntries += syncService.scanPath(job.rootId, job.path);
+  }
+  return changedEntries;
+}
+
 EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) {
   const auto entries = syncRepo.getEntriesForSyncRoot(syncRootId);
   REQUIRE(entries.size() == 1);
@@ -73,7 +87,7 @@ TEST_CASE("SyncScheduler debounces repeated root events") {
   SyncService syncService(syncRepo, crypto);
 
   syncService.addPath(tempDir.path());
-  SyncScheduler scheduler(syncRepo, syncService, std::chrono::milliseconds(120),
+  SyncScheduler scheduler(syncRepo, std::chrono::milliseconds(120),
                           std::chrono::milliseconds(500));
 
   const WatchRoot root = onlyWatchRoot(scheduler);
@@ -87,7 +101,7 @@ TEST_CASE("SyncScheduler debounces repeated root events") {
   });
 
   REQUIRE(scheduler.nextRunDelayMs() >= 1);
-  REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
+  REQUIRE(scheduler.drainDueJobs().empty());
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
   scheduler.enqueueEvent(FileEvent{
@@ -98,13 +112,13 @@ TEST_CASE("SyncScheduler debounces repeated root events") {
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
-  REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
+  REQUIRE(scheduler.drainDueJobs().empty());
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
-  const auto scanResult = scheduler.runReadyScans();
-  REQUIRE(scanResult.scannedRoots == 0);
-  REQUIRE(scanResult.scannedPaths == 1);
-  REQUIRE(scanResult.changedEntries == 1);
+  const auto jobs = scheduler.drainDueJobs();
+  REQUIRE(jobs.size() == 1);
+  REQUIRE(jobs.front().type == SyncScheduler::ScanJobType::Path);
+  REQUIRE(runJobs(syncService, jobs) == 1);
 
   const EntryRecord entry = onlyEntryForRoot(syncRepo, root.rootId);
   REQUIRE(entry.localPath == "movie.txt");
@@ -124,7 +138,7 @@ TEST_CASE("SyncScheduler max delay forces a scan under constant events") {
   SyncService syncService(syncRepo, crypto);
 
   syncService.addPath(tempDir.path());
-  SyncScheduler scheduler(syncRepo, syncService, std::chrono::milliseconds(120),
+  SyncScheduler scheduler(syncRepo, std::chrono::milliseconds(120),
                           std::chrono::milliseconds(220));
 
   const WatchRoot root = onlyWatchRoot(scheduler);
@@ -145,14 +159,14 @@ TEST_CASE("SyncScheduler max delay forces a scan under constant events") {
         .type = FileEventType::Modified,
         .isDirectory = false,
     });
-    REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
+    REQUIRE(scheduler.drainDueJobs().empty());
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(60));
-  const auto scanResult = scheduler.runReadyScans();
-  REQUIRE(scanResult.scannedRoots == 0);
-  REQUIRE(scanResult.scannedPaths == 1);
-  REQUIRE(scanResult.changedEntries == 1);
+  const auto jobs = scheduler.drainDueJobs();
+  REQUIRE(jobs.size() == 1);
+  REQUIRE(jobs.front().type == SyncScheduler::ScanJobType::Path);
+  REQUIRE(runJobs(syncService, jobs) == 1);
 
   const EntryRecord entry = onlyEntryForRoot(syncRepo, root.rootId);
   REQUIRE(entry.localPath == "movie.txt");
@@ -172,7 +186,7 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
   SyncService syncService(syncRepo, crypto);
 
   syncService.addPath(tempDir.path());
-  SyncScheduler scheduler(syncRepo, syncService, std::chrono::milliseconds(30),
+  SyncScheduler scheduler(syncRepo, std::chrono::milliseconds(30),
                           std::chrono::milliseconds(200));
 
   const WatchRoot root = onlyWatchRoot(scheduler);
@@ -194,10 +208,9 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const auto scanResult = scheduler.runReadyScans();
-  REQUIRE(scanResult.scannedRoots == 0);
-  REQUIRE(scanResult.scannedPaths == 2);
-  REQUIRE(scanResult.changedEntries == 2);
+  const auto jobs = scheduler.drainDueJobs();
+  REQUIRE(jobs.size() == 2);
+  REQUIRE(runJobs(syncService, jobs) == 2);
 
   const auto entries = syncRepo.getEntriesForSyncRoot(root.rootId);
   REQUIRE(entries.size() == 2);
@@ -233,7 +246,7 @@ TEST_CASE("SyncScheduler suppresses duplicate delete events within the recent wi
   SyncService syncService(syncRepo, crypto);
 
   syncService.addPath(tempDir.path());
-  SyncScheduler scheduler(syncRepo, syncService, std::chrono::milliseconds(30),
+  SyncScheduler scheduler(syncRepo, std::chrono::milliseconds(30),
                           std::chrono::milliseconds(200));
 
   const WatchRoot root = onlyWatchRoot(scheduler);
@@ -253,8 +266,8 @@ TEST_CASE("SyncScheduler suppresses duplicate delete events within the recent wi
   scheduler.enqueueEvent(deleteEvent);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const auto scanResult = scheduler.runReadyScans();
-  REQUIRE(scanResult.scannedRoots == 0);
-  REQUIRE(scanResult.scannedPaths == 1);
-  REQUIRE(scanResult.changedEntries == 1);
+  const auto jobs = scheduler.drainDueJobs();
+  REQUIRE(jobs.size() == 1);
+  REQUIRE(jobs.front().type == SyncScheduler::ScanJobType::Path);
+  REQUIRE(runJobs(syncService, jobs) == 1);
 }

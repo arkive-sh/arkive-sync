@@ -1,17 +1,16 @@
 #include "service/SyncScheduler.hpp"
 
 #include "repo/SyncRepo.hpp"
-#include "service/SyncService.hpp"
 
 #include <algorithm>
 #include <optional>
 #include <spdlog/spdlog.h>
 
-SyncScheduler::SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
+SyncScheduler::SyncScheduler(SyncRepo &syncRepo,
                              std::chrono::milliseconds debounceWindow,
                              std::chrono::milliseconds maxDelay)
-    : syncRepo_(syncRepo), syncService_(syncService),
-      debounceWindow_(debounceWindow), maxDelay_(maxDelay) {
+    : syncRepo_(syncRepo), debounceWindow_(debounceWindow),
+      maxDelay_(maxDelay) {
   for (const auto &syncRoot : syncRepo_.getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
@@ -154,19 +153,22 @@ int SyncScheduler::nextRunDelayMs() const {
   return std::max(1, static_cast<int>(waitDuration.count()));
 }
 
-SyncScheduler::ScanResult SyncScheduler::runReadyScans() {
+std::vector<SyncScheduler::ScanJob> SyncScheduler::drainDueJobs() {
   const Clock::time_point now = Clock::now();
-  ScanResult result;
+  std::vector<ScanJob> jobs;
 
   for (auto &[rootId, root] : scheduledRoots_) {
     if (!root.pending || root.dueAt > now) {
       continue;
     }
 
-    spdlog::info("Scheduler running root scan root={} path={}", rootId,
+    spdlog::info("Scheduler draining root job root={} path={}", rootId,
                  root.path.string());
-    result.changedEntries += syncService_.scanRoot(root.path);
-    result.scannedRoots += 1;
+    jobs.push_back(ScanJob{
+        .type = ScanJobType::Root,
+        .rootId = rootId,
+        .path = root.path,
+    });
     root.pending = false;
     root.firstEventAt = Clock::time_point{};
     root.dueAt = Clock::time_point{};
@@ -179,15 +181,17 @@ SyncScheduler::ScanResult SyncScheduler::runReadyScans() {
       continue;
     }
 
-    spdlog::info("Scheduler running path scan root={} path={}",
+    spdlog::info("Scheduler draining path job root={} path={}",
                  it->second.rootId, it->second.path.string());
-    result.changedEntries +=
-        syncService_.scanPath(it->second.rootId, it->second.path);
-    result.scannedPaths += 1;
+    jobs.push_back(ScanJob{
+        .type = ScanJobType::Path,
+        .rootId = it->second.rootId,
+        .path = it->second.path,
+    });
     it = scheduledPaths_.erase(it);
   }
 
-  return result;
+  return jobs;
 }
 
 void SyncScheduler::schedulePath(const std::string &rootId,

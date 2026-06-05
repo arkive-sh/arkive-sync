@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     FileEncryptor fileEncryptor(crypto, vaultService);
     UploadService uploadService(api, fileEncryptor, uploadResumeRepo);
     SyncService syncService(syncRepo, crypto);
-    SyncScheduler syncScheduler(syncRepo, syncService);
+    SyncScheduler syncScheduler(syncRepo);
     UploadJobRunner uploadJobRunner(syncRepo, uploadService);
     QueueService queueService(queueRepo, syncRepo, uploadJobRunner, syncService,
                               api);

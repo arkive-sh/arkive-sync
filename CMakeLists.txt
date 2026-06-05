@@ -127,6 +127,7 @@ add_executable(arkive-sync
     src/fs/FileWatcher.cpp
     src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp
+    src/sync/ScanWorker.cpp
 )
 
 if(APPLE)
