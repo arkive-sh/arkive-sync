@@ -2,7 +2,7 @@
 
 #include "fs/FileWatcher.hpp"
 #include "service/SyncScheduler.hpp"
-#include "service/SyncService.hpp"
+#include "sync/QueueWorker.hpp"
 #include "sync/ScanWorker.hpp"
 
 #include <cerrno>
@@ -63,10 +63,12 @@ private:
 
 } // namespace
 
-LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler, SyncService &syncService,
+LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler,
                          std::unique_ptr<IFileWatcher> watcher)
     : syncScheduler_(syncScheduler), watcher_(std::move(watcher)),
-      scanWorker_(std::make_unique<ScanWorker>(syncService)) {}
+      queueWorker_(std::make_unique<QueueWorker>()),
+      scanWorker_(
+          std::make_unique<ScanWorker>([this] { queueWorker_->trigger(); })) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
@@ -82,6 +84,7 @@ int LinuxDaemon::run() {
     watcher_->addRoot(root);
   }
   syncScheduler_.enqueueFullRescan();
+  queueWorker_->trigger();
 
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
   if (epollFd.get() < 0) {
@@ -135,6 +138,7 @@ int LinuxDaemon::run() {
 
   watcher_->stop();
   scanWorker_->stop();
+  queueWorker_->stop();
   spdlog::info("Daemon stopped");
   return 0;
 }

@@ -127,6 +127,7 @@ add_executable(arkive-sync
     src/fs/FileWatcher.cpp
     src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp
+    src/sync/QueueWorker.cpp
     src/sync/ScanWorker.cpp
 )
 
@@ -183,6 +184,7 @@ add_executable(arkive-sync-tests
     tests/queue_service_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
+    tests/sync_mode_test.cpp
     tests/sync_scheduler_test.cpp
     tests/sync_service_test.cpp
     tests/upload_job_runner_test.cpp

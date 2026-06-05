@@ -4,14 +4,14 @@
 
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <thread>
-
-class SyncService;
+#include <unordered_set>
 
 class ScanWorker {
 public:
-  explicit ScanWorker(SyncService &syncService);
+  explicit ScanWorker(std::function<void()> onJobFinished);
   ~ScanWorker();
 
   ScanWorker(const ScanWorker &) = delete;
@@ -22,11 +22,13 @@ public:
 
 private:
   void run();
+  static std::string jobKey(const SyncScheduler::ScanJob &job);
 
-  SyncService &syncService_;
+  std::function<void()> onJobFinished_;
   std::mutex mutex_;
   std::condition_variable condition_;
   std::deque<SyncScheduler::ScanJob> queue_;
+  std::unordered_set<std::string> queuedOrRunningJobKeys_;
   std::thread workerThread_;
   bool running_{true};
 };

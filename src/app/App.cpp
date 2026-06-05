@@ -371,7 +371,7 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Daemon:
-    return Daemon::create(syncScheduler_, syncService_)->run();
+    return Daemon::create(syncScheduler_)->run();
 
   case Command::Unknown:
     spdlog::error(

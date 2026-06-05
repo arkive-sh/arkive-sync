@@ -11,6 +11,8 @@
 
 namespace {
 
+constexpr int kBusyTimeoutMs = 5000;
+
 struct MigrationStep {
   int version;
   const char *filename;
@@ -89,6 +91,7 @@ void Database::initDb() {
     throw std::runtime_error("Failed to open database: " + error_message);
   }
 
+  sqlite3_busy_timeout(db, kBusyTimeoutMs);
   execOrThrow(db, "PRAGMA cache_size=-65536;");
   execOrThrow(db, "PRAGMA temp_store=FILE;");
   execOrThrow(db, "PRAGMA journal_mode=WAL;");
