@@ -66,7 +66,7 @@ LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler)
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
-  const std::vector<WatchRoot> watchRoots = syncScheduler_.watchRoots();
+  const std::vector<WatchRoot> watchRoots = syncScheduler_.rootsToWatch();
   if (watchRoots.empty()) {
     throw std::runtime_error("No enabled sync paths configured.");
   }
@@ -75,7 +75,7 @@ int LinuxDaemon::run() {
   for (const auto &root : watchRoots) {
     watcher->addRoot(root);
   }
-  syncScheduler_.scheduleAll();
+  syncScheduler_.enqueueFullRescan();
 
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
   if (epollFd.get() < 0) {
@@ -95,7 +95,7 @@ int LinuxDaemon::run() {
   spdlog::info("Daemon watching {} sync root(s)", watchRoots.size());
 
   while (!gStopRequested) {
-    const int timeoutMs = syncScheduler_.nextWaitTimeoutMs();
+    const int timeoutMs = syncScheduler_.nextRunDelayMs();
     epoll_event readyEvents[8]{};
     const int readyCount =
         epoll_wait(epollFd.get(), readyEvents, 8, timeoutMs);
@@ -114,11 +114,11 @@ int LinuxDaemon::run() {
       }
 
       for (const auto &fileEvent : watcher->poll()) {
-        syncScheduler_.schedule(fileEvent);
+        syncScheduler_.enqueueEvent(fileEvent);
       }
     }
 
-    const auto scanResult = syncScheduler_.runDueScans();
+    const auto scanResult = syncScheduler_.runReadyScans();
     if (scanResult.scannedRoots > 0 || scanResult.scannedPaths > 0) {
       spdlog::info(
           "Daemon scanned {} root(s) and {} path(s), detected {} change(s)",

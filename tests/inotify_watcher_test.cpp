@@ -201,6 +201,42 @@ TEST_CASE("InotifyWatcher treats moved-to cookie zero as created") {
   REQUIRE(fileEvent->cookie == 0);
 }
 
+TEST_CASE("InotifyWatcher suppresses move-self events and removes the watch") {
+  TempDir tempDir;
+  InotifyWatcher watcher;
+  watcher.addRoot(WatchRoot{
+      .rootId = "root-1",
+      .path = tempDir.path(),
+  });
+
+  REQUIRE_FALSE(watcher.watches_.empty());
+  const int wd = watcher.watches_.begin()->first;
+  auto eventBuffer = makeEventBuffer(wd, IN_MOVE_SELF, 0, "");
+  auto *event = reinterpret_cast<inotify_event *>(eventBuffer.data());
+
+  const auto fileEvent = watcher.handleEvent(*event);
+  REQUIRE_FALSE(fileEvent.has_value());
+  REQUIRE(watcher.watches_.empty());
+}
+
+TEST_CASE("InotifyWatcher suppresses delete-self events and removes the watch") {
+  TempDir tempDir;
+  InotifyWatcher watcher;
+  watcher.addRoot(WatchRoot{
+      .rootId = "root-1",
+      .path = tempDir.path(),
+  });
+
+  REQUIRE_FALSE(watcher.watches_.empty());
+  const int wd = watcher.watches_.begin()->first;
+  auto eventBuffer = makeEventBuffer(wd, IN_DELETE_SELF, 0, "");
+  auto *event = reinterpret_cast<inotify_event *>(eventBuffer.data());
+
+  const auto fileEvent = watcher.handleEvent(*event);
+  REQUIRE_FALSE(fileEvent.has_value());
+  REQUIRE(watcher.watches_.empty());
+}
+
 #else
 
 TEST_CASE("InotifyWatcher tests require Linux") {}

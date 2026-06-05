@@ -46,7 +46,7 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
 }
 
 WatchRoot onlyWatchRoot(SyncScheduler &scheduler) {
-  const auto roots = scheduler.watchRoots();
+  const auto roots = scheduler.rootsToWatch();
   REQUIRE(roots.size() == 1);
   return roots.front();
 }
@@ -79,18 +79,18 @@ TEST_CASE("SyncScheduler debounces repeated root events") {
   const WatchRoot root = onlyWatchRoot(scheduler);
   writeFile(tempDir.path() / "movie.txt", "hello");
 
-  scheduler.schedule(FileEvent{
+  scheduler.enqueueEvent(FileEvent{
       .rootId = root.rootId,
       .path = tempDir.path() / "movie.txt",
       .type = FileEventType::Modified,
       .isDirectory = false,
   });
 
-  REQUIRE(scheduler.nextWaitTimeoutMs() >= 1);
-  REQUIRE(scheduler.runDueScans().scannedPaths == 0);
+  REQUIRE(scheduler.nextRunDelayMs() >= 1);
+  REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
-  scheduler.schedule(FileEvent{
+  scheduler.enqueueEvent(FileEvent{
       .rootId = root.rootId,
       .path = tempDir.path() / "movie.txt",
       .type = FileEventType::Modified,
@@ -98,10 +98,10 @@ TEST_CASE("SyncScheduler debounces repeated root events") {
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
-  REQUIRE(scheduler.runDueScans().scannedPaths == 0);
+  REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(70));
-  const auto scanResult = scheduler.runDueScans();
+  const auto scanResult = scheduler.runReadyScans();
   REQUIRE(scanResult.scannedRoots == 0);
   REQUIRE(scanResult.scannedPaths == 1);
   REQUIRE(scanResult.changedEntries == 1);
@@ -130,7 +130,7 @@ TEST_CASE("SyncScheduler max delay forces a scan under constant events") {
   const WatchRoot root = onlyWatchRoot(scheduler);
   writeFile(tempDir.path() / "movie.txt", "hello");
 
-  scheduler.schedule(FileEvent{
+  scheduler.enqueueEvent(FileEvent{
       .rootId = root.rootId,
       .path = tempDir.path() / "movie.txt",
       .type = FileEventType::Modified,
@@ -139,17 +139,17 @@ TEST_CASE("SyncScheduler max delay forces a scan under constant events") {
 
   for (int i = 0; i < 3; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    scheduler.schedule(FileEvent{
+    scheduler.enqueueEvent(FileEvent{
         .rootId = root.rootId,
         .path = tempDir.path() / "movie.txt",
         .type = FileEventType::Modified,
         .isDirectory = false,
     });
-    REQUIRE(scheduler.runDueScans().scannedPaths == 0);
+    REQUIRE(scheduler.runReadyScans().scannedPaths == 0);
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(60));
-  const auto scanResult = scheduler.runDueScans();
+  const auto scanResult = scheduler.runReadyScans();
   REQUIRE(scanResult.scannedRoots == 0);
   REQUIRE(scanResult.scannedPaths == 1);
   REQUIRE(scanResult.changedEntries == 1);
@@ -184,7 +184,7 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
 
   std::filesystem::rename(oldPath, newPath);
 
-  scheduler.schedule(FileEvent{
+  scheduler.enqueueEvent(FileEvent{
       .rootId = root.rootId,
       .path = newPath,
       .oldPath = oldPath,
@@ -194,7 +194,7 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
   });
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const auto scanResult = scheduler.runDueScans();
+  const auto scanResult = scheduler.runReadyScans();
   REQUIRE(scanResult.scannedRoots == 0);
   REQUIRE(scanResult.scannedPaths == 2);
   REQUIRE(scanResult.changedEntries == 2);
@@ -217,4 +217,44 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
 
   REQUIRE(foundDeletedOld);
   REQUIRE(foundNew);
+}
+
+TEST_CASE("SyncScheduler suppresses duplicate delete events within the recent window") {
+  TestDb db;
+  TempDir tempDir;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+  QueueRepo queueRepo(db.get());
+  SyncService syncService(syncRepo, crypto);
+
+  syncService.addPath(tempDir.path());
+  SyncScheduler scheduler(syncRepo, syncService, std::chrono::milliseconds(30),
+                          std::chrono::milliseconds(200));
+
+  const WatchRoot root = onlyWatchRoot(scheduler);
+  const auto deletedPath = tempDir.path() / "old.txt";
+  writeFile(deletedPath, "hello");
+  REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
+  std::filesystem::remove(deletedPath);
+
+  const FileEvent deleteEvent{
+      .rootId = root.rootId,
+      .path = deletedPath,
+      .type = FileEventType::Deleted,
+      .isDirectory = false,
+  };
+
+  scheduler.enqueueEvent(deleteEvent);
+  scheduler.enqueueEvent(deleteEvent);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const auto scanResult = scheduler.runReadyScans();
+  REQUIRE(scanResult.scannedRoots == 0);
+  REQUIRE(scanResult.scannedPaths == 1);
+  REQUIRE(scanResult.changedEntries == 1);
 }

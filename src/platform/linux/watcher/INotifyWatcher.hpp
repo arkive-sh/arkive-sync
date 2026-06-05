@@ -1,6 +1,7 @@
 #pragma once
-#include "fs/FileWatcher.hpp"
 #include "./INotifyFD.hpp"
+#include "fs/FileWatcher.hpp"
+#include "logging/LogAndReturn.hpp"
 
 #include <array>
 #include <cerrno>
@@ -27,6 +28,31 @@ struct PendingMove {
   bool isDirectory{false};
   std::chrono::steady_clock::time_point seenAt;
 };
+
+static FileEventType toEventType(uint32_t mask) {
+  if (mask & IN_Q_OVERFLOW) {
+    return FileEventType::Overflow;
+  }
+  if (mask & IN_MOVED_FROM) {
+    return FileEventType::MovedFrom;
+  }
+  if (mask & IN_MOVED_TO) {
+    return FileEventType::MovedTo;
+  }
+  if (mask & (IN_DELETE | IN_DELETE_SELF)) {
+    return FileEventType::Deleted;
+  }
+  if (mask & (IN_CLOSE_WRITE | IN_MODIFY)) {
+    return FileEventType::Modified;
+  }
+  if (mask & IN_CREATE) {
+    return FileEventType::Created;
+  }
+  if (mask & IN_ATTRIB) {
+    return FileEventType::AttributeChanged;
+  }
+  return FileEventType::Unknown;
+}
 
 class InotifyWatcher : public IFileWatcher {
 public:
@@ -66,8 +92,7 @@ public:
 
       size_t offset = 0;
       while (offset < static_cast<size_t>(len)) {
-        auto *event =
-            reinterpret_cast<inotify_event *>(buffer.data() + offset);
+        auto *event = reinterpret_cast<inotify_event *>(buffer.data() + offset);
         if (auto fileEvent = handleEvent(*event)) {
           events.push_back(std::move(*fileEvent));
         }
@@ -105,10 +130,6 @@ private:
       IN_CREATE | IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO |
       IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF | IN_ATTRIB | IN_Q_OVERFLOW;
 
-  static std::string normalizePathKey(const std::filesystem::path &path) {
-    return path.lexically_normal().string();
-  }
-
   static bool isSameOrChildPath(const std::filesystem::path &parent,
                                 const std::filesystem::path &child) {
     const auto normalizedParent = parent.lexically_normal();
@@ -132,7 +153,7 @@ private:
       return;
     }
 
-    pathToWd_.erase(normalizePathKey(it->second.path));
+    pathToWd_.erase(it->second.path.lexically_normal().string());
     inotify_rm_watch(fd_.get(), wd);
     watches_.erase(it);
   }
@@ -153,7 +174,7 @@ private:
 
   void addWatch(const WatchRoot &root, const std::filesystem::path &path) {
     const std::filesystem::path normalizedPath = path.lexically_normal();
-    const std::string pathKey = normalizePathKey(normalizedPath);
+    const std::string pathKey = normalizedPath.lexically_normal().string();
     if (pathToWd_.contains(pathKey)) {
       return;
     }
@@ -168,7 +189,7 @@ private:
 
     auto existing = watches_.find(wd);
     if (existing != watches_.end()) {
-      pathToWd_.erase(normalizePathKey(existing->second.path));
+      pathToWd_.erase(existing->second.path.lexically_normal().string());
     }
 
     watches_[wd] = WatchInfo{
@@ -184,8 +205,7 @@ private:
     addWatch(root, root.path);
 
     std::error_code ec;
-    for (const auto &entry :
-         std::filesystem::recursive_directory_iterator(
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(
              root.path,
              std::filesystem::directory_options::skip_permission_denied, ec)) {
       if (ec) {
@@ -200,34 +220,8 @@ private:
     }
   }
 
-  static FileEventType toEventType(uint32_t mask) {
-    if (mask & IN_Q_OVERFLOW) {
-      return FileEventType::Overflow;
-    }
-    if (mask & IN_MOVED_FROM) {
-      return FileEventType::MovedFrom;
-    }
-    if (mask & IN_MOVED_TO) {
-      return FileEventType::MovedTo;
-    }
-    if (mask & (IN_DELETE | IN_DELETE_SELF)) {
-      return FileEventType::Deleted;
-    }
-    if (mask & (IN_CLOSE_WRITE | IN_MODIFY)) {
-      return FileEventType::Modified;
-    }
-    if (mask & IN_CREATE) {
-      return FileEventType::Created;
-    }
-    if (mask & IN_ATTRIB) {
-      return FileEventType::AttributeChanged;
-    }
-    return FileEventType::Unknown;
-  }
-
-  std::vector<FileEvent>
-  drainExpiredMoves(std::chrono::milliseconds maxAge =
-                        std::chrono::milliseconds(500)) {
+  std::vector<FileEvent> drainExpiredMoves(
+      std::chrono::milliseconds maxAge = std::chrono::milliseconds(500)) {
     std::vector<FileEvent> events;
     const auto now = std::chrono::steady_clock::now();
 
@@ -237,14 +231,19 @@ private:
         continue;
       }
 
-      events.push_back(FileEvent{
+      FileEvent fileEvent{
           .rootId = it->second.rootId,
           .path = it->second.oldPath,
           .oldPath = std::nullopt,
           .type = FileEventType::Deleted,
           .isDirectory = it->second.isDirectory,
           .cookie = it->first,
-      });
+      };
+      spdlog::info("Watcher event {} root={} path={} dir={} cookie={}",
+                   eventTypeName(fileEvent.type), fileEvent.rootId,
+                   fileEvent.path.string(), fileEvent.isDirectory,
+                   fileEvent.cookie);
+      events.push_back(std::move(fileEvent));
 
       if (it->second.isDirectory) {
         removeWatchesUnder(it->second.oldPath);
@@ -257,15 +256,16 @@ private:
   }
 
   std::optional<FileEvent> handleEvent(const inotify_event &event) {
+    //  We handle overflow first
     if (event.mask & IN_Q_OVERFLOW) {
-      return FileEvent{
+      return logAndReturn(FileEvent{
           .rootId = "",
           .path = {},
           .oldPath = std::nullopt,
           .type = FileEventType::Overflow,
           .isDirectory = false,
           .cookie = event.cookie,
-      };
+      });
     }
 
     auto it = watches_.find(event.wd);
@@ -293,14 +293,14 @@ private:
     }
 
     if ((event.mask & IN_MOVED_FROM) && event.cookie == 0) {
-      return FileEvent{
+      return logAndReturn(FileEvent{
           .rootId = watch.rootId,
           .path = fullPath,
           .oldPath = std::nullopt,
           .type = FileEventType::Deleted,
           .isDirectory = isDirectory,
           .cookie = 0,
-      };
+      });
     }
 
     if ((event.mask & IN_MOVED_TO) && event.cookie != 0) {
@@ -320,14 +320,14 @@ private:
           });
         }
 
-        return FileEvent{
+        return logAndReturn(FileEvent{
             .rootId = watch.rootId,
             .path = fullPath,
             .oldPath = oldPath,
             .type = FileEventType::Renamed,
             .isDirectory = isDirectory || wasDirectory,
             .cookie = event.cookie,
-        };
+        });
       }
 
       if (isDirectory) {
@@ -337,14 +337,14 @@ private:
         });
       }
 
-      return FileEvent{
+      return logAndReturn(FileEvent{
           .rootId = watch.rootId,
           .path = fullPath,
           .oldPath = std::nullopt,
           .type = FileEventType::Created,
           .isDirectory = isDirectory,
           .cookie = event.cookie,
-      };
+      });
     }
 
     if ((event.mask & IN_MOVED_TO) && event.cookie == 0) {
@@ -355,14 +355,14 @@ private:
         });
       }
 
-      return FileEvent{
+      return logAndReturn(FileEvent{
           .rootId = watch.rootId,
           .path = fullPath,
           .oldPath = std::nullopt,
           .type = FileEventType::Created,
           .isDirectory = isDirectory,
           .cookie = 0,
-      };
+      });
     }
 
     if (isDirectory && (event.mask & (IN_CREATE | IN_MOVED_TO))) {
@@ -372,18 +372,24 @@ private:
       });
     }
 
-    if (event.mask & (IN_DELETE_SELF | IN_MOVE_SELF)) {
+    if (event.mask & IN_MOVE_SELF) {
       removeWatch(event.wd);
+      return std::nullopt;
     }
 
-    return FileEvent{
+    if (event.mask & IN_DELETE_SELF) {
+      removeWatch(event.wd);
+      return std::nullopt;
+    }
+
+    return logAndReturn(FileEvent{
         .rootId = watch.rootId,
         .path = fullPath,
         .oldPath = std::nullopt,
         .type = toEventType(event.mask),
         .isDirectory = isDirectory,
         .cookie = event.cookie,
-    };
+    });
   }
 
 private:

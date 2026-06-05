@@ -6,11 +6,6 @@
 #include <string>
 #include <vector>
 
-struct WatchRoot {
-  std::string rootId;
-  std::filesystem::path path;
-};
-
 enum class FileEventType {
   Created,
   Modified,
@@ -21,6 +16,36 @@ enum class FileEventType {
   AttributeChanged,
   Overflow,
   Unknown
+};
+
+static const char *eventTypeName(FileEventType type) {
+  switch (type) {
+  case FileEventType::Created:
+    return "created";
+  case FileEventType::Modified:
+    return "modified";
+  case FileEventType::Deleted:
+    return "deleted";
+  case FileEventType::MovedFrom:
+    return "moved_from";
+  case FileEventType::MovedTo:
+    return "moved_to";
+  case FileEventType::Renamed:
+    return "renamed";
+  case FileEventType::AttributeChanged:
+    return "attrib";
+  case FileEventType::Overflow:
+    return "overflow";
+  case FileEventType::Unknown:
+    return "unknown";
+  }
+
+  return "unknown";
+}
+
+struct WatchRoot {
+  std::string rootId;
+  std::filesystem::path path;
 };
 
 struct FileEvent {

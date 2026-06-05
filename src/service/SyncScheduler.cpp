@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <spdlog/spdlog.h>
 
 SyncScheduler::SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
                              std::chrono::milliseconds debounceWindow,
@@ -25,7 +26,7 @@ SyncScheduler::SyncScheduler(SyncRepo &syncRepo, SyncService &syncService,
   }
 }
 
-std::vector<WatchRoot> SyncScheduler::watchRoots() const {
+std::vector<WatchRoot> SyncScheduler::rootsToWatch() const {
   std::vector<WatchRoot> roots;
   roots.reserve(scheduledRoots_.size());
 
@@ -39,36 +40,88 @@ std::vector<WatchRoot> SyncScheduler::watchRoots() const {
   return roots;
 }
 
-void SyncScheduler::schedule(const FileEvent &event) {
-  if (event.rootId.empty()) {
-    scheduleAll();
+void SyncScheduler::enqueueEvent(const FileEvent &event) {
+  const Clock::time_point now = Clock::now();
+  if (shouldSuppressEvent(event, now)) {
+    spdlog::info("Scheduler suppressed duplicate event {} root={} path={}",
+                 eventTypeName(event.type), event.rootId, event.path.string());
     return;
   }
 
-  const Clock::time_point now = Clock::now();
+  spdlog::info("Scheduler received event {} root={} path={} old={}",
+               eventTypeName(event.type), event.rootId, event.path.string(),
+               event.oldPath.has_value() ? event.oldPath->string() : "-");
+
+  if (event.rootId.empty()) {
+    enqueueFullRescan();
+    return;
+  }
+
   if (event.type == FileEventType::Overflow ||
       event.type == FileEventType::Unknown) {
+    spdlog::info("Scheduler queued full root scan for root={}", event.rootId);
     scheduleRoot(event.rootId, now);
     return;
   }
 
   if (event.type == FileEventType::Renamed && event.oldPath.has_value()) {
+    spdlog::info("Scheduler queued rename scans root={} old={} new={}",
+                 event.rootId, event.oldPath->string(), event.path.string());
     schedulePath(event.rootId, *event.oldPath, now);
     schedulePath(event.rootId, event.path, now);
     return;
   }
 
+  spdlog::info("Scheduler queued path scan root={} path={}", event.rootId,
+               event.path.string());
   schedulePath(event.rootId, event.path, now);
 }
 
-void SyncScheduler::scheduleAll() {
+bool SyncScheduler::shouldSuppressEvent(const FileEvent &event,
+                                        Clock::time_point now) {
+  if (event.type != FileEventType::Deleted) {
+    return false;
+  }
+
+  const std::filesystem::path normalizedPath =
+      event.path.empty()
+          ? std::filesystem::path{}
+          : std::filesystem::absolute(event.path).lexically_normal();
+
+  for (const auto &recentEventSlot : recentEvents_) {
+    if (!recentEventSlot.has_value()) {
+      continue;
+    }
+
+    const RecentEvent &recentEvent = *recentEventSlot;
+    if (now - recentEvent.seenAt > kRecentEventWindow) {
+      continue;
+    }
+
+    if (recentEvent.rootId == event.rootId && recentEvent.path == normalizedPath &&
+        recentEvent.type == event.type) {
+      return true;
+    }
+  }
+
+  recentEvents_[nextRecentEventSlot_] = RecentEvent{
+      .rootId = event.rootId,
+      .path = normalizedPath,
+      .type = event.type,
+      .seenAt = now,
+  };
+  nextRecentEventSlot_ = (nextRecentEventSlot_ + 1) % recentEvents_.size();
+  return false;
+}
+
+void SyncScheduler::enqueueFullRescan() {
   const Clock::time_point now = Clock::now();
   for (const auto &[rootId, _] : scheduledRoots_) {
     scheduleRoot(rootId, now);
   }
 }
 
-int SyncScheduler::nextWaitTimeoutMs() const {
+int SyncScheduler::nextRunDelayMs() const {
   std::optional<Clock::time_point> nextDueAt;
 
   auto updateNextDueAt = [&](Clock::time_point dueAt) {
@@ -101,7 +154,7 @@ int SyncScheduler::nextWaitTimeoutMs() const {
   return std::max(1, static_cast<int>(waitDuration.count()));
 }
 
-SyncScheduler::ScanResult SyncScheduler::runDueScans() {
+SyncScheduler::ScanResult SyncScheduler::runReadyScans() {
   const Clock::time_point now = Clock::now();
   ScanResult result;
 
@@ -110,6 +163,8 @@ SyncScheduler::ScanResult SyncScheduler::runDueScans() {
       continue;
     }
 
+    spdlog::info("Scheduler running root scan root={} path={}", rootId,
+                 root.path.string());
     result.changedEntries += syncService_.scanRoot(root.path);
     result.scannedRoots += 1;
     root.pending = false;
@@ -124,6 +179,8 @@ SyncScheduler::ScanResult SyncScheduler::runDueScans() {
       continue;
     }
 
+    spdlog::info("Scheduler running path scan root={} path={}",
+                 it->second.rootId, it->second.path.string());
     result.changedEntries +=
         syncService_.scanPath(it->second.rootId, it->second.path);
     result.scannedPaths += 1;
