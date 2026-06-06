@@ -1,7 +1,6 @@
 #pragma once
 
 #include "api/ArkiveHttpClient.hpp"
-#include <cstddef>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -75,6 +74,29 @@ struct UploadCompleteRequest {
   int thumbnailHeight;
 };
 
+struct ListSyncEntriesRequest {
+  std::optional<std::string> folderId;
+  bool includeDeleted{false};
+};
+
+struct SyncEntryResponse {
+  std::string type;
+  std::string id;
+  std::optional<std::string> folderId;
+  std::optional<std::string> parentFolderId;
+  std::optional<std::string> encryptedMetadata;
+  std::optional<std::string> encryptedFileKey;
+  std::optional<std::string> encryptedManifest;
+  std::optional<std::string> encryptedName;
+  std::string updatedAt;
+  std::optional<std::string> deletedAt;
+  std::optional<std::string> purgedAt;
+};
+
+struct ListSyncEntriesResponse {
+  std::vector<SyncEntryResponse> entries;
+};
+
 class ArkiveApi {
 public:
   explicit ArkiveApi(ArkiveHttpClient &client);
@@ -88,8 +110,9 @@ public:
 
   virtual UploadLimitsResponse uploadLimits();
   virtual StartUploadResponse startUpload(const StartUploadRequest &request);
-  virtual PresignPartsResponse presignParts(
-      const std::string &uploadSessionId, const std::vector<int> &partNumbers);
+  virtual PresignPartsResponse
+  presignParts(const std::string &uploadSessionId,
+               const std::vector<int> &partNumbers);
   virtual std::string
   putEncryptedPartToStorage(const std::string &presignedUrl,
                             const std::vector<uint8_t> &body);
@@ -99,6 +122,8 @@ public:
                           const UploadPartRequest &request);
   virtual void uploadComplete(const std::string &uploadSessionId,
                               const UploadCompleteRequest &request);
+  virtual ListSyncEntriesResponse
+  listSyncEntries(const ListSyncEntriesRequest &request);
 
 private:
   ArkiveHttpClient &client_;

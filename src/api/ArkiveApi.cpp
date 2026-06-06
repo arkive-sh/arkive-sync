@@ -1,5 +1,6 @@
 #include "api/ArkiveApi.hpp"
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace {
 
@@ -49,6 +50,63 @@ nlohmann::json encodeSearchTokens(
   }
 
   return payload;
+}
+
+std::optional<std::string> optionalString(const nlohmann::json &json,
+                                          const char *key) {
+  if (!json.contains(key) || json[key].is_null()) {
+    return std::nullopt;
+  }
+  return json[key].get<std::string>();
+}
+
+SyncEntryResponse decodeSyncEntryResponse(const nlohmann::json &json) {
+  return SyncEntryResponse{
+      .type = json.value("type", ""),
+      .id = json.value("id", ""),
+      .folderId = optionalString(json, "folder_id"),
+      .parentFolderId = optionalString(json, "parent_folder_id"),
+      .encryptedMetadata = optionalString(json, "encrypted_metadata"),
+      .encryptedFileKey = optionalString(json, "encrypted_file_key"),
+      .encryptedManifest = optionalString(json, "encrypted_manifest"),
+      .encryptedName = optionalString(json, "encrypted_name"),
+      .updatedAt = json.value("updated_at", ""),
+      .deletedAt = optionalString(json, "deleted_at"),
+      .purgedAt = optionalString(json, "purged_at"),
+  };
+}
+
+ListSyncEntriesResponse
+decodeListSyncEntriesResponse(const nlohmann::json &json) {
+  ListSyncEntriesResponse response;
+  if (!json.contains("entries") || !json["entries"].is_array()) {
+    return response;
+  }
+
+  for (const auto &entryJson : json["entries"]) {
+    if (!entryJson.is_object()) {
+      continue;
+    }
+    response.entries.push_back(decodeSyncEntryResponse(entryJson));
+  }
+
+  return response;
+}
+
+std::string buildListSyncEntriesPath(const ListSyncEntriesRequest &request) {
+  std::ostringstream path;
+  path << "/api/sync/entries";
+
+  bool hasQuery = false;
+  if (request.folderId.has_value()) {
+    path << (hasQuery ? "&" : "?") << "folder_id=" << *request.folderId;
+    hasQuery = true;
+  }
+  if (request.includeDeleted) {
+    path << (hasQuery ? "&" : "?") << "include_deleted=true";
+  }
+
+  return path.str();
 }
 
 } // namespace
@@ -154,4 +212,10 @@ void ArkiveApi::uploadComplete(const std::string &uploadSessionId,
           {"thumbnailWidth", request.thumbnailWidth},
           {"thumbnailHeight", request.thumbnailHeight},
       });
+}
+
+ListSyncEntriesResponse
+ArkiveApi::listSyncEntries(const ListSyncEntriesRequest &request) {
+  return decodeListSyncEntriesResponse(
+      client_.getJson(buildListSyncEntriesPath(request)));
 }
