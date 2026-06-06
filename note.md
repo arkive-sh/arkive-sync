@@ -449,19 +449,8 @@ Failure conditions:
 Do these next, in order:
 
 Priority: High
-- Keep `UploadService` file-only.
-- Add directory/folder sync and remote folder creation in `SyncService`.
-- Manual folder uploads should recurse through `SyncService`, not bypass it through `UploadService`.
-- Add persisted vault-session restore so uploads, queue processing, and daemon
-  flows do not require unlocking on every command.
-
-1. Create explicit core module boundaries on paper and in code.
-2. Write tests for the current vault and sync behavior before major refactors.
-3. Port the web-supported decrypt/read pipeline into the native core.
-4. Port the web-supported upload/share behavior into the native core.
-5. Define the canonical internal file metadata/chunk model.
-6. Refactor CLI flows to use the new core primitives.
-7. Only after that, start daemon design.
+1 - Fix vault persistence on db delete because when it has cookie.txt we can't login
+2 - Refactor SyncService/Repo, SyncScheduler, File Watcher code heavily. It needs to be immaculate. Right now it works but it's not maintainable.
 
 ## Rule For The Build
 
