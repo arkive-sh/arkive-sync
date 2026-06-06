@@ -32,26 +32,38 @@ EntryRecord readEntryRecord(sqlite3_stmt *stmt, LocalPathProtector &) {
   const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
   const char *remoteId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-  const char *syncRootId =
+  const char *remoteFileId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-  const char *remoteType =
+  const char *remoteFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
-  const char *localPath =
+  const char *syncRootId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+  const char *remoteType =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+  const char *localPath =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
   const char *parentFolderId =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
-  const char *encryptedName =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-  const char *localMtime =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
+  const char *remoteParentFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
-  const char *localHash =
+  const char *encryptedName =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 12));
-  const char *remoteUpdatedAt =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 13));
-  const char *syncState =
+  const char *localMtime =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 14));
-  const char *lastSyncedAt =
+  const char *localHash =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 15));
+  const char *remoteUpdatedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 16));
+  const char *remoteDeletedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 17));
+  const char *remotePurgedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 18));
+  const char *lastRemoteSeenAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 19));
+  const char *syncState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 20));
+  const char *lastSyncedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 21));
 
   if (id == nullptr || syncRootId == nullptr || remoteType == nullptr ||
       localPath == nullptr || syncState == nullptr) {
@@ -62,19 +74,28 @@ EntryRecord readEntryRecord(sqlite3_stmt *stmt, LocalPathProtector &) {
       .id = id,
       .remoteId = remoteId != nullptr ? std::optional<std::string>(remoteId)
                                       : std::nullopt,
+      .remoteFileId = remoteFileId != nullptr
+                          ? std::optional<std::string>(remoteFileId)
+                          : std::nullopt,
+      .remoteFolderId = remoteFolderId != nullptr
+                            ? std::optional<std::string>(remoteFolderId)
+                            : std::nullopt,
       .syncRootId = syncRootId,
       .remoteType = remoteType,
       .localPath = localPath,
-      .isDirectory = sqlite3_column_int(stmt, 7) != 0,
+      .isDirectory = sqlite3_column_int(stmt, 9) != 0,
       .parentFolderId = parentFolderId != nullptr
                             ? std::optional<std::string>(parentFolderId)
                             : std::nullopt,
+      .remoteParentFolderId = remoteParentFolderId != nullptr
+                                  ? std::optional<std::string>(remoteParentFolderId)
+                                  : std::nullopt,
       .encryptedName = encryptedName != nullptr
                            ? std::optional<std::string>(encryptedName)
                            : std::nullopt,
       .localSize =
-          sqlite3_column_type(stmt, 10) != SQLITE_NULL
-              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 10))
+          sqlite3_column_type(stmt, 13) != SQLITE_NULL
+              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 13))
               : std::nullopt,
       .localMtime = localMtime != nullptr ? std::optional<std::string>(localMtime)
                                           : std::nullopt,
@@ -83,6 +104,15 @@ EntryRecord readEntryRecord(sqlite3_stmt *stmt, LocalPathProtector &) {
       .remoteUpdatedAt = remoteUpdatedAt != nullptr
                              ? std::optional<std::string>(remoteUpdatedAt)
                              : std::nullopt,
+      .remoteDeletedAt = remoteDeletedAt != nullptr
+                             ? std::optional<std::string>(remoteDeletedAt)
+                             : std::nullopt,
+      .remotePurgedAt = remotePurgedAt != nullptr
+                            ? std::optional<std::string>(remotePurgedAt)
+                            : std::nullopt,
+      .lastRemoteSeenAt = lastRemoteSeenAt != nullptr
+                              ? std::optional<std::string>(lastRemoteSeenAt)
+                              : std::nullopt,
       .syncState = syncState,
       .lastSyncedAt = lastSyncedAt != nullptr
                           ? std::optional<std::string>(lastSyncedAt)
@@ -94,20 +124,32 @@ EntryIdentity readEntryIdentity(sqlite3_stmt *stmt) {
   const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
   const char *remoteId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-  const char *parentFolderId =
+  const char *remoteFileId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+  const char *remoteFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
-  const char *encryptedName =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-  const char *localMtime =
+  const char *parentFolderId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+  const char *remoteParentFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-  const char *localHash =
+  const char *encryptedName =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
-  const char *remoteUpdatedAt =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
-  const char *syncState =
+  const char *localMtime =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-  const char *lastSyncedAt =
+  const char *localHash =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
+  const char *remoteUpdatedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+  const char *remoteDeletedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 12));
+  const char *remotePurgedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 13));
+  const char *lastRemoteSeenAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 14));
+  const char *syncState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 15));
+  const char *lastSyncedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 16));
 
   if (id == nullptr || syncState == nullptr) {
     throw std::invalid_argument("entries scan row contained NULL value");
@@ -117,16 +159,25 @@ EntryIdentity readEntryIdentity(sqlite3_stmt *stmt) {
       .id = id,
       .remoteId = remoteId != nullptr ? std::optional<std::string>(remoteId)
                                       : std::nullopt,
-      .isDirectory = sqlite3_column_int(stmt, 2) != 0,
+      .remoteFileId = remoteFileId != nullptr
+                          ? std::optional<std::string>(remoteFileId)
+                          : std::nullopt,
+      .remoteFolderId = remoteFolderId != nullptr
+                            ? std::optional<std::string>(remoteFolderId)
+                            : std::nullopt,
+      .isDirectory = sqlite3_column_int(stmt, 4) != 0,
       .parentFolderId = parentFolderId != nullptr
                             ? std::optional<std::string>(parentFolderId)
                             : std::nullopt,
+      .remoteParentFolderId = remoteParentFolderId != nullptr
+                                  ? std::optional<std::string>(remoteParentFolderId)
+                                  : std::nullopt,
       .encryptedName = encryptedName != nullptr
                            ? std::optional<std::string>(encryptedName)
                            : std::nullopt,
       .localSize =
-          sqlite3_column_type(stmt, 5) != SQLITE_NULL
-              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 5))
+          sqlite3_column_type(stmt, 8) != SQLITE_NULL
+              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 8))
               : std::nullopt,
       .localMtime = localMtime != nullptr ? std::optional<std::string>(localMtime)
                                           : std::nullopt,
@@ -135,6 +186,15 @@ EntryIdentity readEntryIdentity(sqlite3_stmt *stmt) {
       .remoteUpdatedAt = remoteUpdatedAt != nullptr
                              ? std::optional<std::string>(remoteUpdatedAt)
                              : std::nullopt,
+      .remoteDeletedAt = remoteDeletedAt != nullptr
+                             ? std::optional<std::string>(remoteDeletedAt)
+                             : std::nullopt,
+      .remotePurgedAt = remotePurgedAt != nullptr
+                            ? std::optional<std::string>(remotePurgedAt)
+                            : std::nullopt,
+      .lastRemoteSeenAt = lastRemoteSeenAt != nullptr
+                              ? std::optional<std::string>(lastRemoteSeenAt)
+                              : std::nullopt,
       .syncState = syncState,
       .lastSyncedAt = lastSyncedAt != nullptr
                           ? std::optional<std::string>(lastSyncedAt)
@@ -236,13 +296,19 @@ DELETE FROM scan_seen_paths;
 SELECT
   id,
   remote_id,
+  remote_file_id,
+  remote_folder_id,
   is_directory,
   parent_folder_id,
+  remote_parent_folder_id,
   encrypted_name,
   local_size,
   local_mtime,
   local_hash,
   remote_updated_at,
+  remote_deleted_at,
+  remote_purged_at,
+  last_remote_seen_at,
   sync_state,
   last_synced_at
 FROM entries
@@ -433,6 +499,8 @@ std::vector<EntryRecord> SyncRepo::listEntriesPendingUpload(size_t limit) const 
 SELECT
   e.id,
   e.remote_id,
+  e.remote_file_id,
+  e.remote_folder_id,
   e.sync_root_id,
   e.remote_type,
   e.local_path,
@@ -440,11 +508,15 @@ SELECT
   e.local_path_hash,
   e.is_directory,
   e.parent_folder_id,
+  e.remote_parent_folder_id,
   e.encrypted_name,
   e.local_size,
   e.local_mtime,
   e.local_hash,
   e.remote_updated_at,
+  e.remote_deleted_at,
+  e.remote_purged_at,
+  e.last_remote_seen_at,
   e.sync_state,
   e.last_synced_at
 FROM entries e
@@ -494,6 +566,8 @@ SyncRepo::getEntryById(const std::string &entryId) const {
 SELECT
   id,
   remote_id,
+  remote_file_id,
+  remote_folder_id,
   sync_root_id,
   remote_type,
   local_path,
@@ -501,11 +575,15 @@ SELECT
   local_path_hash,
   is_directory,
   parent_folder_id,
+  remote_parent_folder_id,
   encrypted_name,
   local_size,
   local_mtime,
   local_hash,
   remote_updated_at,
+  remote_deleted_at,
+  remote_purged_at,
+  last_remote_seen_at,
   sync_state,
   last_synced_at
 FROM entries
@@ -686,6 +764,8 @@ SyncRepo::upsertScannedEntries(const std::vector<EntryUpsertRecord> &entries) co
 INSERT INTO entries (
   id,
   remote_id,
+  remote_file_id,
+  remote_folder_id,
   sync_root_id,
   remote_type,
   local_path,
@@ -693,11 +773,15 @@ INSERT INTO entries (
   local_path_hash,
   is_directory,
   parent_folder_id,
+  remote_parent_folder_id,
   encrypted_name,
   local_size,
   local_mtime,
   local_hash,
   remote_updated_at,
+  remote_deleted_at,
+  remote_purged_at,
+  last_remote_seen_at,
   sync_state,
   last_synced_at,
   updated_at
@@ -718,18 +802,35 @@ INSERT INTO entries (
   ?,
   ?,
   ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
   CURRENT_TIMESTAMP
 )
 ON CONFLICT(id) DO UPDATE SET
+  remote_id = excluded.remote_id,
+  remote_file_id = excluded.remote_file_id,
+  remote_folder_id = excluded.remote_folder_id,
   remote_type = excluded.remote_type,
   local_path = excluded.local_path,
   encrypted_local_path = excluded.encrypted_local_path,
   local_path_hash = excluded.local_path_hash,
   is_directory = excluded.is_directory,
+  parent_folder_id = excluded.parent_folder_id,
+  remote_parent_folder_id = excluded.remote_parent_folder_id,
+  encrypted_name = excluded.encrypted_name,
   local_size = excluded.local_size,
   local_mtime = excluded.local_mtime,
   local_hash = excluded.local_hash,
+  remote_updated_at = excluded.remote_updated_at,
+  remote_deleted_at = excluded.remote_deleted_at,
+  remote_purged_at = excluded.remote_purged_at,
+  last_remote_seen_at = excluded.last_remote_seen_at,
   sync_state = excluded.sync_state,
+  last_synced_at = excluded.last_synced_at,
   updated_at = CURRENT_TIMESTAMP;
   )sql";
 
@@ -754,21 +855,27 @@ ON CONFLICT(id) DO UPDATE SET
 
       bindText(db_, stmt.get(), 1, entry.id);
       bindOptionalText(db_, stmt.get(), 2, entry.remoteId);
-      bindText(db_, stmt.get(), 3, entry.syncRootId);
-      bindText(db_, stmt.get(), 4, entry.remoteType);
-      bindText(db_, stmt.get(), 5, entry.localPath);
-      bindText(db_, stmt.get(), 6, encryptedLocalPath);
-      bindText(db_, stmt.get(), 7, entryRecord.localPathHash);
+      bindOptionalText(db_, stmt.get(), 3, entry.remoteFileId);
+      bindOptionalText(db_, stmt.get(), 4, entry.remoteFolderId);
+      bindText(db_, stmt.get(), 5, entry.syncRootId);
+      bindText(db_, stmt.get(), 6, entry.remoteType);
+      bindText(db_, stmt.get(), 7, entry.localPath);
+      bindText(db_, stmt.get(), 8, encryptedLocalPath);
+      bindText(db_, stmt.get(), 9, entryRecord.localPathHash);
       throwIfBindFailed(
-          db_, sqlite3_bind_int(stmt.get(), 8, entry.isDirectory ? 1 : 0));
-      bindOptionalText(db_, stmt.get(), 9, entry.parentFolderId);
-      bindOptionalText(db_, stmt.get(), 10, entry.encryptedName);
-      bindOptionalInt64(db_, stmt.get(), 11, entry.localSize);
-      bindOptionalText(db_, stmt.get(), 12, entry.localMtime);
-      bindOptionalText(db_, stmt.get(), 13, entry.localHash);
-      bindOptionalText(db_, stmt.get(), 14, entry.remoteUpdatedAt);
-      bindText(db_, stmt.get(), 15, entry.syncState);
-      bindOptionalText(db_, stmt.get(), 16, entry.lastSyncedAt);
+          db_, sqlite3_bind_int(stmt.get(), 10, entry.isDirectory ? 1 : 0));
+      bindOptionalText(db_, stmt.get(), 11, entry.parentFolderId);
+      bindOptionalText(db_, stmt.get(), 12, entry.remoteParentFolderId);
+      bindOptionalText(db_, stmt.get(), 13, entry.encryptedName);
+      bindOptionalInt64(db_, stmt.get(), 14, entry.localSize);
+      bindOptionalText(db_, stmt.get(), 15, entry.localMtime);
+      bindOptionalText(db_, stmt.get(), 16, entry.localHash);
+      bindOptionalText(db_, stmt.get(), 17, entry.remoteUpdatedAt);
+      bindOptionalText(db_, stmt.get(), 18, entry.remoteDeletedAt);
+      bindOptionalText(db_, stmt.get(), 19, entry.remotePurgedAt);
+      bindOptionalText(db_, stmt.get(), 20, entry.lastRemoteSeenAt);
+      bindText(db_, stmt.get(), 21, entry.syncState);
+      bindOptionalText(db_, stmt.get(), 22, entry.lastSyncedAt);
 
       const int rc = sqlite3_step(stmt.get());
       if (rc != SQLITE_DONE) {
@@ -964,6 +1071,8 @@ SyncRepo::getEntriesForSyncRoot(const std::string &syncRootId) const {
 SELECT
   id,
   remote_id,
+  remote_file_id,
+  remote_folder_id,
   sync_root_id,
   remote_type,
   local_path,
@@ -971,11 +1080,15 @@ SELECT
   local_path_hash,
   is_directory,
   parent_folder_id,
+  remote_parent_folder_id,
   encrypted_name,
   local_size,
   local_mtime,
   local_hash,
   remote_updated_at,
+  remote_deleted_at,
+  remote_purged_at,
+  last_remote_seen_at,
   sync_state,
   last_synced_at
 FROM entries
