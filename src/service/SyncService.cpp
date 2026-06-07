@@ -39,8 +39,10 @@ bool shouldMarkPendingUpload(const std::optional<EntryRecord> &existingEntry,
     return true;
   }
 
-  if (existingEntry->syncState == "deleted") {
-    return true;
+  if (existingEntry->remoteDeletedAt.has_value()) {
+    // Preserve remote tombstone.
+    // Do not enqueue upload.
+    return false;
   }
 
   if (existingEntry->isDirectory != scannedEntry.isDirectory) {
@@ -59,16 +61,22 @@ toEntryRecord(const std::optional<EntryIdentity> &existingEntry,
   return EntryRecord{
       .id = existingEntry->id,
       .remoteId = existingEntry->remoteId,
+      .remoteFileId = existingEntry->remoteFileId,
+      .remoteFolderId = existingEntry->remoteFolderId,
       .syncRootId = syncRootId,
       .remoteType = existingEntry->isDirectory ? "folder" : "file",
       .localPath = localPath,
       .isDirectory = existingEntry->isDirectory,
       .parentFolderId = existingEntry->parentFolderId,
+      .remoteParentFolderId = existingEntry->remoteParentFolderId,
       .encryptedName = existingEntry->encryptedName,
       .localSize = existingEntry->localSize,
       .localMtime = existingEntry->localMtime,
       .localHash = existingEntry->localHash,
       .remoteUpdatedAt = existingEntry->remoteUpdatedAt,
+      .remoteDeletedAt = existingEntry->remoteDeletedAt,
+      .remotePurgedAt = existingEntry->remotePurgedAt,
+      .lastRemoteSeenAt = existingEntry->lastRemoteSeenAt,
       .syncState = existingEntry->syncState,
       .lastSyncedAt = existingEntry->lastSyncedAt,
   };
@@ -142,12 +150,22 @@ buildEntryUpsertRecord(SyncRepo &syncRepo, RustCrypto &crypto,
                        const std::string &syncRootId, const LocalEntry &entry,
                        const SyncScanSession &scanSession) {
   const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
-  const std::string localPathHash = syncRepo.local().computeLocalPathHash(relativePath);
+  const std::string localPathHash =
+      syncRepo.local().computeLocalPathHash(relativePath);
   const std::string localMtime = toMtimeString(entry.modifiedTime);
   const std::optional<EntryIdentity> existingScanState =
       scanSession.findEntryIdentityByPathHash(syncRootId, localPathHash);
+
   const std::optional<EntryRecord> existingEntry =
       toEntryRecord(existingScanState, syncRootId, relativePath);
+
+  const bool remoteDeletePending = existingEntry.has_value() &&
+                                   existingEntry->remoteDeletedAt.has_value() &&
+                                   existingEntry->syncState != "deleted";
+
+  if (remoteDeletePending) {
+    return std::nullopt;
+  }
 
   const std::optional<int64_t> localSize =
       entry.isDirectory
@@ -222,7 +240,8 @@ size_t flushPendingEntries(SyncRepo &syncRepo,
     return 0;
   }
 
-  const size_t changedCount = syncRepo.local().upsertScannedEntries(entryRecords);
+  const size_t changedCount =
+      syncRepo.local().upsertScannedEntries(entryRecords);
   entryRecords.clear();
   return changedCount;
 }
@@ -342,7 +361,8 @@ size_t SyncService::scanPath(const std::string &rootId,
             rootId, syncRepo_.local().computeLocalPathHash(dbRelativePath));
 
     if (existingEntry.has_value() && existingEntry->isDirectory) {
-      changedCount = syncRepo_.local().markSubtreeDeleted(rootId, dbRelativePath);
+      changedCount =
+          syncRepo_.local().markSubtreeDeleted(rootId, dbRelativePath);
     } else {
       changedCount = syncRepo_.local().markPathDeleted(rootId, dbRelativePath);
     }
@@ -414,8 +434,8 @@ size_t SyncService::scanPath(const std::string &rootId,
         });
 
     changedCount += flushPendingEntries(syncRepo_, entryRecords);
-    changedCount +=
-        syncRepo_.local().markMissingEntriesDeletedUnderPrefix(rootId, dbRelativePath);
+    changedCount += syncRepo_.local().markMissingEntriesDeletedUnderPrefix(
+        rootId, dbRelativePath);
     spdlog::info(
         "SyncService scanPath directory done root={} path={} changed={}",
         rootId, absolutePath.string(), changedCount);
@@ -483,7 +503,8 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     fileScanner.scanFiles([&](const LocalEntry &entry) {
       const std::string relativePath =
           PathCodec::toDbRelative(entry.relativePath);
-      scanSession.recordSeenPath(syncRepo_.local().computeLocalPathHash(relativePath));
+      scanSession.recordSeenPath(
+          syncRepo_.local().computeLocalPathHash(relativePath));
 
       if (auto upsert = buildEntryUpsertRecord(syncRepo_, crypto_, syncRoot->id,
                                                entry, scanSession);

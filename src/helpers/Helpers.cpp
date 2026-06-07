@@ -1,5 +1,7 @@
 #include "./Helpers.hpp"
 
+#include <chrono>
+#include <format>
 #include <iostream>
 #include <stdexcept>
 #include <termios.h>
@@ -72,4 +74,10 @@ std::string requireBaseUrl(const UserRepo &userRepo) {
   }
 
   return account->baseUrl;
+}
+
+std::string getCurrentTimestamp() {
+  auto now = std::chrono::system_clock::now();
+  // Redirects to UTC and formats natively
+  return std::format("{:%FT%TZ}", now);
 }

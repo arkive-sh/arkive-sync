@@ -2,10 +2,12 @@
 
 #include "db/SqliteHelpers.hpp"
 #include "helpers/LocalPathProtector.hpp"
+#include "repo/SyncRepoTypes.hpp"
 
 #include <optional>
 #include <sqlite3.h>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -68,18 +70,19 @@ EntryRecord readEntryRecord(sqlite3_stmt *stmt) {
       .parentFolderId = parentFolderId != nullptr
                             ? std::optional<std::string>(parentFolderId)
                             : std::nullopt,
-      .remoteParentFolderId = remoteParentFolderId != nullptr
-                                  ? std::optional<std::string>(remoteParentFolderId)
-                                  : std::nullopt,
+      .remoteParentFolderId =
+          remoteParentFolderId != nullptr
+              ? std::optional<std::string>(remoteParentFolderId)
+              : std::nullopt,
       .encryptedName = encryptedName != nullptr
                            ? std::optional<std::string>(encryptedName)
                            : std::nullopt,
-      .localSize =
-          sqlite3_column_type(stmt, 13) != SQLITE_NULL
-              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 13))
-              : std::nullopt,
-      .localMtime = localMtime != nullptr ? std::optional<std::string>(localMtime)
-                                          : std::nullopt,
+      .localSize = sqlite3_column_type(stmt, 13) != SQLITE_NULL
+                       ? std::optional<int64_t>(sqlite3_column_int64(stmt, 13))
+                       : std::nullopt,
+      .localMtime = localMtime != nullptr
+                        ? std::optional<std::string>(localMtime)
+                        : std::nullopt,
       .localHash = localHash != nullptr ? std::optional<std::string>(localHash)
                                         : std::nullopt,
       .remoteUpdatedAt = remoteUpdatedAt != nullptr
@@ -235,9 +238,8 @@ LIMIT ?;
   }
 
   StmtUniquePtr stmt(rawStmt);
-  throwIfBindFailed(db_,
-                    sqlite3_bind_int64(stmt.get(), 1,
-                                       static_cast<sqlite3_int64>(limit)));
+  throwIfBindFailed(db_, sqlite3_bind_int64(stmt.get(), 1,
+                                            static_cast<sqlite3_int64>(limit)));
 
   std::vector<EntryRecord> entries;
   while (true) {
@@ -308,7 +310,8 @@ WHERE id = ?;
   return readEntryRecord(stmt.get());
 }
 
-std::string LocalEntryRepo::computeLocalPathHash(const std::string &localPath) const {
+std::string
+LocalEntryRepo::computeLocalPathHash(const std::string &localPath) const {
   return pathProtector_.hashPath(localPath);
 }
 
@@ -379,7 +382,8 @@ void LocalEntryRepo::markEntryUploaded(const std::string &entryId,
   }
 }
 
-size_t LocalEntryRepo::upsertEntries(const std::vector<EntryRecord> &entries) const {
+size_t
+LocalEntryRepo::upsertEntries(const std::vector<EntryRecord> &entries) const {
   std::vector<EntryUpsertRecord> upsertRecords;
   upsertRecords.reserve(entries.size());
   for (const auto &entry : entries) {
@@ -518,8 +522,9 @@ WHERE sync_root_id = ?
   return static_cast<size_t>(sqlite3_changes(db_));
 }
 
-size_t LocalEntryRepo::markSubtreeDeleted(const std::string &syncRootId,
-                                          const std::string &relativeDirPath) const {
+size_t
+LocalEntryRepo::markSubtreeDeleted(const std::string &syncRootId,
+                                   const std::string &relativeDirPath) const {
   if (relativeDirPath.empty()) {
     static constexpr const char *sql = R"sql(
 UPDATE entries
@@ -661,4 +666,63 @@ WHERE sync_root_id = ?
                              sqlite3_errmsg(db_));
   }
   return static_cast<size_t>(sqlite3_changes(db_));
+}
+
+std::vector<EntryRecord> LocalEntryRepo::listRemoteDeletedLocalEntries(
+    const std::string &syncRootId) const {
+  static constexpr const char *sql = R"sql(
+SELECT
+  e.id,
+  e.remote_id,
+  e.remote_file_id,
+  e.remote_folder_id,
+  e.sync_root_id,
+  e.remote_type,
+  e.local_path,
+  e.encrypted_local_path,
+  e.local_path_hash,
+  e.is_directory,
+  e.parent_folder_id,
+  e.remote_parent_folder_id,
+  e.encrypted_name,
+  e.local_size,
+  e.local_mtime,
+  e.local_hash,
+  e.remote_updated_at,
+  e.remote_deleted_at,
+  e.remote_purged_at,
+  e.last_remote_seen_at,
+  e.sync_state,
+  e.last_synced_at
+FROM entries e
+WHERE e.sync_root_id = ?
+  AND e.remote_deleted_at IS NOT NULL
+  AND e.sync_state != 'deleted'
+  AND e.local_path NOT LIKE '__remote__/%';
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  std::vector<EntryRecord> rows;
+  while (true) {
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_ROW) {
+      rows.push_back(readEntryRecord(stmt.get()));
+      continue;
+    }
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  return rows;
 }

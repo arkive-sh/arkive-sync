@@ -19,3 +19,4 @@ TerminalEchoGuard makeTerminalEchoGuard();
 std::string readPasswordFromTerminal(const std::string &prompt);
 bool commandAllowsMissingBaseUrl(int argc, char *argv[]);
 std::string requireBaseUrl(const UserRepo &userRepo);
+std::string getCurrentTimestamp();

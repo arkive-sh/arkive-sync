@@ -1,4 +1,5 @@
 #include "sync/RemoteScanner.hpp"
+#include "sync/Reconcile.hpp"
 
 #include "api/ArkiveApi.hpp"
 #include "repo/SyncRepo.hpp"
@@ -8,18 +9,36 @@ RemoteScanner::RemoteScanner(SyncRepo &syncRepo, ArkiveApi &api)
     : syncRepo_(syncRepo), api_(api) {}
 
 void RemoteScanner::scanAllRootsAndStore(bool includeDeleted) const {
+  ReconcileEngine reconcile(syncRepo_.local());
+
+  const SyncModeSpec *mode = findSyncMode(SyncMode::RemoteMirror);
+  if (mode == nullptr) {
+    throw std::runtime_error("RemoteMirror sync mode missing");
+  }
+
   for (const auto &syncRoot : syncRepo_.roots().getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
     }
 
     scanFolderAndStore(syncRoot.id, syncRoot.folderId, includeDeleted);
+
+    const ReconcilePlan plan = reconcile.planRemoteDeletes(syncRoot.id, *mode);
+
+    for (const auto &action : plan.actions) {
+      spdlog::info(
+          "reconcile planned action={} root={} entry={} path={} reason={}",
+          action.type == ReconcileActionType::DeleteLocalFolder
+              ? "delete_local_folder"
+              : "delete_local_file",
+          action.syncRootId, action.entryId, action.localPath, action.reason);
+    }
   }
 }
 
-void RemoteScanner::scanFolderAndStore(const std::string &syncRootId,
-                                       const std::optional<std::string> &folderId,
-                                       bool includeDeleted) const {
+void RemoteScanner::scanFolderAndStore(
+    const std::string &syncRootId, const std::optional<std::string> &folderId,
+    bool includeDeleted) const {
   std::optional<std::string> cursor;
   std::vector<std::string> childFolderIds;
 

@@ -1,29 +1,36 @@
 #pragma once
 
-#include "api/ArkiveApi.hpp"
 #include "sync/SyncMode.hpp"
 
+#include <string>
 #include <vector>
 
-enum class ReconcileAction {
-  Noop,
+enum class ReconcileActionType {
+  DeleteLocalFile,
+  DeleteLocalFolder,
 };
 
-struct ReconcileDecision {
+struct ReconcileAction {
+  ReconcileActionType type;
+  std::string syncRootId;
   std::string entryId;
-  ReconcileAction action;
+  std::string localPath;
+  std::string reason;
 };
 
-class Reconcile {
+struct ReconcilePlan {
+  std::vector<ReconcileAction> actions;
+};
+
+class LocalEntryRepo;
+
+class ReconcileEngine {
 public:
-  explicit Reconcile(SyncMode mode);
+  explicit ReconcileEngine(LocalEntryRepo &localEntries);
 
-  std::vector<ReconcileDecision>
-  decide(const ListSyncEntriesResponse &remoteEntries) const;
-
-  SyncMode mode() const { return mode_; }
-  const SyncModeSpec &spec() const;
+  ReconcilePlan planRemoteDeletes(const std::string &syncRootId,
+                                  const SyncModeSpec &mode) const;
 
 private:
-  SyncMode mode_;
+  LocalEntryRepo &localEntries_;
 };

@@ -204,12 +204,12 @@ TEST_CASE("RemoteScanner scans enabled roots with include_deleted") {
     if (entry.remoteFolderId == std::optional<std::string>("folder-2")) {
       sawChildFolder = true;
       REQUIRE(entry.remoteType == "folder");
-      REQUIRE(entry.syncState == "synced");
+      REQUIRE(entry.syncState == "remote_only");
     }
     if (entry.remoteFileId == std::optional<std::string>("file-2")) {
       sawChildFile = true;
       REQUIRE(entry.remoteParentFolderId == std::optional<std::string>("folder-2"));
-      REQUIRE(entry.syncState == "synced");
+      REQUIRE(entry.syncState == "remote_only");
     }
   }
 
@@ -292,32 +292,62 @@ TEST_CASE("RemoteScanner updates existing SQLite entry by remote id") {
           std::optional<std::string>("2026-06-06T00:00:00Z"));
 }
 
-TEST_CASE("Reconcile exposes sync mode and returns placeholder decisions") {
-  Reconcile reconcile(SyncMode::RemoteMirror);
+TEST_CASE("ReconcileEngine plans remote delete actions for remote mirror") {
+  TestDatabase db;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
 
-  ListSyncEntriesResponse response{
-      .entries = {
-          SyncEntryResponse{
-              .type = "file",
-              .id = "file-1",
-              .folderId = std::nullopt,
-              .parentFolderId = std::nullopt,
-              .encryptedMetadata = std::nullopt,
-              .encryptedFileKey = std::nullopt,
-              .encryptedManifest = std::nullopt,
-              .encryptedName = std::nullopt,
-              .updatedAt = "2026-06-06T00:00:00Z",
-              .deletedAt = std::nullopt,
-              .purgedAt = std::nullopt,
-          },
-      },
-  };
+  syncRepo.roots().upsertSyncRoot(SyncRootRecord{
+      .id = "root-1",
+      .localPath = "/tmp/root-1",
+      .folderId = std::string("folder-1"),
+      .enabled = true,
+  });
 
-  REQUIRE(reconcile.mode() == SyncMode::RemoteMirror);
-  REQUIRE(reconcile.spec().direction == SyncModeDirection::RemoteToLocal);
+  syncRepo.local().upsertEntries({EntryRecord{
+      .id = "entry-1",
+      .remoteId = std::string("file-1"),
+      .remoteFileId = std::string("file-1"),
+      .remoteFolderId = std::nullopt,
+      .syncRootId = "root-1",
+      .remoteType = "file",
+      .localPath = "movie.txt",
+      .isDirectory = false,
+      .parentFolderId = std::nullopt,
+      .remoteParentFolderId = std::string("folder-1"),
+      .encryptedName = std::nullopt,
+      .localSize = 11,
+      .localMtime = std::string("123"),
+      .localHash = std::string("hash-1"),
+      .remoteUpdatedAt = std::string("2026-06-01T00:00:00Z"),
+      .remoteDeletedAt = std::string("2026-06-06T00:00:00Z"),
+      .remotePurgedAt = std::nullopt,
+      .lastRemoteSeenAt = std::string("2026-06-06T00:00:00Z"),
+      .syncState = "synced",
+      .lastSyncedAt = std::string("2026-06-01T00:00:00Z"),
+  }});
 
-  const auto decisions = reconcile.decide(response);
-  REQUIRE(decisions.size() == 1);
-  REQUIRE(decisions.front().entryId == "file-1");
-  REQUIRE(decisions.front().action == ReconcileAction::Noop);
+  ReconcileEngine reconcile(syncRepo.local());
+  const SyncModeSpec *mode = findSyncMode(SyncMode::RemoteMirror);
+  const auto stored = syncRepo.local().getEntryById("entry-1");
+  REQUIRE(stored.has_value());
+  REQUIRE(stored->remoteDeletedAt ==
+          std::optional<std::string>("2026-06-06T00:00:00Z"));
+  const auto remoteDeleted = syncRepo.local().listRemoteDeletedLocalEntries("root-1");
+
+  REQUIRE(mode != nullptr);
+  REQUIRE(mode->direction == SyncModeDirection::RemoteToLocal);
+  REQUIRE(remoteDeleted.size() == 1);
+
+  const ReconcilePlan plan = reconcile.planRemoteDeletes("root-1", *mode);
+  REQUIRE(plan.actions.size() == 1);
+  REQUIRE(plan.actions.front().type == ReconcileActionType::DeleteLocalFile);
+  REQUIRE(plan.actions.front().entryId == "entry-1");
+  REQUIRE(plan.actions.front().localPath == "movie.txt");
+  REQUIRE(plan.actions.front().reason == "remote tombstone");
 }

@@ -68,18 +68,19 @@ EntryRecord readEntryRecord(sqlite3_stmt *stmt) {
       .parentFolderId = parentFolderId != nullptr
                             ? std::optional<std::string>(parentFolderId)
                             : std::nullopt,
-      .remoteParentFolderId = remoteParentFolderId != nullptr
-                                  ? std::optional<std::string>(remoteParentFolderId)
-                                  : std::nullopt,
+      .remoteParentFolderId =
+          remoteParentFolderId != nullptr
+              ? std::optional<std::string>(remoteParentFolderId)
+              : std::nullopt,
       .encryptedName = encryptedName != nullptr
                            ? std::optional<std::string>(encryptedName)
                            : std::nullopt,
-      .localSize =
-          sqlite3_column_type(stmt, 13) != SQLITE_NULL
-              ? std::optional<int64_t>(sqlite3_column_int64(stmt, 13))
-              : std::nullopt,
-      .localMtime = localMtime != nullptr ? std::optional<std::string>(localMtime)
-                                          : std::nullopt,
+      .localSize = sqlite3_column_type(stmt, 13) != SQLITE_NULL
+                       ? std::optional<int64_t>(sqlite3_column_int64(stmt, 13))
+                       : std::nullopt,
+      .localMtime = localMtime != nullptr
+                        ? std::optional<std::string>(localMtime)
+                        : std::nullopt,
       .localHash = localHash != nullptr ? std::optional<std::string>(localHash)
                                         : std::nullopt,
       .remoteUpdatedAt = remoteUpdatedAt != nullptr
@@ -166,7 +167,8 @@ std::string buildRemotePlaceholderPath(const SyncEntryResponse &entry) {
   return std::string("__remote__/") + entry.type + "/" + entry.id;
 }
 
-bool sameRemoteMetadata(const EntryRecord &existing, const EntryRecord &updated) {
+bool sameRemoteMetadata(const EntryRecord &existing,
+                        const EntryRecord &updated) {
   return existing.remoteId == updated.remoteId &&
          existing.remoteFileId == updated.remoteFileId &&
          existing.remoteFolderId == updated.remoteFolderId &&
@@ -192,129 +194,146 @@ RemoteEntryRepo::upsertRemoteEntry(const std::string &syncRootId,
   const std::optional<EntryRecord> existingEntry =
       findEntryByRemoteObjectId(db_, syncRootId, entry);
 
+  const bool isFile = entry.type == "file";
+  const bool isFolder = entry.type == "folder";
+
   const std::string localPath = existingEntry.has_value()
                                     ? existingEntry->localPath
                                     : buildRemotePlaceholderPath(entry);
-  const std::string localPathHash = pathProtector_.hashPath(localPath);
 
-  std::string syncState = entry.deletedAt.has_value() ? "deleted" : "synced";
-  if (existingEntry.has_value() && existingEntry->syncState == "pending_upload" &&
-      !entry.deletedAt.has_value()) {
-    syncState = existingEntry->syncState;
-  }
+  const std::string localPathHash = pathProtector_.hashPath(localPath);
 
   EntryRecord updatedEntry{
       .id = existingEntry.has_value() ? existingEntry->id : entry.id,
-      .remoteId = entry.type == "file"
-                      ? std::optional<std::string>(entry.id)
-                      : existingEntry.has_value() ? existingEntry->remoteId
+
+      .remoteId = existingEntry.has_value()
+                      ? existingEntry->remoteId
+                      : std::optional<std::string>(entry.id),
+
+      .remoteFileId = isFile ? std::optional<std::string>(entry.id)
+                      : existingEntry.has_value() ? existingEntry->remoteFileId
                                                   : std::nullopt,
-      .remoteFileId = entry.type == "file"
-                          ? std::optional<std::string>(entry.id)
-                          : std::nullopt,
-      .remoteFolderId = entry.type == "folder"
-                            ? std::optional<std::string>(entry.id)
+
+      .remoteFolderId = isFolder ? std::optional<std::string>(entry.id)
+                        : existingEntry.has_value()
+                            ? existingEntry->remoteFolderId
                             : std::nullopt,
+
       .syncRootId = syncRootId,
       .remoteType = entry.type,
       .localPath = localPath,
-      .isDirectory = entry.type == "folder",
-      .parentFolderId =
-          existingEntry.has_value() ? existingEntry->parentFolderId : std::nullopt,
+      .isDirectory = isFolder,
+
+      .parentFolderId = existingEntry.has_value()
+                            ? existingEntry->parentFolderId
+                            : std::nullopt,
+
       .remoteParentFolderId = entry.parentFolderId,
       .encryptedName = entry.encryptedName,
-      .localSize = existingEntry.has_value() ? existingEntry->localSize
-                                             : std::nullopt,
-      .localMtime = existingEntry.has_value() ? existingEntry->localMtime
-                                              : std::nullopt,
-      .localHash = existingEntry.has_value() ? existingEntry->localHash
-                                             : std::nullopt,
+
+      .localSize =
+          existingEntry.has_value() ? existingEntry->localSize : std::nullopt,
+
+      .localMtime =
+          existingEntry.has_value() ? existingEntry->localMtime : std::nullopt,
+
+      .localHash =
+          existingEntry.has_value() ? existingEntry->localHash : std::nullopt,
+
       .remoteUpdatedAt = entry.updatedAt,
       .remoteDeletedAt = entry.deletedAt,
       .remotePurgedAt = entry.purgedAt,
-      .lastRemoteSeenAt = entry.updatedAt,
-      .syncState = syncState,
+
+      // This means "daemon observed remote state".
+      // SQLite CURRENT_TIMESTAMP below sets the actual observation time.
+      .lastRemoteSeenAt = std::nullopt,
+
+      // Critical: remote scanner must not mark local state deleted.
+      .syncState =
+          existingEntry.has_value() ? existingEntry->syncState : "remote_only",
+
       .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
                                                 : std::nullopt,
   };
 
-  if (existingEntry.has_value() && sameRemoteMetadata(*existingEntry, updatedEntry)) {
+  if (existingEntry.has_value() &&
+      sameRemoteMetadata(*existingEntry, updatedEntry)) {
     return RemoteEntryUpsertAction::Unchanged;
   }
 
   static constexpr const char *upsertEntrySql = R"sql(
-INSERT INTO entries (
-  id,
-  remote_id,
-  remote_file_id,
-  remote_folder_id,
-  sync_root_id,
-  remote_type,
-  local_path,
-  encrypted_local_path,
-  local_path_hash,
-  is_directory,
-  parent_folder_id,
-  remote_parent_folder_id,
-  encrypted_name,
-  local_size,
-  local_mtime,
-  local_hash,
-  remote_updated_at,
-  remote_deleted_at,
-  remote_purged_at,
-  last_remote_seen_at,
-  sync_state,
-  last_synced_at,
-  updated_at
-) VALUES (
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  ?,
-  CURRENT_TIMESTAMP
-)
-ON CONFLICT(id) DO UPDATE SET
-  remote_id = excluded.remote_id,
-  remote_file_id = excluded.remote_file_id,
-  remote_folder_id = excluded.remote_folder_id,
-  remote_type = excluded.remote_type,
-  local_path = excluded.local_path,
-  encrypted_local_path = excluded.encrypted_local_path,
-  local_path_hash = excluded.local_path_hash,
-  is_directory = excluded.is_directory,
-  parent_folder_id = excluded.parent_folder_id,
-  remote_parent_folder_id = excluded.remote_parent_folder_id,
-  encrypted_name = excluded.encrypted_name,
-  local_size = excluded.local_size,
-  local_mtime = excluded.local_mtime,
-  local_hash = excluded.local_hash,
-  remote_updated_at = excluded.remote_updated_at,
-  remote_deleted_at = excluded.remote_deleted_at,
-  remote_purged_at = excluded.remote_purged_at,
-  last_remote_seen_at = excluded.last_remote_seen_at,
-  sync_state = excluded.sync_state,
-  last_synced_at = excluded.last_synced_at,
-  updated_at = CURRENT_TIMESTAMP;
-  )sql";
+    INSERT INTO entries (
+      id,
+      remote_id,
+      remote_file_id,
+      remote_folder_id,
+      sync_root_id,
+      remote_type,
+      local_path,
+      encrypted_local_path,
+      local_path_hash,
+      is_directory,
+      parent_folder_id,
+      remote_parent_folder_id,
+      encrypted_name,
+      local_size,
+      local_mtime,
+      local_hash,
+      remote_updated_at,
+      remote_deleted_at,
+      remote_purged_at,
+      last_remote_seen_at,
+      sync_state,
+      last_synced_at,
+      updated_at
+    ) VALUES (
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      ?,
+      CURRENT_TIMESTAMP,
+      ?,
+      ?,
+      CURRENT_TIMESTAMP
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      remote_id = excluded.remote_id,
+      remote_file_id = excluded.remote_file_id,
+      remote_folder_id = excluded.remote_folder_id,
+      remote_type = excluded.remote_type,
+      local_path = excluded.local_path,
+      encrypted_local_path = excluded.encrypted_local_path,
+      local_path_hash = excluded.local_path_hash,
+      is_directory = excluded.is_directory,
+      parent_folder_id = excluded.parent_folder_id,
+      remote_parent_folder_id = excluded.remote_parent_folder_id,
+      encrypted_name = excluded.encrypted_name,
+      local_size = excluded.local_size,
+      local_mtime = excluded.local_mtime,
+      local_hash = excluded.local_hash,
+      remote_updated_at = excluded.remote_updated_at,
+      remote_deleted_at = excluded.remote_deleted_at,
+      remote_purged_at = excluded.remote_purged_at,
+      last_remote_seen_at = CURRENT_TIMESTAMP,
+      sync_state = excluded.sync_state,
+      last_synced_at = excluded.last_synced_at,
+      updated_at = CURRENT_TIMESTAMP;
+      )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
   if (sqlite3_prepare_v2(db_, upsertEntrySql, -1, &rawStmt, nullptr) !=
@@ -324,8 +343,9 @@ ON CONFLICT(id) DO UPDATE SET
   }
 
   StmtUniquePtr stmt(rawStmt);
-  const std::string encryptedLocalPath =
-      pathProtector_.encryptPath(updatedEntry.syncRootId, updatedEntry.localPath);
+
+  const std::string encryptedLocalPath = pathProtector_.encryptPath(
+      updatedEntry.syncRootId, updatedEntry.localPath);
 
   bindText(db_, stmt.get(), 1, updatedEntry.id);
   bindOptionalText(db_, stmt.get(), 2, updatedEntry.remoteId);
@@ -336,8 +356,10 @@ ON CONFLICT(id) DO UPDATE SET
   bindText(db_, stmt.get(), 7, updatedEntry.localPath);
   bindText(db_, stmt.get(), 8, encryptedLocalPath);
   bindText(db_, stmt.get(), 9, localPathHash);
+
   throwIfBindFailed(
       db_, sqlite3_bind_int(stmt.get(), 10, updatedEntry.isDirectory ? 1 : 0));
+
   bindOptionalText(db_, stmt.get(), 11, updatedEntry.parentFolderId);
   bindOptionalText(db_, stmt.get(), 12, updatedEntry.remoteParentFolderId);
   bindOptionalText(db_, stmt.get(), 13, updatedEntry.encryptedName);
@@ -347,9 +369,10 @@ ON CONFLICT(id) DO UPDATE SET
   bindOptionalText(db_, stmt.get(), 17, updatedEntry.remoteUpdatedAt);
   bindOptionalText(db_, stmt.get(), 18, updatedEntry.remoteDeletedAt);
   bindOptionalText(db_, stmt.get(), 19, updatedEntry.remotePurgedAt);
-  bindOptionalText(db_, stmt.get(), 20, updatedEntry.lastRemoteSeenAt);
-  bindText(db_, stmt.get(), 21, updatedEntry.syncState);
-  bindOptionalText(db_, stmt.get(), 22, updatedEntry.lastSyncedAt);
+
+  // Parameter 20 was removed because last_remote_seen_at is CURRENT_TIMESTAMP.
+  bindText(db_, stmt.get(), 20, updatedEntry.syncState);
+  bindOptionalText(db_, stmt.get(), 21, updatedEntry.lastSyncedAt);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -360,8 +383,10 @@ ON CONFLICT(id) DO UPDATE SET
   if (entry.deletedAt.has_value()) {
     return RemoteEntryUpsertAction::Deleted;
   }
+
   if (!existingEntry.has_value()) {
     return RemoteEntryUpsertAction::Created;
   }
+
   return RemoteEntryUpsertAction::Updated;
 }

@@ -1,28 +1,30 @@
 #include "sync/Reconcile.hpp"
 
-#include <stdexcept>
+#include "repo/LocalEntryRepo.hpp"
 
-Reconcile::Reconcile(SyncMode mode) : mode_(mode) {}
+ReconcileEngine::ReconcileEngine(LocalEntryRepo &localEntries)
+    : localEntries_(localEntries) {}
 
-std::vector<ReconcileDecision>
-Reconcile::decide(const ListSyncEntriesResponse &remoteEntries) const {
-  std::vector<ReconcileDecision> decisions;
-  decisions.reserve(remoteEntries.entries.size());
+ReconcilePlan
+ReconcileEngine::planRemoteDeletes(const std::string &syncRootId,
+                                   const SyncModeSpec &mode) const {
+  ReconcilePlan plan;
 
-  for (const auto &entry : remoteEntries.entries) {
-    decisions.push_back(ReconcileDecision{
+  if (!mode.remoteDeletes) {
+    return plan;
+  }
+
+  for (const auto &entry :
+       localEntries_.listRemoteDeletedLocalEntries(syncRootId)) {
+    plan.actions.push_back(ReconcileAction{
+        .type = entry.isDirectory ? ReconcileActionType::DeleteLocalFolder
+                                  : ReconcileActionType::DeleteLocalFile,
+        .syncRootId = syncRootId,
         .entryId = entry.id,
-        .action = ReconcileAction::Noop,
+        .localPath = entry.localPath,
+        .reason = "remote tombstone",
     });
   }
 
-  return decisions;
-}
-
-const SyncModeSpec &Reconcile::spec() const {
-  const SyncModeSpec *resolved = findSyncMode(mode_);
-  if (resolved == nullptr) {
-    throw std::runtime_error("Unknown sync mode");
-  }
-  return *resolved;
+  return plan;
 }
