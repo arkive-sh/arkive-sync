@@ -1,5 +1,6 @@
 #pragma once
 
+#include "repo/SyncRepo.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -9,7 +10,7 @@ class RemoteScanner;
 
 class RemoteSyncWorker {
 public:
-  explicit RemoteSyncWorker(RemoteScanner &scanner);
+  explicit RemoteSyncWorker(RemoteScanner &scanner, SyncRepo &syncRepo);
   ~RemoteSyncWorker();
 
   RemoteSyncWorker(const RemoteSyncWorker &) = delete;
@@ -23,6 +24,7 @@ private:
   void runLoop();
 
   RemoteScanner &scanner_;
+  SyncRepo syncRepo_;
   std::atomic<bool> running_{false};
   std::thread worker_;
   std::condition_variable cv_;

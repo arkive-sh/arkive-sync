@@ -5,9 +5,9 @@
 #include "helpers/LocalPathProtector.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
+#include "service/VaultService.hpp"
 #include "sync/Reconcile.hpp"
 #include "sync/RemoteScanner.hpp"
-#include "service/VaultService.hpp"
 
 #include "support/FakeSecureStorage.hpp"
 #include "support/NullArkiveHttpClient.hpp"
@@ -48,9 +48,9 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
   const std::string password = "test-password";
   const std::vector<uint8_t> salt = crypto.generateSalt();
   const std::vector<uint8_t> masterKey = crypto.generateMasterKey();
-  const std::vector<uint8_t> encryptedMasterKey = crypto.wrapMasterKey(
-      masterKey, crypto.derivePasswordKek(password, salt),
-      ArkiveAad::toBytes(ArkiveAad::kMasterKey));
+  const std::vector<uint8_t> encryptedMasterKey =
+      crypto.wrapMasterKey(masterKey, crypto.derivePasswordKek(password, salt),
+                           ArkiveAad::toBytes(ArkiveAad::kMasterKey));
 
   userRepo.upsertAccount(AccountRecord{
       .baseUrl = "http://localhost:8080",
@@ -98,78 +98,82 @@ TEST_CASE("RemoteScanner scans enabled roots with include_deleted") {
   FakeArkiveApi api;
   api.responses = {
       ListSyncEntriesResponse{
-          .entries = {
-              SyncEntryResponse{
-                  .type = "file",
-                  .id = "file-1",
-                  .folderId = std::string("folder-1"),
-                  .parentFolderId = std::nullopt,
-                  .encryptedMetadata = std::string("meta"),
-                  .encryptedFileKey = std::string("key"),
-                  .encryptedManifest = std::string("manifest"),
-                  .encryptedName = std::nullopt,
-                  .updatedAt = "2026-06-06T00:00:00Z",
-                  .deletedAt = std::nullopt,
-                  .purgedAt = std::nullopt,
+          .entries =
+              {
+                  SyncEntryResponse{
+                      .type = "file",
+                      .id = "file-1",
+                      .folderId = std::string("folder-1"),
+                      .parentFolderId = std::nullopt,
+                      .encryptedMetadata = std::string("meta"),
+                      .encryptedFileKey = std::string("key"),
+                      .encryptedManifest = std::string("manifest"),
+                      .encryptedName = std::nullopt,
+                      .updatedAt = "2026-06-06T00:00:00Z",
+                      .deletedAt = std::nullopt,
+                      .purgedAt = std::nullopt,
+                  },
               },
-          },
           .nextCursor = std::string("cursor-1"),
           .hasMore = true,
       },
       ListSyncEntriesResponse{
-          .entries = {
-              SyncEntryResponse{
-                  .type = "folder",
-                  .id = "folder-2",
-                  .folderId = std::nullopt,
-                  .parentFolderId = std::string("folder-1"),
-                  .encryptedMetadata = std::string("meta2"),
-                  .encryptedFileKey = std::nullopt,
-                  .encryptedManifest = std::nullopt,
-                  .encryptedName = std::string("name"),
-                  .updatedAt = "2026-06-06T00:00:01Z",
-                  .deletedAt = std::nullopt,
-                  .purgedAt = std::nullopt,
+          .entries =
+              {
+                  SyncEntryResponse{
+                      .type = "folder",
+                      .id = "folder-2",
+                      .folderId = std::nullopt,
+                      .parentFolderId = std::string("folder-1"),
+                      .encryptedMetadata = std::string("meta2"),
+                      .encryptedFileKey = std::nullopt,
+                      .encryptedManifest = std::nullopt,
+                      .encryptedName = std::string("name"),
+                      .updatedAt = "2026-06-06T00:00:01Z",
+                      .deletedAt = std::nullopt,
+                      .purgedAt = std::nullopt,
+                  },
               },
-          },
           .nextCursor = std::nullopt,
           .hasMore = false,
       },
       ListSyncEntriesResponse{
-          .entries = {
-              SyncEntryResponse{
-                  .type = "file",
-                  .id = "file-2",
-                  .folderId = std::string("folder-2"),
-                  .parentFolderId = std::string("folder-2"),
-                  .encryptedMetadata = std::string("meta-child"),
-                  .encryptedFileKey = std::string("key-child"),
-                  .encryptedManifest = std::string("manifest-child"),
-                  .encryptedName = std::nullopt,
-                  .updatedAt = "2026-06-06T00:00:01Z",
-                  .deletedAt = std::nullopt,
-                  .purgedAt = std::nullopt,
+          .entries =
+              {
+                  SyncEntryResponse{
+                      .type = "file",
+                      .id = "file-2",
+                      .folderId = std::string("folder-2"),
+                      .parentFolderId = std::string("folder-2"),
+                      .encryptedMetadata = std::string("meta-child"),
+                      .encryptedFileKey = std::string("key-child"),
+                      .encryptedManifest = std::string("manifest-child"),
+                      .encryptedName = std::nullopt,
+                      .updatedAt = "2026-06-06T00:00:01Z",
+                      .deletedAt = std::nullopt,
+                      .purgedAt = std::nullopt,
+                  },
               },
-          },
           .nextCursor = std::nullopt,
           .hasMore = false,
       },
       ListSyncEntriesResponse{
-          .entries = {
-              SyncEntryResponse{
-                  .type = "file",
-                  .id = "file-3",
-                  .folderId = std::nullopt,
-                  .parentFolderId = std::nullopt,
-                  .encryptedMetadata = std::string("meta3"),
-                  .encryptedFileKey = std::string("key3"),
-                  .encryptedManifest = std::string("manifest3"),
-                  .encryptedName = std::nullopt,
-                  .updatedAt = "2026-06-06T00:00:02Z",
-                  .deletedAt = std::nullopt,
-                  .purgedAt = std::nullopt,
+          .entries =
+              {
+                  SyncEntryResponse{
+                      .type = "file",
+                      .id = "file-3",
+                      .folderId = std::nullopt,
+                      .parentFolderId = std::nullopt,
+                      .encryptedMetadata = std::string("meta3"),
+                      .encryptedFileKey = std::string("key3"),
+                      .encryptedManifest = std::string("manifest3"),
+                      .encryptedName = std::nullopt,
+                      .updatedAt = "2026-06-06T00:00:02Z",
+                      .deletedAt = std::nullopt,
+                      .purgedAt = std::nullopt,
+                  },
               },
-          },
           .nextCursor = std::nullopt,
           .hasMore = false,
       },
@@ -208,7 +212,8 @@ TEST_CASE("RemoteScanner scans enabled roots with include_deleted") {
     }
     if (entry.remoteFileId == std::optional<std::string>("file-2")) {
       sawChildFile = true;
-      REQUIRE(entry.remoteParentFolderId == std::optional<std::string>("folder-2"));
+      REQUIRE(entry.remoteParentFolderId ==
+              std::optional<std::string>("folder-2"));
       REQUIRE(entry.syncState == "remote_only");
     }
   }
@@ -260,21 +265,22 @@ TEST_CASE("RemoteScanner updates existing SQLite entry by remote id") {
   FakeArkiveApi api;
   api.responses = {
       ListSyncEntriesResponse{
-          .entries = {
-              SyncEntryResponse{
-                  .type = "file",
-                  .id = "file-1",
-                  .folderId = std::string("folder-1"),
-                  .parentFolderId = std::string("folder-1"),
-                  .encryptedMetadata = std::string("meta"),
-                  .encryptedFileKey = std::string("key"),
-                  .encryptedManifest = std::string("manifest"),
-                  .encryptedName = std::string("new-name"),
-                  .updatedAt = "2026-06-06T00:00:00Z",
-                  .deletedAt = std::nullopt,
-                  .purgedAt = std::nullopt,
+          .entries =
+              {
+                  SyncEntryResponse{
+                      .type = "file",
+                      .id = "file-1",
+                      .folderId = std::string("folder-1"),
+                      .parentFolderId = std::string("folder-1"),
+                      .encryptedMetadata = std::string("meta"),
+                      .encryptedFileKey = std::string("key"),
+                      .encryptedManifest = std::string("manifest"),
+                      .encryptedName = std::string("new-name"),
+                      .updatedAt = "2026-06-06T00:00:00Z",
+                      .deletedAt = std::nullopt,
+                      .purgedAt = std::nullopt,
+                  },
               },
-          },
           .nextCursor = std::nullopt,
           .hasMore = false,
       },
@@ -290,6 +296,36 @@ TEST_CASE("RemoteScanner updates existing SQLite entry by remote id") {
   REQUIRE(updated->encryptedName == std::optional<std::string>("new-name"));
   REQUIRE(updated->remoteUpdatedAt ==
           std::optional<std::string>("2026-06-06T00:00:00Z"));
+}
+
+TEST_CASE("RemoteEntryRepo ignores last seen timestamp for unchanged remote rows") {
+  TestDatabase db;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+  LocalPathProtector pathProtector(crypto, vaultService);
+  SyncRepo syncRepo(db.get(), pathProtector);
+
+  const SyncEntryResponse entry{
+      .type = "file",
+      .id = "file-1",
+      .folderId = std::string("folder-1"),
+      .parentFolderId = std::string("folder-1"),
+      .encryptedMetadata = std::string("meta"),
+      .encryptedFileKey = std::string("key"),
+      .encryptedManifest = std::string("manifest"),
+      .encryptedName = std::string("name"),
+      .updatedAt = "2026-06-06T00:00:00Z",
+      .deletedAt = std::nullopt,
+      .purgedAt = std::nullopt,
+  };
+
+  REQUIRE(syncRepo.remote().upsertRemoteEntry("root-1", entry) ==
+          RemoteEntryUpsertAction::Created);
+  REQUIRE(syncRepo.remote().upsertRemoteEntry("root-1", entry) ==
+          RemoteEntryUpsertAction::Unchanged);
 }
 
 TEST_CASE("ReconcileEngine plans remote delete actions for remote mirror") {
@@ -338,15 +374,17 @@ TEST_CASE("ReconcileEngine plans remote delete actions for remote mirror") {
   REQUIRE(stored.has_value());
   REQUIRE(stored->remoteDeletedAt ==
           std::optional<std::string>("2026-06-06T00:00:00Z"));
-  const auto remoteDeleted = syncRepo.local().listRemoteDeletedLocalEntries("root-1");
+  const auto remoteDeleted =
+      syncRepo.local().listRemoteDeletedLocalEntries("root-1");
 
   REQUIRE(mode != nullptr);
   REQUIRE(mode->direction == SyncModeDirection::RemoteToLocal);
   REQUIRE(remoteDeleted.size() == 1);
 
-  const ReconcilePlan plan = reconcile.planRemoteDeletes("root-1", *mode);
+  const ReconcilePlan plan = reconcile.plan("root-1", *mode);
   REQUIRE(plan.actions.size() == 1);
-  REQUIRE(plan.actions.front().type == ReconcileActionType::DeleteLocalFile);
+  REQUIRE(plan.actions.front().type ==
+          ReconcileActionType::ApplyRemoteDeleteFile);
   REQUIRE(plan.actions.front().entryId == "entry-1");
   REQUIRE(plan.actions.front().localPath == "movie.txt");
   REQUIRE(plan.actions.front().reason == "remote tombstone");

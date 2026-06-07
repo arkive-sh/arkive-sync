@@ -6,8 +6,11 @@
 #include <vector>
 
 enum class ReconcileActionType {
-  DeleteLocalFile,
-  DeleteLocalFolder,
+  ApplyRemoteDeleteFile,
+  ApplyRemoteDeleteFolder,
+  PreserveLocalFileAsHistory,
+  PreserveLocalFolderAsHistory,
+  IgnoreRemoteDelete,
 };
 
 struct ReconcileAction {
@@ -28,9 +31,12 @@ class ReconcileEngine {
 public:
   explicit ReconcileEngine(LocalEntryRepo &localEntries);
 
-  ReconcilePlan planRemoteDeletes(const std::string &syncRootId,
-                                  const SyncModeSpec &mode) const;
+  ReconcilePlan plan(const std::string &syncRootId,
+                     const SyncModeSpec &mode) const;
 
 private:
+  void appendRemoteDeleteActions(ReconcilePlan &plan,
+                                 const std::string &syncRootId,
+                                 const SyncModeSpec &mode) const;
   LocalEntryRepo &localEntries_;
 };

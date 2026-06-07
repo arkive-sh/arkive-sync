@@ -726,3 +726,27 @@ WHERE e.sync_root_id = ?
 
   return rows;
 }
+
+size_t LocalEntryRepo::markEntryDeletedById(const std::string &id) const {
+  static constexpr const char *sql = R"sql(
+    UPDATE entries
+    SET sync_state = 'deleted',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, id);
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+  return static_cast<size_t>(sqlite3_changes(db_));
+}

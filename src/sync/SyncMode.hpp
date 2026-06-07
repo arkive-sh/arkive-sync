@@ -38,6 +38,8 @@ struct SyncModeSpec {
   bool remoteCreates;
   bool remoteUpdates;
   bool remoteDeletes;
+  DeletePolicy localDeletePolicy;
+  DeletePolicy remoteDeletePolicy;
   bool preservesHistory;
   bool needsConflictResolution;
 };
@@ -56,6 +58,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = false,
         .remoteUpdates = false,
         .remoteDeletes = false,
+        .localDeletePolicy = DeletePolicy::PropagateDelete,
+        .remoteDeletePolicy = DeletePolicy::IgnoreDelete,
         .preservesHistory = false,
         .needsConflictResolution = false,
     },
@@ -72,6 +76,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = false,
         .remoteUpdates = false,
         .remoteDeletes = false,
+        .localDeletePolicy = DeletePolicy::PreserveAsHistory,
+        .remoteDeletePolicy = DeletePolicy::IgnoreDelete,
         .preservesHistory = true,
         .needsConflictResolution = false,
     },
@@ -88,6 +94,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = true,
         .remoteUpdates = true,
         .remoteDeletes = true,
+        .localDeletePolicy = DeletePolicy::IgnoreDelete,
+        .remoteDeletePolicy = DeletePolicy::PropagateDelete,
         .preservesHistory = false,
         .needsConflictResolution = false,
     },
@@ -104,6 +112,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = true,
         .remoteUpdates = true,
         .remoteDeletes = false,
+        .localDeletePolicy = DeletePolicy::IgnoreDelete,
+        .remoteDeletePolicy = DeletePolicy::PreserveAsHistory,
         .preservesHistory = true,
         .needsConflictResolution = false,
     },
@@ -120,6 +130,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = true,
         .remoteUpdates = true,
         .remoteDeletes = true,
+        .localDeletePolicy = DeletePolicy::PropagateDelete,
+        .remoteDeletePolicy = DeletePolicy::PropagateDelete,
         .preservesHistory = false,
         .needsConflictResolution = true,
     },
@@ -136,6 +148,8 @@ inline constexpr std::array<SyncModeSpec, 6> kSyncModes{{
         .remoteCreates = true,
         .remoteUpdates = true,
         .remoteDeletes = true,
+        .localDeletePolicy = DeletePolicy::PreserveAsHistory,
+        .remoteDeletePolicy = DeletePolicy::PreserveAsHistory,
         .preservesHistory = true,
         .needsConflictResolution = true,
     },

@@ -35,6 +35,7 @@ public:
 
   std::vector<EntryRecord>
   listRemoteDeletedLocalEntries(const std::string &syncRootId) const;
+  size_t markEntryDeletedById(const std::string &entryId) const;
 
 private:
   sqlite3 *db_;

@@ -133,6 +133,7 @@ add_executable(arkive-sync
     src/fs/FileHasher.cpp
     src/sync/QueueWorker.cpp
     src/sync/Reconcile.cpp
+    src/sync/ReconcileActionApplier.cpp
     src/sync/RemoteScanner.cpp
     src/sync/RemoteSyncWorker.cpp
     src/sync/ScanWorker.cpp
@@ -224,6 +225,7 @@ add_executable(arkive-sync-tests
     src/service/UploadService.cpp
     src/service/VaultService.cpp
     src/sync/Reconcile.cpp
+    src/sync/ReconcileActionApplier.cpp
     src/sync/RemoteScanner.cpp
     src/sync/RemoteSyncWorker.cpp
     src/upload/MultipartUploader.cpp

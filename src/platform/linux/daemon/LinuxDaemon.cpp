@@ -21,8 +21,8 @@
 #include <csignal>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
-#include <system_error>
 #include <sys/epoll.h>
+#include <system_error>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -90,7 +90,7 @@ struct RemoteWorkerContext {
         vaultService(userRepo, crypto), pathProtector(crypto, vaultService),
         syncRepo(db.getDb(), pathProtector),
         client(loadBaseUrl(userRepo), cookieJarPath().string()), api(client),
-        scanner(syncRepo, api), worker(scanner) {}
+        scanner(syncRepo, api), worker(scanner, syncRepo) {}
 
   static std::string loadBaseUrl(UserRepo &userRepo) {
     const auto account = userRepo.getAccount();
@@ -152,8 +152,7 @@ int LinuxDaemon::run() {
   while (!gStopRequested) {
     const int timeoutMs = syncScheduler_.nextRunDelayMs();
     epoll_event readyEvents[8]{};
-    const int readyCount =
-        epoll_wait(epollFd.get(), readyEvents, 8, timeoutMs);
+    const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, timeoutMs);
 
     if (readyCount < 0) {
       if (errno == EINTR) {

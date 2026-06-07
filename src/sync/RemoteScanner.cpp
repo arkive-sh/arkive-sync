@@ -23,12 +23,12 @@ void RemoteScanner::scanAllRootsAndStore(bool includeDeleted) const {
 
     scanFolderAndStore(syncRoot.id, syncRoot.folderId, includeDeleted);
 
-    const ReconcilePlan plan = reconcile.planRemoteDeletes(syncRoot.id, *mode);
+    const ReconcilePlan plan = reconcile.plan(syncRoot.id, *mode);
 
     for (const auto &action : plan.actions) {
       spdlog::info(
           "reconcile planned action={} root={} entry={} path={} reason={}",
-          action.type == ReconcileActionType::DeleteLocalFolder
+          action.type == ReconcileActionType::ApplyRemoteDeleteFolder
               ? "delete_local_folder"
               : "delete_local_file",
           action.syncRootId, action.entryId, action.localPath, action.reason);

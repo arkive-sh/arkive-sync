@@ -179,7 +179,6 @@ bool sameRemoteMetadata(const EntryRecord &existing,
          existing.remoteUpdatedAt == updated.remoteUpdatedAt &&
          existing.remoteDeletedAt == updated.remoteDeletedAt &&
          existing.remotePurgedAt == updated.remotePurgedAt &&
-         existing.lastRemoteSeenAt == updated.lastRemoteSeenAt &&
          existing.syncState == updated.syncState;
 }
 
