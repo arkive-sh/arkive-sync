@@ -80,7 +80,7 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
 }
 
 EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) {
-  const auto entries = syncRepo.getEntriesForSyncRoot(syncRootId);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(syncRootId);
   REQUIRE(entries.size() == 1);
   return entries.front();
 }
@@ -114,7 +114,7 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
       .folderId = std::nullopt,
       .enabled = true,
   };
-  syncRepo.upsertSyncRoot(root);
+  syncRepo.roots().upsertSyncRoot(root);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -135,7 +135,7 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
   };
-  syncRepo.upsertEntries({entry});
+  syncRepo.local().upsertEntries({entry});
 
   FakeUploadService fakeUpload;
   UploadJobRunner runner(syncRepo, fakeUpload);
@@ -158,7 +158,7 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
   REQUIRE(fakeUpload.lastEntryId().has_value());
   REQUIRE(*fakeUpload.lastEntryId() == entry.id);
 
-  const auto updated = syncRepo.getEntryById(entry.id);
+  const auto updated = syncRepo.local().getEntryById(entry.id);
   REQUIRE(updated.has_value());
   REQUIRE(updated->syncState == "synced");
   REQUIRE(updated->remoteId.has_value());
@@ -183,7 +183,7 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
       .folderId = std::nullopt,
       .enabled = true,
   };
-  syncRepo.upsertSyncRoot(root);
+  syncRepo.roots().upsertSyncRoot(root);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -203,7 +203,7 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
   };
-  syncRepo.upsertEntries({entry});
+  syncRepo.local().upsertEntries({entry});
 
   FakeUploadService fakeUpload;
   fakeUpload.failNext("network boom");
@@ -223,7 +223,7 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
 
   REQUIRE_THROWS(runner.run(job));
 
-  const auto updated = syncRepo.getEntryById(entry.id);
+  const auto updated = syncRepo.local().getEntryById(entry.id);
   REQUIRE(updated.has_value());
   REQUIRE(updated->syncState == "pending_upload");
   REQUIRE_FALSE(updated->remoteId.has_value());
@@ -247,7 +247,7 @@ TEST_CASE("UploadJobRunner missing local file throws") {
       .folderId = std::nullopt,
       .enabled = true,
   };
-  syncRepo.upsertSyncRoot(root);
+  syncRepo.roots().upsertSyncRoot(root);
 
   const EntryRecord entry{
       .id = "entry-1",
@@ -265,7 +265,7 @@ TEST_CASE("UploadJobRunner missing local file throws") {
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
   };
-  syncRepo.upsertEntries({entry});
+  syncRepo.local().upsertEntries({entry});
 
   FakeUploadService fakeUpload;
   UploadJobRunner runner(syncRepo, fakeUpload);
@@ -304,7 +304,7 @@ TEST_CASE("UploadJobRunner size mismatch before upload throws stale error") {
       .folderId = std::nullopt,
       .enabled = true,
   };
-  syncRepo.upsertSyncRoot(root);
+  syncRepo.roots().upsertSyncRoot(root);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -324,7 +324,7 @@ TEST_CASE("UploadJobRunner size mismatch before upload throws stale error") {
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
   };
-  syncRepo.upsertEntries({entry});
+  syncRepo.local().upsertEntries({entry});
 
   FakeUploadService fakeUpload;
   UploadJobRunner runner(syncRepo, fakeUpload);
@@ -344,7 +344,7 @@ TEST_CASE("UploadJobRunner size mismatch before upload throws stale error") {
   REQUIRE_THROWS_AS(runner.run(job), StaleUploadError);
   REQUIRE(fakeUpload.callCount() == 0);
 
-  const auto updated = syncRepo.getEntryById(entry.id);
+  const auto updated = syncRepo.local().getEntryById(entry.id);
   REQUIRE(updated.has_value());
   REQUIRE(updated->syncState == "pending_upload");
 }
@@ -367,7 +367,7 @@ TEST_CASE("UploadJobRunner mtime mismatch before upload throws stale error") {
       .folderId = std::nullopt,
       .enabled = true,
   };
-  syncRepo.upsertSyncRoot(root);
+  syncRepo.roots().upsertSyncRoot(root);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "hello");
@@ -391,7 +391,7 @@ TEST_CASE("UploadJobRunner mtime mismatch before upload throws stale error") {
       .syncState = "pending_upload",
       .lastSyncedAt = std::nullopt,
   };
-  syncRepo.upsertEntries({entry});
+  syncRepo.local().upsertEntries({entry});
 
   FakeUploadService fakeUpload;
   UploadJobRunner runner(syncRepo, fakeUpload);
@@ -411,7 +411,7 @@ TEST_CASE("UploadJobRunner mtime mismatch before upload throws stale error") {
   REQUIRE_THROWS_AS(runner.run(job), StaleUploadError);
   REQUIRE(fakeUpload.callCount() == 0);
 
-  const auto updated = syncRepo.getEntryById(entry.id);
+  const auto updated = syncRepo.local().getEntryById(entry.id);
   REQUIRE(updated.has_value());
   REQUIRE(updated->syncState == "pending_upload");
 }

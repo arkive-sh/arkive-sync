@@ -282,7 +282,7 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::SyncRun: {
-    const auto syncRoots = syncRepo_.getSyncRoots();
+    const auto syncRoots = syncRepo_.roots().getSyncRoots();
     if (syncRoots.empty()) {
       throw std::runtime_error(
           "No sync paths configured. Run `arkive-sync sync add <path>` first.");

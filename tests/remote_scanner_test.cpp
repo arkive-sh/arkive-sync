@@ -76,19 +76,19 @@ TEST_CASE("RemoteScanner scans enabled roots with include_deleted") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
 
-  syncRepo.upsertSyncRoot(SyncRootRecord{
+  syncRepo.roots().upsertSyncRoot(SyncRootRecord{
       .id = "root-1",
       .localPath = "/tmp/root-1",
       .folderId = std::string("folder-1"),
       .enabled = true,
   });
-  syncRepo.upsertSyncRoot(SyncRootRecord{
+  syncRepo.roots().upsertSyncRoot(SyncRootRecord{
       .id = "root-2",
       .localPath = "/tmp/root-2",
       .folderId = std::nullopt,
       .enabled = true,
   });
-  syncRepo.upsertSyncRoot(SyncRootRecord{
+  syncRepo.roots().upsertSyncRoot(SyncRootRecord{
       .id = "root-3",
       .localPath = "/tmp/root-3",
       .folderId = std::string("folder-3"),
@@ -178,8 +178,8 @@ TEST_CASE("RemoteScanner scans enabled roots with include_deleted") {
   RemoteScanner scanner(syncRepo, api);
   scanner.scanAllRootsAndStore();
 
-  const auto rootOneEntries = syncRepo.getEntriesForSyncRoot("root-1");
-  const auto rootTwoEntries = syncRepo.getEntriesForSyncRoot("root-2");
+  const auto rootOneEntries = syncRepo.local().getEntriesForSyncRoot("root-1");
+  const auto rootTwoEntries = syncRepo.local().getEntriesForSyncRoot("root-2");
 
   REQUIRE(rootOneEntries.size() == 3);
   REQUIRE(rootTwoEntries.size() == 1);
@@ -227,14 +227,14 @@ TEST_CASE("RemoteScanner updates existing SQLite entry by remote id") {
   LocalPathProtector pathProtector(crypto, vaultService);
   SyncRepo syncRepo(db.get(), pathProtector);
 
-  syncRepo.upsertSyncRoot(SyncRootRecord{
+  syncRepo.roots().upsertSyncRoot(SyncRootRecord{
       .id = "root-1",
       .localPath = "/tmp/root-1",
       .folderId = std::string("folder-1"),
       .enabled = true,
   });
 
-  syncRepo.upsertEntries({EntryRecord{
+  syncRepo.local().upsertEntries({EntryRecord{
       .id = "local-entry-1",
       .remoteId = std::string("file-1"),
       .remoteFileId = std::string("file-1"),
@@ -283,7 +283,7 @@ TEST_CASE("RemoteScanner updates existing SQLite entry by remote id") {
   RemoteScanner scanner(syncRepo, api);
   scanner.scanAllRootsAndStore();
 
-  const auto updated = syncRepo.getEntryById("local-entry-1");
+  const auto updated = syncRepo.local().getEntryById("local-entry-1");
   REQUIRE(updated.has_value());
   REQUIRE(updated->localPath == "movie.txt");
   REQUIRE(updated->remoteFileId == std::optional<std::string>("file-1"));

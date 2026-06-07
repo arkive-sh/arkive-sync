@@ -66,7 +66,7 @@ size_t runJobs(SyncService &syncService,
 }
 
 EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) {
-  const auto entries = syncRepo.getEntriesForSyncRoot(syncRootId);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(syncRootId);
   REQUIRE(entries.size() == 1);
   return entries.front();
 }
@@ -212,7 +212,7 @@ TEST_CASE("SyncScheduler schedules both sides of a rename event") {
   REQUIRE(jobs.size() == 2);
   REQUIRE(runJobs(syncService, jobs) == 2);
 
-  const auto entries = syncRepo.getEntriesForSyncRoot(root.rootId);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(root.rootId);
   REQUIRE(entries.size() == 2);
 
   bool foundDeletedOld = false;

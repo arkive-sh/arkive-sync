@@ -11,7 +11,7 @@ SyncScheduler::SyncScheduler(SyncRepo &syncRepo,
                              std::chrono::milliseconds maxDelay)
     : syncRepo_(syncRepo), debounceWindow_(debounceWindow),
       maxDelay_(maxDelay) {
-  for (const auto &syncRoot : syncRepo_.getSyncRoots()) {
+  for (const auto &syncRoot : syncRepo_.roots().getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
     }

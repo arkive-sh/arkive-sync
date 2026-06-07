@@ -142,7 +142,7 @@ buildEntryUpsertRecord(SyncRepo &syncRepo, RustCrypto &crypto,
                        const std::string &syncRootId, const LocalEntry &entry,
                        const SyncScanSession &scanSession) {
   const std::string relativePath = PathCodec::toDbRelative(entry.relativePath);
-  const std::string localPathHash = syncRepo.computeLocalPathHash(relativePath);
+  const std::string localPathHash = syncRepo.local().computeLocalPathHash(relativePath);
   const std::string localMtime = toMtimeString(entry.modifiedTime);
   const std::optional<EntryIdentity> existingScanState =
       scanSession.findEntryIdentityByPathHash(syncRootId, localPathHash);
@@ -222,7 +222,7 @@ size_t flushPendingEntries(SyncRepo &syncRepo,
     return 0;
   }
 
-  const size_t changedCount = syncRepo.upsertScannedEntries(entryRecords);
+  const size_t changedCount = syncRepo.local().upsertScannedEntries(entryRecords);
   entryRecords.clear();
   return changedCount;
 }
@@ -276,7 +276,7 @@ void SyncService::addPath(const std::filesystem::path &rootPathInput) {
   const std::filesystem::path rootPath =
       normalizeAbsolute(fileScanner.rootPath());
   const std::string rootPathString = rootPath.string();
-  auto syncRoot = syncRepo_.getSyncRootByLocalPath(rootPathString);
+  auto syncRoot = syncRepo_.roots().getSyncRootByLocalPath(rootPathString);
   if (!syncRoot.has_value()) {
     syncRoot = SyncRootRecord{
         .id = generateId(),
@@ -286,14 +286,14 @@ void SyncService::addPath(const std::filesystem::path &rootPathInput) {
     };
   }
 
-  syncRepo_.upsertSyncRoot(*syncRoot);
+  syncRepo_.roots().upsertSyncRoot(*syncRoot);
 }
 
 size_t SyncService::scanPath(const std::string &rootId,
                              const std::filesystem::path &absolutePathInput) {
   spdlog::info("SyncService scanPath start root={} path={}", rootId,
                absolutePathInput.string());
-  const auto syncRoot = syncRepo_.getSyncRootById(rootId);
+  const auto syncRoot = syncRepo_.roots().getSyncRootById(rootId);
   if (!syncRoot.has_value()) {
     spdlog::info("SyncService scanPath skipped missing root={}", rootId);
     return 0;
@@ -320,7 +320,7 @@ size_t SyncService::scanPath(const std::string &rootId,
   if (!pathExists) {
     size_t changedCount = 0;
     if (absolutePath == rootPath) {
-      changedCount = syncRepo_.markSubtreeDeleted(rootId, "");
+      changedCount = syncRepo_.local().markSubtreeDeleted(rootId, "");
       spdlog::info("SyncService scanPath root missing root={} changed={}",
                    rootId, changedCount);
       return changedCount;
@@ -339,12 +339,12 @@ size_t SyncService::scanPath(const std::string &rootId,
     ScanMemoryGuard guard(syncRepo_);
     const std::optional<EntryIdentity> existingEntry =
         scanSession.findEntryIdentityByPathHash(
-            rootId, syncRepo_.computeLocalPathHash(dbRelativePath));
+            rootId, syncRepo_.local().computeLocalPathHash(dbRelativePath));
 
     if (existingEntry.has_value() && existingEntry->isDirectory) {
-      changedCount = syncRepo_.markSubtreeDeleted(rootId, dbRelativePath);
+      changedCount = syncRepo_.local().markSubtreeDeleted(rootId, dbRelativePath);
     } else {
-      changedCount = syncRepo_.markPathDeleted(rootId, dbRelativePath);
+      changedCount = syncRepo_.local().markPathDeleted(rootId, dbRelativePath);
     }
     spdlog::info(
         "SyncService scanPath missing target root={} path={} changed={}",
@@ -400,7 +400,7 @@ size_t SyncService::scanPath(const std::string &rootId,
     visitDirectorySubtree(
         rootPath, absolutePath, absolutePath != rootPath,
         [&](const LocalEntry &entry) {
-          scanSession.recordSeenPath(syncRepo_.computeLocalPathHash(
+          scanSession.recordSeenPath(syncRepo_.local().computeLocalPathHash(
               PathCodec::toDbRelative(entry.relativePath)));
           if (auto upsert = buildEntryUpsertRecord(syncRepo_, crypto_, rootId,
                                                    entry, scanSession);
@@ -415,7 +415,7 @@ size_t SyncService::scanPath(const std::string &rootId,
 
     changedCount += flushPendingEntries(syncRepo_, entryRecords);
     changedCount +=
-        syncRepo_.markMissingEntriesDeletedUnderPrefix(rootId, dbRelativePath);
+        syncRepo_.local().markMissingEntriesDeletedUnderPrefix(rootId, dbRelativePath);
     spdlog::info(
         "SyncService scanPath directory done root={} path={} changed={}",
         rootId, absolutePath.string(), changedCount);
@@ -431,7 +431,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
   const std::filesystem::path rootPath = normalizeAbsolute(rootPathInput);
   const std::string rootPathString = rootPath.string();
   spdlog::info("SyncService scanRoot start path={}", rootPathString);
-  auto syncRoot = syncRepo_.getSyncRootByLocalPath(rootPathString);
+  auto syncRoot = syncRepo_.roots().getSyncRootByLocalPath(rootPathString);
   if (!syncRoot.has_value()) {
     syncRoot = SyncRootRecord{
         .id = generateId(),
@@ -439,7 +439,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
         .folderId = std::nullopt,
         .enabled = true,
     };
-    syncRepo_.upsertSyncRoot(*syncRoot);
+    syncRepo_.roots().upsertSyncRoot(*syncRoot);
   }
 
   std::error_code statusError;
@@ -454,7 +454,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     auto scanSession = syncRepo_.beginScan();
     ScanMemoryGuard guard(syncRepo_);
     const size_t changedCount =
-        syncRepo_.markMissingEntriesDeletedForCurrentScan(syncRoot->id);
+        syncRepo_.local().markMissingEntriesDeletedForCurrentScan(syncRoot->id);
     spdlog::warn("Sync root missing during scan: {}", rootPathString);
     spdlog::info("SyncService scanRoot missing path={} changed={}",
                  rootPathString, changedCount);
@@ -483,7 +483,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
     fileScanner.scanFiles([&](const LocalEntry &entry) {
       const std::string relativePath =
           PathCodec::toDbRelative(entry.relativePath);
-      scanSession.recordSeenPath(syncRepo_.computeLocalPathHash(relativePath));
+      scanSession.recordSeenPath(syncRepo_.local().computeLocalPathHash(relativePath));
 
       if (auto upsert = buildEntryUpsertRecord(syncRepo_, crypto_, syncRoot->id,
                                                entry, scanSession);
@@ -505,7 +505,7 @@ size_t SyncService::scanRoot(const std::filesystem::path &rootPathInput) {
 
   changedCount += flushPendingEntries(syncRepo_, entryRecords);
   changedCount +=
-      syncRepo_.markMissingEntriesDeletedForCurrentScan(syncRoot->id);
+      syncRepo_.local().markMissingEntriesDeletedForCurrentScan(syncRoot->id);
   spdlog::info("SyncService scanRoot done path={} changed={}", rootPathString,
                changedCount);
 

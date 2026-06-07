@@ -122,15 +122,15 @@ TEST_CASE("QueueService retries stale upload after rescan and then uploads refre
   writeFile(filePath, "hello");
   syncService.scanRoot(tempDir.path());
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 1);
 
   EntryRecord staleEntry = entries.front();
   staleEntry.localSize = *staleEntry.localSize + 1;
   staleEntry.localMtime = std::to_string(std::stoll(*staleEntry.localMtime) - 1);
-  syncRepo.upsertEntries({staleEntry});
+  syncRepo.local().upsertEntries({staleEntry});
 
   queueRepo.enqueueUpload(staleEntry.id, staleEntry.localPath,
                           staleEntry.parentFolderId,
@@ -140,7 +140,7 @@ TEST_CASE("QueueService retries stale upload after rescan and then uploads refre
 
   REQUIRE(uploadService.callCount() == 1);
 
-  const auto updatedEntry = syncRepo.getEntryById(staleEntry.id);
+  const auto updatedEntry = syncRepo.local().getEntryById(staleEntry.id);
   REQUIRE(updatedEntry.has_value());
   REQUIRE(updatedEntry->syncState == "synced");
   REQUIRE(updatedEntry->remoteId == std::optional<std::string>("remote-file-1"));

@@ -45,7 +45,7 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
 }
 
 EntryRecord onlyEntryForRoot(SyncRepo &syncRepo, const std::string &syncRootId) {
-  const auto entries = syncRepo.getEntriesForSyncRoot(syncRootId);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(syncRootId);
   REQUIRE(entries.size() == 1);
   return entries.front();
 }
@@ -78,7 +78,7 @@ TEST_CASE("SyncService marks new file pending upload without queue row") {
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord entry = onlyEntryForRoot(syncRepo, roots.front().id);
   REQUIRE(entry.localPath == "movie.txt");
@@ -100,7 +100,7 @@ TEST_CASE("SyncService scanPath upserts a single changed file") {
   SyncService syncService(syncRepo, crypto);
 
   syncService.addPath(tempDir.path());
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
 
   const auto filePath = tempDir.path() / "movie.txt";
@@ -131,14 +131,14 @@ TEST_CASE("SyncService second unchanged scan creates no duplicate entry or queue
   writeFile(filePath, "hello");
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 0);
 
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 1);
   REQUIRE(entries.front().id == firstEntry.id);
   REQUIRE(entries.front().syncState == "synced");
@@ -162,12 +162,12 @@ TEST_CASE("SyncService second unchanged scan keeps pending upload as one entry")
   writeFile(filePath, "hello");
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 0);
 
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 1);
   REQUIRE(entries.front().localPath == "movie.txt");
   REQUIRE(entries.front().syncState == "pending_upload");
@@ -191,10 +191,10 @@ TEST_CASE("SyncService marks changed file pending upload") {
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   writeFile(filePath, "hello changed");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
@@ -222,10 +222,10 @@ TEST_CASE("SyncService updates metadata only when mtime changes but hash stays s
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   std::filesystem::last_write_time(
       filePath, std::filesystem::last_write_time(filePath) + std::chrono::seconds(2));
@@ -258,10 +258,10 @@ TEST_CASE("SyncService marks deleted file entry deleted") {
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   std::filesystem::remove(filePath);
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
@@ -288,10 +288,10 @@ TEST_CASE("SyncService scanPath marks deleted file entry deleted") {
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   std::filesystem::remove(filePath);
   REQUIRE(syncService.scanPath(roots.front().id, filePath) == 1);
@@ -318,10 +318,10 @@ TEST_CASE("SyncService marks root entries deleted when root directory is removed
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   std::filesystem::remove(filePath);
   std::filesystem::remove(tempDir.path());
@@ -349,18 +349,18 @@ TEST_CASE("SyncService scanPath marks deleted directory subtree deleted") {
   writeFile(tempDir.path() / "docs" / "movie.txt", "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 2);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
-  const auto initialEntries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto initialEntries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(initialEntries.size() == 2);
   for (const auto &entry : initialEntries) {
-    syncRepo.markEntrySynced(entry.id);
+    syncRepo.local().markEntrySynced(entry.id);
   }
 
   std::filesystem::remove_all(tempDir.path() / "docs");
   REQUIRE(syncService.scanPath(roots.front().id, tempDir.path() / "docs") == 2);
 
-  const auto deletedEntries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto deletedEntries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(deletedEntries.size() == 2);
   for (const auto &entry : deletedEntries) {
     REQUIRE(entry.syncState == "deleted");
@@ -384,10 +384,10 @@ TEST_CASE("SyncService marks restored deleted file pending upload again") {
   writeFile(filePath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
   const EntryRecord firstEntry = onlyEntryForRoot(syncRepo, roots.front().id);
-  syncRepo.markEntrySynced(firstEntry.id);
+  syncRepo.local().markEntrySynced(firstEntry.id);
 
   std::filesystem::remove(filePath);
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
@@ -419,16 +419,16 @@ TEST_CASE("SyncService rename marks old path deleted and new path pending upload
   writeFile(oldPath, "hello");
   REQUIRE(syncService.scanRoot(tempDir.path()) == 1);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
-  const auto firstEntries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto firstEntries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(firstEntries.size() == 1);
-  syncRepo.markEntrySynced(firstEntries.front().id);
+  syncRepo.local().markEntrySynced(firstEntries.front().id);
 
   std::filesystem::rename(oldPath, newPath);
   REQUIRE(syncService.scanRoot(tempDir.path()) == 2);
 
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 2);
 
   bool sawDeletedOldPath = false;
@@ -467,9 +467,9 @@ TEST_CASE("SyncService marks multiple files pending upload") {
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 3);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 3);
   for (const auto &entry : entries) {
     REQUIRE(entry.syncState == "pending_upload");
@@ -496,9 +496,9 @@ TEST_CASE("SyncService stores nested file paths as portable relative paths") {
 
   REQUIRE(syncService.scanRoot(tempDir.path()) == 4);
 
-  const auto roots = syncRepo.getSyncRoots();
+  const auto roots = syncRepo.roots().getSyncRoots();
   REQUIRE(roots.size() == 1);
-  const auto entries = syncRepo.getEntriesForSyncRoot(roots.front().id);
+  const auto entries = syncRepo.local().getEntriesForSyncRoot(roots.front().id);
   REQUIRE(entries.size() == 4);
 
   bool sawDocsDir = false;

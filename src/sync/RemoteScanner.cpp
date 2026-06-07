@@ -8,7 +8,7 @@ RemoteScanner::RemoteScanner(SyncRepo &syncRepo, ArkiveApi &api)
     : syncRepo_(syncRepo), api_(api) {}
 
 void RemoteScanner::scanAllRootsAndStore(bool includeDeleted) const {
-  for (const auto &syncRoot : syncRepo_.getSyncRoots()) {
+  for (const auto &syncRoot : syncRepo_.roots().getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
     }
@@ -37,7 +37,7 @@ void RemoteScanner::scanFolderAndStore(const std::string &syncRootId,
         childFolderIds.push_back(entry.id);
       }
 
-      switch (syncRepo_.upsertRemoteEntry(syncRootId, entry)) {
+      switch (syncRepo_.remote().upsertRemoteEntry(syncRootId, entry)) {
       case RemoteEntryUpsertAction::Created:
         spdlog::info("remote created root={} remote_id={} type={}", syncRootId,
                      entry.id, entry.type);

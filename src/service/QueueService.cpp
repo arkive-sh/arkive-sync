@@ -114,7 +114,7 @@ size_t QueueService::fillUploadQueue() {
   }
 
   const auto pendingEntries =
-      syncRepo_.listEntriesPendingUpload(static_cast<size_t>(availableSlots));
+      syncRepo_.local().listEntriesPendingUpload(static_cast<size_t>(availableSlots));
   for (const auto &entry : pendingEntries) {
     queueRepo_.enqueueUpload(entry.id, "", entry.parentFolderId,
                              static_cast<uint64_t>(entry.localSize.value_or(0)));
