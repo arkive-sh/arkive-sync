@@ -164,6 +164,3 @@ inline constexpr std::optional<SyncMode> parseSyncMode(std::string_view key) {
 
   return std::nullopt;
 }
-
-// DeletePolicy localDeletePolicy;
-// DeletePolicy remoteDeletePolicy;

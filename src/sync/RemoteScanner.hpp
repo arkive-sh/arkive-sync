@@ -2,34 +2,21 @@
 
 #include "api/ArkiveApi.hpp"
 
-#include <cstddef>
-#include <vector>
-
 class ArkiveApi;
 class SyncRepo;
-
-struct RemoteScanRootResult {
-  std::string syncRootId;
-  std::optional<std::string> remoteFolderId;
-  ListSyncEntriesResponse response;
-};
-
-struct RemoteScanResult {
-  std::vector<RemoteScanRootResult> roots;
-
-  size_t totalEntryCount() const;
-};
 
 class RemoteScanner {
 public:
   RemoteScanner(SyncRepo &syncRepo, ArkiveApi &api);
 
-  RemoteScanResult scanAllRoots(bool includeDeleted = true) const;
-  ListSyncEntriesResponse
-  scanFolder(const std::optional<std::string> &folderId,
-             bool includeDeleted = true) const;
+  void scanAllRootsAndStore(bool includeDeleted = true) const;
+  void scanFolderAndStore(const std::string &syncRootId,
+                          const std::optional<std::string> &folderId,
+                          bool includeDeleted = true) const;
 
 private:
+  static constexpr size_t kPageLimit = 100;
+
   SyncRepo &syncRepo_;
   ArkiveApi &api_;
 };

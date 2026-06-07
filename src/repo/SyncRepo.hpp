@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/ArkiveApi.hpp"
 #include "db/SqliteHelpers.hpp"
 
 #include <optional>
@@ -64,6 +65,13 @@ struct EntryUpsertRecord {
   std::string localPathHash;
 };
 
+enum class RemoteEntryUpsertAction {
+  Unchanged,
+  Created,
+  Updated,
+  Deleted,
+};
+
 class SyncScanSession {
 public:
   SyncScanSession(sqlite3 *db);
@@ -97,6 +105,9 @@ public:
   std::vector<EntryRecord> listEntriesPendingUpload(size_t limit) const;
   size_t upsertEntries(const std::vector<EntryRecord> &entries) const;
   size_t upsertScannedEntries(const std::vector<EntryUpsertRecord> &entries) const;
+  RemoteEntryUpsertAction
+  upsertRemoteEntry(const std::string &syncRootId,
+                    const SyncEntryResponse &entry) const;
   size_t markPathDeleted(const std::string &syncRootId,
                          const std::string &relativePath) const;
   size_t markSubtreeDeleted(const std::string &syncRootId,

@@ -2,41 +2,67 @@
 
 #include "api/ArkiveApi.hpp"
 #include "repo/SyncRepo.hpp"
-
-size_t RemoteScanResult::totalEntryCount() const {
-  size_t total = 0;
-  for (const auto &root : roots) {
-    total += root.response.entries.size();
-  }
-  return total;
-}
+#include <spdlog/spdlog.h>
 
 RemoteScanner::RemoteScanner(SyncRepo &syncRepo, ArkiveApi &api)
     : syncRepo_(syncRepo), api_(api) {}
 
-RemoteScanResult RemoteScanner::scanAllRoots(bool includeDeleted) const {
-  RemoteScanResult result;
-
+void RemoteScanner::scanAllRootsAndStore(bool includeDeleted) const {
   for (const auto &syncRoot : syncRepo_.getSyncRoots()) {
     if (!syncRoot.enabled) {
       continue;
     }
 
-    result.roots.push_back(RemoteScanRootResult{
-        .syncRootId = syncRoot.id,
-        .remoteFolderId = syncRoot.folderId,
-        .response = scanFolder(syncRoot.folderId, includeDeleted),
-    });
+    scanFolderAndStore(syncRoot.id, syncRoot.folderId, includeDeleted);
   }
-
-  return result;
 }
 
-ListSyncEntriesResponse
-RemoteScanner::scanFolder(const std::optional<std::string> &folderId,
-                          bool includeDeleted) const {
-  return api_.listSyncEntries(ListSyncEntriesRequest{
-      .folderId = folderId,
-      .includeDeleted = includeDeleted,
-  });
+void RemoteScanner::scanFolderAndStore(const std::string &syncRootId,
+                                       const std::optional<std::string> &folderId,
+                                       bool includeDeleted) const {
+  std::optional<std::string> cursor;
+  std::vector<std::string> childFolderIds;
+
+  while (true) {
+    const ListSyncEntriesResponse response =
+        api_.listSyncEntries(ListSyncEntriesRequest{
+            .folderId = folderId,
+            .includeDeleted = includeDeleted,
+            .limit = kPageLimit,
+            .cursor = cursor,
+        });
+
+    for (const auto &entry : response.entries) {
+      if (entry.type == "folder" && !entry.deletedAt.has_value()) {
+        childFolderIds.push_back(entry.id);
+      }
+
+      switch (syncRepo_.upsertRemoteEntry(syncRootId, entry)) {
+      case RemoteEntryUpsertAction::Created:
+        spdlog::info("remote created root={} remote_id={} type={}", syncRootId,
+                     entry.id, entry.type);
+        break;
+      case RemoteEntryUpsertAction::Updated:
+        spdlog::info("remote updated root={} remote_id={} type={}", syncRootId,
+                     entry.id, entry.type);
+        break;
+      case RemoteEntryUpsertAction::Deleted:
+        spdlog::info("remote deleted root={} remote_id={} type={}", syncRootId,
+                     entry.id, entry.type);
+        break;
+      case RemoteEntryUpsertAction::Unchanged:
+        break;
+      }
+    }
+
+    if (!response.hasMore || !response.nextCursor.has_value()) {
+      break;
+    }
+
+    cursor = response.nextCursor;
+  }
+
+  for (const auto &childFolderId : childFolderIds) {
+    scanFolderAndStore(syncRootId, childFolderId, includeDeleted);
+  }
 }

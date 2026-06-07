@@ -31,7 +31,9 @@ std::optional<TransferJob> QueueService::claimNextQueuedUpload() {
   return queueRepo_.claimNextQueuedUpload();
 }
 
-void QueueService::processQueuedUploads() {
+size_t QueueService::processQueuedUploads() {
+  size_t completedUploads = 0;
+
   while (true) {
     fillUploadQueue();
 
@@ -45,6 +47,7 @@ void QueueService::processQueuedUploads() {
       spdlog::info("Uploaded queued file for entry: {}", queuedJob->entryId);
 
       queueRepo_.markDone(queuedJob->id);
+      ++completedUploads;
     } catch (const StaleUploadError &error) {
       queueRepo_.retryJob(queuedJob->id);
       syncService_.scanRoot(error.syncRootPath());
@@ -72,6 +75,8 @@ void QueueService::processQueuedUploads() {
       queueRepo_.markFailed(queuedJob->id, "Unknown queue processing error");
     }
   }
+
+  return completedUploads;
 }
 
 void QueueService::markDone(const std::string &jobId) {

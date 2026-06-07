@@ -3,7 +3,19 @@
 #include "fs/FileWatcher.hpp"
 #include "service/SyncScheduler.hpp"
 #include "sync/QueueWorker.hpp"
+#include "sync/RemoteScanner.hpp"
+#include "sync/RemoteSyncWorker.hpp"
 #include "sync/ScanWorker.hpp"
+
+#include "api/ArkiveApi.hpp"
+#include "api/ArkiveHttpClient.hpp"
+#include "crypto/RustCrypto.hpp"
+#include "db/Sqlite.hpp"
+#include "helpers/LocalPathProtector.hpp"
+#include "platform/AppDataPaths.hpp"
+#include "repo/SyncRepo.hpp"
+#include "repo/UserRepo.hpp"
+#include "service/VaultService.hpp"
 
 #include <cerrno>
 #include <csignal>
@@ -61,6 +73,34 @@ private:
   SignalHandler previousSigterm_;
 };
 
+struct RemoteWorkerContext {
+  Database db;
+  UserRepo userRepo;
+  RustCrypto crypto;
+  VaultService vaultService;
+  LocalPathProtector pathProtector;
+  SyncRepo syncRepo;
+  ArkiveHttpClient client;
+  ArkiveApi api;
+  RemoteScanner scanner;
+  RemoteSyncWorker worker;
+
+  RemoteWorkerContext()
+      : db(databasePath()), userRepo(db.getDb()), crypto(),
+        vaultService(userRepo, crypto), pathProtector(crypto, vaultService),
+        syncRepo(db.getDb(), pathProtector),
+        client(loadBaseUrl(userRepo), cookieJarPath().string()), api(client),
+        scanner(syncRepo, api), worker(scanner) {}
+
+  static std::string loadBaseUrl(UserRepo &userRepo) {
+    const auto account = userRepo.getAccount();
+    if (!account.has_value() || account->baseUrl.empty()) {
+      throw std::runtime_error("Base URL is missing");
+    }
+    return account->baseUrl;
+  }
+};
+
 } // namespace
 
 LinuxDaemon::LinuxDaemon(SyncScheduler &syncScheduler,
@@ -75,8 +115,14 @@ LinuxDaemon::~LinuxDaemon() = default;
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
+  RemoteWorkerContext remoteWorkerContext;
+  queueWorker_->setOnUploadsCompleted(
+      [&remoteWorkerContext] { remoteWorkerContext.worker.trigger(); });
+  remoteWorkerContext.worker.start();
+
   const std::vector<WatchRoot> watchRoots = syncScheduler_.rootsToWatch();
   if (watchRoots.empty()) {
+    remoteWorkerContext.worker.stop();
     throw std::runtime_error("No enabled sync paths configured.");
   }
 
@@ -137,6 +183,7 @@ int LinuxDaemon::run() {
   }
 
   watcher_->stop();
+  remoteWorkerContext.worker.stop();
   scanWorker_->stop();
   queueWorker_->stop();
   spdlog::info("Daemon stopped");

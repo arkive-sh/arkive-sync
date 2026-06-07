@@ -79,6 +79,8 @@ SyncEntryResponse decodeSyncEntryResponse(const nlohmann::json &json) {
 ListSyncEntriesResponse
 decodeListSyncEntriesResponse(const nlohmann::json &json) {
   ListSyncEntriesResponse response;
+  response.nextCursor = optionalString(json, "next_cursor");
+  response.hasMore = json.value("has_more", false);
   if (!json.contains("entries") || !json["entries"].is_array()) {
     return response;
   }
@@ -104,6 +106,14 @@ std::string buildListSyncEntriesPath(const ListSyncEntriesRequest &request) {
   }
   if (request.includeDeleted) {
     path << (hasQuery ? "&" : "?") << "include_deleted=true";
+    hasQuery = true;
+  }
+  if (request.limit > 0) {
+    path << (hasQuery ? "&" : "?") << "limit=" << request.limit;
+    hasQuery = true;
+  }
+  if (request.cursor.has_value()) {
+    path << (hasQuery ? "&" : "?") << "cursor=" << *request.cursor;
   }
 
   return path.str();

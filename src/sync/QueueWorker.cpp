@@ -63,9 +63,17 @@ struct QueueWorkerContext {
 
 } // namespace
 
-QueueWorker::QueueWorker() : workerThread_(&QueueWorker::run, this) {}
+QueueWorker::QueueWorker(std::function<void()> onUploadsCompleted)
+    : onUploadsCompleted_(std::move(onUploadsCompleted)),
+      workerThread_(&QueueWorker::run, this) {}
 
 QueueWorker::~QueueWorker() { stop(); }
+
+void QueueWorker::setOnUploadsCompleted(
+    std::function<void()> onUploadsCompleted) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  onUploadsCompleted_ = std::move(onUploadsCompleted);
+}
 
 void QueueWorker::trigger() {
   {
@@ -108,7 +116,10 @@ void QueueWorker::run() {
 
       try {
         spdlog::info("QueueWorker processing queued uploads");
-        context.queueService.processQueuedUploads();
+        const size_t completedUploads = context.queueService.processQueuedUploads();
+        if (completedUploads > 0 && onUploadsCompleted_) {
+          onUploadsCompleted_();
+        }
       } catch (const std::exception &ex) {
         spdlog::error("QueueWorker failed: {}", ex.what());
       }

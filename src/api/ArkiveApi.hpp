@@ -77,6 +77,8 @@ struct UploadCompleteRequest {
 struct ListSyncEntriesRequest {
   std::optional<std::string> folderId;
   bool includeDeleted{false};
+  size_t limit{100};
+  std::optional<std::string> cursor;
 };
 
 struct SyncEntryResponse {
@@ -95,6 +97,8 @@ struct SyncEntryResponse {
 
 struct ListSyncEntriesResponse {
   std::vector<SyncEntryResponse> entries;
+  std::optional<std::string> nextCursor;
+  bool hasMore{false};
 };
 
 class ArkiveApi {

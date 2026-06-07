@@ -20,7 +20,7 @@ public:
   void incrementProgress(const std::string &jobId, uint64_t bytesDone);
   void retryFailed();
   void clearDone();
-  void processQueuedUploads();
+  size_t processQueuedUploads();
 
 private:
   size_t fillUploadQueue();

@@ -281,6 +281,87 @@ WHERE id = ?
   return changedCount;
 }
 
+std::optional<EntryRecord>
+findEntryByRemoteObjectId(sqlite3 *db, LocalPathProtector &pathProtector,
+                          const std::string &syncRootId,
+                          const SyncEntryResponse &remoteEntry) {
+  static constexpr const char *findEntryByRemoteObjectIdSql = R"sql(
+SELECT
+  id,
+  remote_id,
+  remote_file_id,
+  remote_folder_id,
+  sync_root_id,
+  remote_type,
+  local_path,
+  encrypted_local_path,
+  local_path_hash,
+  is_directory,
+  parent_folder_id,
+  remote_parent_folder_id,
+  encrypted_name,
+  local_size,
+  local_mtime,
+  local_hash,
+  remote_updated_at,
+  remote_deleted_at,
+  remote_purged_at,
+  last_remote_seen_at,
+  sync_state,
+  last_synced_at
+FROM entries
+WHERE sync_root_id = ?
+  AND (
+    remote_id = ?
+    OR remote_file_id = ?
+    OR remote_folder_id = ?
+  )
+LIMIT 1;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db, findEntryByRemoteObjectIdSql, -1, &rawStmt,
+                         nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db, stmt.get(), 1, syncRootId);
+  bindText(db, stmt.get(), 2, remoteEntry.id);
+  bindText(db, stmt.get(), 3, remoteEntry.id);
+  bindText(db, stmt.get(), 4, remoteEntry.id);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db));
+  }
+
+  return readEntryRecord(stmt.get(), pathProtector);
+}
+
+std::string buildRemotePlaceholderPath(const SyncEntryResponse &entry) {
+  return std::string("__remote__/") + entry.type + "/" + entry.id;
+}
+
+bool sameRemoteMetadata(const EntryRecord &existing, const EntryRecord &updated) {
+  return existing.remoteId == updated.remoteId &&
+         existing.remoteFileId == updated.remoteFileId &&
+         existing.remoteFolderId == updated.remoteFolderId &&
+         existing.remoteType == updated.remoteType &&
+         existing.isDirectory == updated.isDirectory &&
+         existing.remoteParentFolderId == updated.remoteParentFolderId &&
+         existing.encryptedName == updated.encryptedName &&
+         existing.remoteUpdatedAt == updated.remoteUpdatedAt &&
+         existing.remoteDeletedAt == updated.remoteDeletedAt &&
+         existing.remotePurgedAt == updated.remotePurgedAt &&
+         existing.lastRemoteSeenAt == updated.lastRemoteSeenAt &&
+         existing.syncState == updated.syncState;
+}
+
 } // namespace
 
 SyncScanSession::SyncScanSession(sqlite3 *db)
@@ -752,6 +833,76 @@ size_t SyncRepo::upsertEntries(const std::vector<EntryRecord> &entries) const {
   }
 
   return upsertScannedEntries(upsertRecords);
+}
+
+RemoteEntryUpsertAction
+SyncRepo::upsertRemoteEntry(const std::string &syncRootId,
+                            const SyncEntryResponse &entry) const {
+  const std::optional<EntryRecord> existingEntry =
+      findEntryByRemoteObjectId(db_, pathProtector_, syncRootId, entry);
+
+  const std::string localPath = existingEntry.has_value()
+                                    ? existingEntry->localPath
+                                    : buildRemotePlaceholderPath(entry);
+  const std::string localPathHash = pathProtector_.hashPath(localPath);
+
+  std::string syncState = entry.deletedAt.has_value() ? "deleted" : "synced";
+  if (existingEntry.has_value() && existingEntry->syncState == "pending_upload" &&
+      !entry.deletedAt.has_value()) {
+    syncState = existingEntry->syncState;
+  }
+
+  EntryRecord updatedEntry{
+      .id = existingEntry.has_value() ? existingEntry->id : entry.id,
+      .remoteId = entry.type == "file"
+                      ? std::optional<std::string>(entry.id)
+                      : existingEntry.has_value() ? existingEntry->remoteId
+                                                  : std::nullopt,
+      .remoteFileId = entry.type == "file"
+                          ? std::optional<std::string>(entry.id)
+                          : std::nullopt,
+      .remoteFolderId = entry.type == "folder"
+                            ? std::optional<std::string>(entry.id)
+                            : std::nullopt,
+      .syncRootId = syncRootId,
+      .remoteType = entry.type,
+      .localPath = localPath,
+      .isDirectory = entry.type == "folder",
+      .parentFolderId =
+          existingEntry.has_value() ? existingEntry->parentFolderId : std::nullopt,
+      .remoteParentFolderId = entry.parentFolderId,
+      .encryptedName = entry.encryptedName,
+      .localSize = existingEntry.has_value() ? existingEntry->localSize
+                                             : std::nullopt,
+      .localMtime = existingEntry.has_value() ? existingEntry->localMtime
+                                              : std::nullopt,
+      .localHash = existingEntry.has_value() ? existingEntry->localHash
+                                             : std::nullopt,
+      .remoteUpdatedAt = entry.updatedAt,
+      .remoteDeletedAt = entry.deletedAt,
+      .remotePurgedAt = entry.purgedAt,
+      .lastRemoteSeenAt = entry.updatedAt,
+      .syncState = syncState,
+      .lastSyncedAt = existingEntry.has_value() ? existingEntry->lastSyncedAt
+                                                : std::nullopt,
+  };
+
+  if (existingEntry.has_value() && sameRemoteMetadata(*existingEntry, updatedEntry)) {
+    return RemoteEntryUpsertAction::Unchanged;
+  }
+
+  upsertScannedEntries({EntryUpsertRecord{
+      .entry = std::move(updatedEntry),
+      .localPathHash = localPathHash,
+  }});
+
+  if (entry.deletedAt.has_value()) {
+    return RemoteEntryUpsertAction::Deleted;
+  }
+  if (!existingEntry.has_value()) {
+    return RemoteEntryUpsertAction::Created;
+  }
+  return RemoteEntryUpsertAction::Updated;
 }
 
 size_t
