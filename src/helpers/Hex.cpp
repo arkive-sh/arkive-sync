@@ -1,5 +1,6 @@
 #include "helpers/Hex.hpp"
 
+#include <random>
 #include <stdexcept>
 
 namespace {
@@ -49,4 +50,22 @@ std::vector<uint8_t> decodeHex(const std::string &input) {
   }
 
   return output;
+}
+
+const std::string generateRandomHex(const std::size_t length) {
+  const char hexChars[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+  std::random_device rd;
+  std::mt19937 generator(rd());
+
+  std::uniform_int_distribution<> distribution(0, 35);
+
+  std::string hexString;
+  hexString.reserve(length); // Optimize memory allocation
+
+  for (size_t i = 0; i < length; ++i) {
+    hexString += hexChars[distribution(generator)];
+  }
+
+  return hexString;
 }
