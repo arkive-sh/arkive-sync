@@ -1,14 +1,12 @@
-#include "fs/ArkiveFileReader.hpp"
+#include "fs/UploadFileChunkReader.hpp"
 
 #include "crypto/Aad.hpp"
 #include <stdexcept>
 
-ArkiveFileReader::ArkiveFileReader(const std::filesystem::path &path,
-                                   FileEncryptor &encryptor,
-                                   const std::vector<uint8_t> &fileKey,
-                                   const std::string &vaultId,
-                                   const std::string &fileId,
-                                   uint64_t chunkSize, uint64_t totalChunks)
+UploadFileChunkReader::UploadFileChunkReader(
+    const std::filesystem::path &path, FileEncryptor &encryptor,
+    const std::vector<uint8_t> &fileKey, const std::string &vaultId,
+    const std::string &fileId, uint64_t chunkSize, uint64_t totalChunks)
     : filePath_(path), stream_(path, std::ios::binary), encryptor_(encryptor),
       fileKey_(fileKey), vaultId_(vaultId), fileId_(fileId),
       chunkSize_(chunkSize), totalChunks_(totalChunks),
@@ -27,14 +25,11 @@ ArkiveFileReader::ArkiveFileReader(const std::filesystem::path &path,
   }
 }
 
-ArkiveFileReader::ArkiveFileReader(const std::filesystem::path &path,
-                                   FileEncryptor &encryptor,
-                                   const std::vector<uint8_t> &fileKey,
-                                   const std::string &vaultId,
-                                   const std::string &fileId,
-                                   uint64_t chunkSize, uint64_t totalChunks,
-                                   uint64_t firstChunkNumber,
-                                   uint64_t chunkCount)
+UploadFileChunkReader::UploadFileChunkReader(
+    const std::filesystem::path &path, FileEncryptor &encryptor,
+    const std::vector<uint8_t> &fileKey, const std::string &vaultId,
+    const std::string &fileId, uint64_t chunkSize, uint64_t totalChunks,
+    uint64_t firstChunkNumber, uint64_t chunkCount)
     : filePath_(path), stream_(path, std::ios::binary), encryptor_(encryptor),
       fileKey_(fileKey), vaultId_(vaultId), fileId_(fileId),
       chunkSize_(chunkSize), totalChunks_(totalChunks),
@@ -72,11 +67,11 @@ ArkiveFileReader::ArkiveFileReader(const std::filesystem::path &path,
   }
 }
 
-bool ArkiveFileReader::hasNextChunk() const noexcept {
+bool UploadFileChunkReader::hasNextChunk() const noexcept {
   return nextChunkIndex_ < endChunkIndex_;
 }
 
-EncryptedFileChunk ArkiveFileReader::nextEncryptedChunk() {
+UploadEncryptedChunk UploadFileChunkReader::nextEncryptedChunk() {
   if (!hasNextChunk()) {
     throw std::runtime_error("No more chunks available");
   }
@@ -101,7 +96,7 @@ EncryptedFileChunk ArkiveFileReader::nextEncryptedChunk() {
 
   ++nextChunkIndex_;
 
-  return EncryptedFileChunk{
+  return UploadEncryptedChunk{
       .chunkNo = chunkNo,
       .plaintextSize = static_cast<uint64_t>(bytesRead),
       .ciphertext = ciphertext,

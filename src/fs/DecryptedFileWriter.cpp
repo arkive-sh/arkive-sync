@@ -1,9 +1,9 @@
-#include "fs/ArkiveFileWriter.hpp"
+#include "fs/DecryptedFileWriter.hpp"
 
 #include <stdexcept>
 
-ArkiveFileWriter::ArkiveFileWriter(const std::filesystem::path &path,
-                                   RustCrypto &crypto)
+DecryptedFileWriter::DecryptedFileWriter(const std::filesystem::path &path,
+                                         RustCrypto &crypto)
     : filePath_(path), stream_(path, std::ios::binary | std::ios::trunc),
       crypto_(crypto) {
   if (!stream_.is_open()) {
@@ -11,7 +11,7 @@ ArkiveFileWriter::ArkiveFileWriter(const std::filesystem::path &path,
   }
 }
 
-void ArkiveFileWriter::writeEncryptedChunk(
+void DecryptedFileWriter::decryptAndWriteChunk(
     const std::vector<uint8_t> &encryptedChunk,
     const std::vector<uint8_t> &fileKey, const std::vector<uint8_t> &aad) {
   if (fileKey.empty()) {

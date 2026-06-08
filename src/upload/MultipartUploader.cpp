@@ -1,6 +1,6 @@
 #include "upload/MultipartUploader.hpp"
 
-#include "fs/ArkiveFileReader.hpp"
+#include "fs/UploadFileChunkReader.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "helpers/Base64.hpp"
 #include <atomic>
@@ -73,14 +73,14 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
             ((partResult.plan.partEnd - partResult.plan.partStart) +
              plan.fileChunkSize - 1) /
             plan.fileChunkSize;
-        ArkiveFileReader reader(path, fileEncryptor_, fileKey, started.vaultId,
-                                started.fileId, plan.fileChunkSize,
-                                plan.totalChunks,
-                                partResult.plan.firstChunkNumber,
-                                partChunkCount);
+        UploadFileChunkReader reader(path, fileEncryptor_, fileKey,
+                                     started.vaultId, started.fileId,
+                                     plan.fileChunkSize, plan.totalChunks,
+                                     partResult.plan.firstChunkNumber,
+                                     partChunkCount);
 
         while (reader.hasNextChunk()) {
-          EncryptedFileChunk encryptedChunk = reader.nextEncryptedChunk();
+          UploadEncryptedChunk encryptedChunk = reader.nextEncryptedChunk();
           EncryptedChunkResult chunkResult;
           chunkResult.chunkNumber = encryptedChunk.chunkNo;
           chunkResult.plaintextSize = encryptedChunk.plaintextSize;

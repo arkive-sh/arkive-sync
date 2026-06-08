@@ -125,8 +125,8 @@ add_executable(arkive-sync
     src/upload/UploadFinalizer.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
-    src/fs/ArkiveFileReader.cpp
-    src/fs/ArkiveFileWriter.cpp
+    src/fs/UploadFileChunkReader.cpp
+    src/fs/DecryptedFileWriter.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/fs/FileScanner.cpp
@@ -183,7 +183,7 @@ add_executable(arkive-sync-tests
     src/api/ArkiveHttpClient.cpp
     src/api/HttpError.cpp
     src/db/Sqlite.cpp
-    src/fs/ArkiveFileReader.cpp
+    src/fs/UploadFileChunkReader.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
