@@ -2,8 +2,6 @@
 
 #include <memory>
 
-class SyncScheduler;
-
 class Daemon {
 public:
   virtual ~Daemon() = default;
@@ -16,5 +14,5 @@ public:
 
   virtual int run() = 0;
 
-  static std::unique_ptr<Daemon> create(SyncScheduler &syncScheduler);
+  static std::unique_ptr<Daemon> create();
 };

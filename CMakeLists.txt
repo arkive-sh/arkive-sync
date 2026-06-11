@@ -98,45 +98,25 @@ add_executable(arkive-sync
     src/helpers/Base64.cpp
     src/helpers/Helpers.cpp
     src/helpers/Hex.cpp
-    src/helpers/LocalPathProtector.cpp
     src/helpers/Mime.cpp
-    src/helpers/PathCodec.cpp
     src/platform/AppDataPaths.cpp
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
-    src/repo/LocalEntryRepo.cpp
-    src/repo/RemoteEntryRepo.cpp
-    src/repo/ScanSession.cpp
-    src/repo/SyncRepo.cpp
-    src/repo/SyncRootRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
-    src/service/QueueService.cpp
-    src/service/SyncScheduler.cpp
-    src/service/SyncService.cpp
     src/service/AuthService.cpp
-    src/service/UploadJobRunner.cpp
-    src/service/UploadService.cpp
     src/service/VaultService.cpp
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
-    src/upload/UploadFinalizer.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/fs/UploadFileChunkReader.cpp
     src/fs/DecryptedFileWriter.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
-    src/fs/FileScanner.cpp
     src/fs/FileHasher.cpp
-    src/sync/QueueWorker.cpp
-    src/sync/Reconcile.cpp
-    src/sync/ReconcileActionApplier.cpp
-    src/sync/RemoteScanner.cpp
-    src/sync/RemoteSyncWorker.cpp
-    src/sync/ScanWorker.cpp
 )
 
 if(APPLE)
@@ -187,50 +167,24 @@ add_executable(arkive-sync-tests
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
-    tests/path_codec_test.cpp
     tests/inotify_watcher_test.cpp
-    tests/queue_service_test.cpp
     tests/queue_repo_test.cpp
-    tests/remote_scanner_test.cpp
     tests/secure_storage_stub.cpp
-    tests/sync_mode_test.cpp
-    tests/sync_scheduler_test.cpp
-    tests/sync_service_test.cpp
-    tests/upload_job_runner_test.cpp
     tests/upload_planner_test.cpp
-    tests/upload_service_test.cpp
     tests/vault_service_test.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Base64.cpp
     src/helpers/Hex.cpp
-    src/helpers/LocalPathProtector.cpp
     src/helpers/Mime.cpp
-    src/helpers/PathCodec.cpp
     src/fs/FileHasher.cpp
-    src/fs/FileScanner.cpp
     src/repo/QueueRepo.cpp
-    src/repo/LocalEntryRepo.cpp
-    src/repo/RemoteEntryRepo.cpp
-    src/repo/ScanSession.cpp
-    src/repo/SyncRepo.cpp
-    src/repo/SyncRootRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
-    src/service/SyncScheduler.cpp
-    src/service/SyncService.cpp
-    src/service/QueueService.cpp
-    src/service/UploadJobRunner.cpp
-    src/service/UploadService.cpp
     src/service/VaultService.cpp
-    src/sync/Reconcile.cpp
-    src/sync/ReconcileActionApplier.cpp
-    src/sync/RemoteScanner.cpp
-    src/sync/RemoteSyncWorker.cpp
     src/upload/MultipartUploader.cpp
     src/upload/UploadPlanner.cpp
-    src/upload/UploadFinalizer.cpp
     src/upload/UploadPolicy.cpp
 )
 

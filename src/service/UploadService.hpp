@@ -3,7 +3,6 @@
 #include "api/ArkiveApi.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "repo/UploadResumeRepo.hpp"
-#include "repo/SyncRepo.hpp"
 #include "upload/MultipartUploader.hpp"
 #include "upload/UploadFinalizer.hpp"
 #include <filesystem>

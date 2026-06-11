@@ -3,17 +3,9 @@
 #include "./helpers/Helpers.hpp"
 #include "./platform/Daemon.hpp"
 #include "./platform/SecureStorage.hpp"
-#include "./repo/QueueRepo.hpp"
-#include "./repo/SyncRepo.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
-#include "./service/QueueService.hpp"
-#include "./service/SyncScheduler.hpp"
-#include "./service/SyncService.hpp"
-#include "./service/UploadService.hpp"
 #include "./service/VaultService.hpp"
-#include <chrono>
-#include <filesystem>
 #include <iostream>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -26,17 +18,8 @@ enum class Command {
   Logout,
   SetBaseUrl,
   Status,
-  SyncAdd,
-  SyncRun,
-  SyncList,
-  SyncRemove,
-  QueueStats,
-  QueueProcess,
-  QueueRetryFailed,
-  QueueClearDone,
   SecureStorageSmoke,
   Daemon,
-  Upload,
   Unknown,
 };
 
@@ -63,39 +46,6 @@ Command parseCommand(int argc, char *argv[]) {
     return Command::SetBaseUrl;
   }
 
-  if (command == "sync" && argc == 4 && std::string(argv[2]) == "add") {
-    return Command::SyncAdd;
-  }
-
-  if (command == "sync" && argc == 3 && std::string(argv[2]) == "run") {
-    return Command::SyncRun;
-  }
-
-  if (command == "sync" && argc == 3 && std::string(argv[2]) == "list") {
-    return Command::SyncList;
-  }
-
-  if (command == "sync" && argc == 4 && std::string(argv[2]) == "remove") {
-    return Command::SyncRemove;
-  }
-
-  if (command == "queue" && argc == 2) {
-    return Command::QueueStats;
-  }
-
-  if (command == "queue" && argc == 3 && std::string(argv[2]) == "process") {
-    return Command::QueueProcess;
-  }
-
-  if (command == "queue" && argc == 3 &&
-      std::string(argv[2]) == "retry-failed") {
-    return Command::QueueRetryFailed;
-  }
-
-  if (command == "queue" && argc == 3 && std::string(argv[2]) == "clear-done") {
-    return Command::QueueClearDone;
-  }
-
   if (command == "secure-storage-smoke" && argc == 2) {
     return Command::SecureStorageSmoke;
   }
@@ -104,24 +54,14 @@ Command parseCommand(int argc, char *argv[]) {
     return Command::Daemon;
   }
 
-  if (command == "upload" && argc >= 3) {
-    return Command::Upload;
-  }
-
   return Command::Unknown;
 }
 
 } // namespace
 
-App::App(UserRepo &userRepo, SyncRepo &syncRepo, QueueRepo &queueRepo,
-         QueueService &queueService, SyncScheduler &syncScheduler,
-         SyncService &syncService,
-         AuthService &authService, UploadService &uploadService,
+App::App(UserRepo &userRepo, AuthService &authService,
          VaultService &vaultService)
-    : userRepo_(userRepo), syncRepo_(syncRepo), queueRepo_(queueRepo),
-      queueService_(queueService), syncScheduler_(syncScheduler),
-      syncService_(syncService),
-      authService_(authService), uploadService_(uploadService),
+    : userRepo_(userRepo), authService_(authService),
       vaultService_(vaultService) {}
 
 App::~App() {}
@@ -129,7 +69,7 @@ App::~App() {}
 int App::run(int argc, char *argv[]) {
   if (argc < 2) {
     spdlog::info("Usage: arkive-sync "
-                 "<status|set-base-url|login|logout|sync|queue|daemon|upload>");
+                 "<status|set-base-url|login|logout|secure-storage-smoke|daemon>");
     return 0;
   }
 
@@ -214,133 +154,6 @@ int App::run(int argc, char *argv[]) {
     spdlog::info("Arkive Sync is installed and working");
     return 0;
 
-  case Command::Upload: {
-    const std::filesystem::path path =
-        std::filesystem::absolute(argv[2]).lexically_normal();
-    if (!std::filesystem::exists(path)) {
-      throw std::runtime_error("Upload path does not exist");
-    }
-    if (!std::filesystem::is_regular_file(path)) {
-      throw std::runtime_error("Upload path must be a file");
-    }
-
-    const auto fileSize =
-        static_cast<int64_t>(std::filesystem::file_size(path));
-    EntryRecord entry{
-        .id = "manual-upload",
-        .remoteId = std::nullopt,
-        .syncRootId = "",
-        .remoteType = "file",
-        .localPath = path.filename().string(),
-        .isDirectory = false,
-        .parentFolderId = std::nullopt,
-        .encryptedName = std::nullopt,
-        .localSize = fileSize,
-        .localMtime = std::nullopt,
-        .localHash = std::nullopt,
-        .remoteUpdatedAt = std::nullopt,
-        .syncState = "pending_upload",
-        .lastSyncedAt = std::nullopt,
-    };
-
-    // Temp
-    // 1. Capture the starting time point
-    auto start_time = std::chrono::steady_clock::now();
-
-    const UploadFileResponse uploaded = uploadService_.uploadFile(path, entry);
-    spdlog::info("Uploaded file: {}", path.string());
-    spdlog::info("Remote file id: {}", uploaded.fileId);
-    spdlog::info("Upload session id: {}", uploaded.uploadSessionId);
-
-    // 3. Capture the ending time point
-    auto end_time = std::chrono::steady_clock::now();
-
-    // 4. Calculate the raw elapsed duration
-    auto elapsed = end_time - start_time;
-
-    // 5. Convert to preferred units using duration_cast
-    auto ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    auto us =
-        std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-
-    // 6. Alternative: Cast to a double for fractional floating-point seconds
-    std::chrono::duration<double> seconds = elapsed;
-
-    std::cout << "Duration: " << ms << " ms\n";
-    std::cout << "Duration: " << us << " us\n";
-    std::cout << "Duration: " << seconds.count() << " s\n";
-    return 0;
-  }
-
-  case Command::SyncAdd: {
-    const std::filesystem::path syncPath = argv[3];
-    syncService_.addPath(syncPath);
-    spdlog::info("Added sync path: {}",
-                 std::filesystem::absolute(syncPath).string());
-    return 0;
-  }
-
-  case Command::SyncRun: {
-    const auto syncRoots = syncRepo_.roots().getSyncRoots();
-    if (syncRoots.empty()) {
-      throw std::runtime_error(
-          "No sync paths configured. Run `arkive-sync sync add <path>` first.");
-    }
-
-    size_t totalChangedCount = 0;
-    size_t scannedRoots = 0;
-    for (const auto &syncRoot : syncRoots) {
-      if (!syncRoot.enabled) {
-        continue;
-      }
-
-      totalChangedCount += syncService_.scanRoot(syncRoot.localPath);
-      ++scannedRoots;
-      spdlog::info("Ran sync for path: {}", syncRoot.localPath);
-    }
-
-    if (scannedRoots == 0) {
-      throw std::runtime_error("No enabled sync paths configured.");
-    }
-
-    spdlog::info("Ran sync for {} path(s)", scannedRoots);
-    spdlog::info("Detected {} entry changes", totalChangedCount);
-    return 0;
-  }
-
-  case Command::SyncList:
-    spdlog::info("sync list not implemented yet");
-    return 0;
-
-  case Command::SyncRemove:
-    spdlog::info("sync remove not implemented yet");
-    return 0;
-
-  case Command::QueueStats: {
-    const QueueStats stats = queueService_.stats();
-    spdlog::info("Queue stats: queued={}, running={}, failed={}, done={}",
-                 stats.queued, stats.running, stats.failed, stats.done);
-  }
-    return 0;
-
-  case Command::QueueProcess:
-    queueService_.processQueuedUploads();
-    spdlog::info("Processed queued upload jobs");
-    return 0;
-
-  case Command::QueueRetryFailed: {
-    queueService_.retryFailed();
-    spdlog::info("Retried failed queue jobs");
-  }
-    return 0;
-
-  case Command::QueueClearDone: {
-    queueService_.clearDone();
-    spdlog::info("Cleared done queue jobs");
-  }
-    return 0;
-
   case Command::SecureStorageSmoke: {
     RustCrypto crypto;
     auto storage = SecureStorage::create();
@@ -371,19 +184,13 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Daemon:
-    return Daemon::create(syncScheduler_)->run();
+    return Daemon::create()->run();
 
   case Command::Unknown:
     spdlog::error(
         "Usage: arkive-sync login | arkive-sync logout | "
         "arkive-sync set-base-url <url> | arkive-sync status | "
-        "arkive-sync sync add <path> | arkive-sync sync run | "
-        "arkive-sync sync list | "
-        "arkive-sync sync remove <path-or-id> | arkive-sync queue | "
-        "arkive-sync queue process | arkive-sync queue retry-failed | "
-        "arkive-sync queue clear-done | arkive-sync secure-storage-smoke | "
-        "arkive-sync daemon | "
-        "arkive-sync upload <path>");
+        "arkive-sync secure-storage-smoke | arkive-sync daemon");
     return 1;
   }
 
