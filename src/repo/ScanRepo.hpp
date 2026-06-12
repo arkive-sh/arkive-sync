@@ -20,6 +20,8 @@ public:
 
   bool insertScanJob(const ScanJob &scanJob);
   std::optional<ScanJob> getScanJob(const std::string &syncRootId);
+  void updateScanCursor(const std::string &jobId, const std::string &cursorPath);
+  void markScanComplete(const std::string &jobId);
 
 private:
   sqlite3 *db_;

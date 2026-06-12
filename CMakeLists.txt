@@ -96,6 +96,7 @@ add_executable(arkive-sync
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Base64.cpp
+    src/helpers/GenUUID.cpp
     src/helpers/Helpers.cpp
     src/helpers/Hex.cpp
     src/helpers/Mime.cpp
@@ -104,6 +105,7 @@ add_executable(arkive-sync
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/DirtyPathRepo.cpp
+    src/repo/EntryRepo.cpp
     src/repo/QueueRepo.cpp
     src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp
@@ -181,11 +183,13 @@ add_executable(arkive-sync-tests
     src/crypto/RustCrypto.cpp
     src/db/SqliteHelpers.cpp
     src/helpers/Base64.cpp
+    src/helpers/GenUUID.cpp
     src/helpers/Hex.cpp
     src/helpers/Mime.cpp
     src/fs/helpers/PathHelpers.cpp
     src/fs/FileHasher.cpp
     src/repo/DirtyPathRepo.cpp
+    src/repo/EntryRepo.cpp
     src/repo/QueueRepo.cpp
     src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp

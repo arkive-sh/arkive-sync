@@ -94,6 +94,7 @@ SELECT
   completed_at
 FROM scan_jobs
 WHERE sync_root_id = ?
+  AND status = 'running'
 ORDER BY updated_at DESC
 LIMIT 1;
   )sql";
@@ -117,4 +118,57 @@ LIMIT 1;
   }
 
   return readScanJob(stmt.get());
+}
+
+void ScanRepo::updateScanCursor(const std::string &jobId,
+                                const std::string &cursorPath) {
+  static constexpr const char *sql = R"sql(
+UPDATE scan_jobs
+SET
+  cursor_path = ?,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, cursorPath);
+  bindText(db_, stmt.get(), 2, jobId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void ScanRepo::markScanComplete(const std::string &jobId) {
+  static constexpr const char *sql = R"sql(
+UPDATE scan_jobs
+SET
+  status = 'completed',
+  updated_at = CURRENT_TIMESTAMP,
+  completed_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, jobId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
 }
