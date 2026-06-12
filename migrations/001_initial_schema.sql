@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS entries (
   local_hash TEXT,
   remote_updated_at TEXT,
   sync_state TEXT NOT NULL,
+  last_seen_scan_job_id TEXT,
   last_synced_at TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -99,6 +100,10 @@ ON transfer_queue(status);
 
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_sync_root_status
 ON scan_jobs(sync_root_id, status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scan_jobs_active_root
+ON scan_jobs(sync_root_id)
+WHERE status = 'running';
 
 CREATE INDEX IF NOT EXISTS idx_dirty_paths_sync_root_created_at
 ON dirty_paths(sync_root_id, created_at);

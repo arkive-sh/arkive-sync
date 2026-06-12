@@ -48,6 +48,40 @@ ScanRepo::ScanRepo(sqlite3 *db) : db_(db) {
   }
 }
 
+bool ScanRepo::insertScanJob(const ScanJob &scanJob) {
+  static constexpr const char *sql = R"sql(
+INSERT OR IGNORE INTO scan_jobs (
+  id,
+  sync_root_id,
+  status,
+  cursor_path,
+  started_at,
+  updated_at,
+  completed_at
+) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL);
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, scanJob.id);
+  bindText(db_, stmt.get(), 2, scanJob.syncRootId);
+  bindText(db_, stmt.get(), 3, scanJob.status);
+  bindOptionalText(db_, stmt.get(), 4, scanJob.cursorPath);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  return sqlite3_changes(db_) == 1;
+}
+
 std::optional<ScanJob> ScanRepo::getScanJob(const std::string &syncRootId) {
   static constexpr const char *sql = R"sql(
 SELECT

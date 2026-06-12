@@ -18,6 +18,7 @@ class ScanRepo {
 public:
   explicit ScanRepo(sqlite3 *db);
 
+  bool insertScanJob(const ScanJob &scanJob);
   std::optional<ScanJob> getScanJob(const std::string &syncRootId);
 
 private:

@@ -152,6 +152,7 @@ void Database::verifySchema() {
 
 void Database::close() {
   if (db != nullptr) {
+    releaseMemory(db);
     sqlite3_close(db);
     db = nullptr;
   }
