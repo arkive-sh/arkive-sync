@@ -66,7 +66,55 @@ LinuxDaemon::~LinuxDaemon() = default;
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
-  spdlog::warn("Daemon orchestration has been removed; watcher implementation remains available for rewrite");
+  const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
+  if (epollFd.get() < 0) {
+    throw std::system_error(errno, std::generic_category(),
+                            "epoll_create1 failed");
+  }
+
+  epoll_event event{};
+  event.events = EPOLLIN;
+  event.data.fd = watcher_->fd();
+
+  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, watcher_->fd(), &event) < 0) {
+    throw std::system_error(errno, std::generic_category(),
+                            "epoll_ctl add watcher failed");
+  }
+
+  spdlog::warn("Daemon orchestration has been removed; running passive watcher loop");
+
+  while (!gStopRequested) {
+    epoll_event readyEvents[8]{};
+    const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, 1000);
+
+    if (readyCount < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+
+      throw std::system_error(errno, std::generic_category(),
+                              "epoll_wait failed");
+    }
+
+    for (int i = 0; i < readyCount; ++i) {
+      if (readyEvents[i].data.fd != watcher_->fd()) {
+        continue;
+      }
+
+      for (const auto &fileEvent : watcher_->poll()) {
+        if (fileEvent.oldPath.has_value()) {
+          spdlog::info("watch event type={} path={} old_path={}",
+                       eventTypeName(fileEvent.type), fileEvent.path.string(),
+                       fileEvent.oldPath->string());
+        } else {
+          spdlog::info("watch event type={} path={}",
+                       eventTypeName(fileEvent.type), fileEvent.path.string());
+        }
+      }
+    }
+  }
+
   watcher_->stop();
-  return gStopRequested == 0 ? 0 : 0;
+  spdlog::info("Daemon stopped");
+  return 0;
 }
