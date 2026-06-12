@@ -10,14 +10,16 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <sqlite3.h>
 #include <string>
 
 class RootScanner {
 public:
-  RootScanner(RustCrypto &crypto, SyncService &syncSvc, ScanRepo &scanRepo,
-              DirtyPathRepo &dirtyPathRepo, EntryRepo &entryRepo);
-  RootScanner(RustCrypto &crypto, SyncService &syncSvc, ScanRepo &scanRepo,
-              DirtyPathRepo &dirtyPathRepo, EntryRepo &entryRepo,
+  RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
+              ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
+              EntryRepo &entryRepo);
+  RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
+              ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo, EntryRepo &entryRepo,
               std::unique_ptr<IFileWatcher> watcher);
 
   bool scanRoot(const std::string &syncRootId);
@@ -29,6 +31,7 @@ private:
                        std::error_code &ec);
 
   std::unique_ptr<IFileWatcher> watcher_;
+  sqlite3 *db_;
   RustCrypto &crypto_;
   SyncService &syncSvc_;
   ScanRepo &scanRepo_;

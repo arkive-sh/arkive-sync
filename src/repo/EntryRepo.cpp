@@ -33,7 +33,7 @@ Entry readEntry(sqlite3_stmt *stmt) {
   const char *localSize =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
   const unsigned char *localMtime = sqlite3_column_text(stmt, 3);
-  const char *localHash =
+  const char *contentHash =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
   const char *syncState =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
@@ -53,8 +53,9 @@ Entry readEntry(sqlite3_stmt *stmt) {
       .size = localSize != nullptr ? std::optional<int64_t>(std::stoll(localSize))
                                    : std::nullopt,
       .mtime = parseMtime(localMtime),
-      .contentHash = localHash != nullptr ? std::optional<std::string>(localHash)
-                                          : std::nullopt,
+      .contentHash =
+          contentHash != nullptr ? std::optional<std::string>(contentHash)
+                                 : std::nullopt,
       .syncState = syncState,
       .lastSeenScanJobId =
           lastSeenScanJobId != nullptr
@@ -79,7 +80,7 @@ SELECT
   local_path,
   local_size,
   local_mtime,
-  local_hash,
+  content_hash,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -116,7 +117,6 @@ INSERT INTO entries (
   sync_root_id,
   remote_type,
   local_path,
-  local_path_hash,
   is_directory,
   sync_state,
   last_seen_scan_job_id,
@@ -125,7 +125,6 @@ INSERT INTO entries (
   ?,
   ?,
   'directory',
-  ?,
   ?,
   1,
   'unchanged',
@@ -148,8 +147,7 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   bindText(db_, stmt.get(), 1, generateUUID());
   bindText(db_, stmt.get(), 2, entry.syncRootId);
   bindText(db_, stmt.get(), 3, entry.relativePath);
-  bindText(db_, stmt.get(), 4, entry.relativePath);
-  bindText(db_, stmt.get(), 5, entry.lastSeenScanId);
+  bindText(db_, stmt.get(), 4, entry.lastSeenScanId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -164,11 +162,10 @@ INSERT INTO entries (
   sync_root_id,
   remote_type,
   local_path,
-  local_path_hash,
   is_directory,
   local_size,
   local_mtime,
-  local_hash,
+  content_hash,
   sync_state,
   last_seen_scan_job_id,
   updated_at
@@ -176,7 +173,6 @@ INSERT INTO entries (
   ?,
   ?,
   'file',
-  ?,
   ?,
   0,
   ?,
@@ -190,7 +186,7 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   is_directory = 0,
   local_size = excluded.local_size,
   local_mtime = excluded.local_mtime,
-  local_hash = excluded.local_hash,
+  content_hash = excluded.content_hash,
   sync_state = excluded.sync_state,
   last_seen_scan_job_id = excluded.last_seen_scan_job_id,
   updated_at = CURRENT_TIMESTAMP;
@@ -205,12 +201,11 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   bindText(db_, stmt.get(), 1, generateUUID());
   bindText(db_, stmt.get(), 2, entry.syncRootId);
   bindText(db_, stmt.get(), 3, entry.relativePath);
-  bindText(db_, stmt.get(), 4, entry.relativePath);
-  throwIfBindFailed(db_, sqlite3_bind_int64(stmt.get(), 5, entry.size));
-  bindText(db_, stmt.get(), 6, toMtimeString(entry.mtime));
-  bindText(db_, stmt.get(), 7, entry.contentHash);
-  bindText(db_, stmt.get(), 8, entry.syncState);
-  bindText(db_, stmt.get(), 9, entry.lastSeenScanId);
+  throwIfBindFailed(db_, sqlite3_bind_int64(stmt.get(), 4, entry.size));
+  bindText(db_, stmt.get(), 5, toMtimeString(entry.mtime));
+  bindText(db_, stmt.get(), 6, entry.contentHash);
+  bindText(db_, stmt.get(), 7, entry.syncState);
+  bindText(db_, stmt.get(), 8, entry.lastSeenScanId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {

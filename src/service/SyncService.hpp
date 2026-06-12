@@ -15,6 +15,7 @@ public:
                        std::optional<std::string> folderId = std::nullopt,
                        bool enabled = true);
   std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
+  std::vector<SyncRoot> getSyncRoots();
 
 private:
   std::string makeRootId(const std::string &pathHash) const;

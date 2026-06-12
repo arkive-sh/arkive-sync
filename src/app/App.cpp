@@ -5,7 +5,10 @@
 #include "./platform/SecureStorage.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
+#include "./service/SyncService.hpp"
 #include "./service/VaultService.hpp"
+#include "./sync/RootScanner.hpp"
+#include "./repo/ScanRepo.hpp"
 #include <iostream>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -17,6 +20,8 @@ enum class Command {
   Login,
   Logout,
   SetBaseUrl,
+  SyncAdd,
+  SyncRun,
   Status,
   SecureStorageSmoke,
   Daemon,
@@ -46,6 +51,14 @@ Command parseCommand(int argc, char *argv[]) {
     return Command::SetBaseUrl;
   }
 
+  if (command == "sync" && argc == 4 && std::string(argv[2]) == "add") {
+    return Command::SyncAdd;
+  }
+
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "run") {
+    return Command::SyncRun;
+  }
+
   if (command == "secure-storage-smoke" && argc == 2) {
     return Command::SecureStorageSmoke;
   }
@@ -59,17 +72,19 @@ Command parseCommand(int argc, char *argv[]) {
 
 } // namespace
 
-App::App(UserRepo &userRepo, AuthService &authService,
-         VaultService &vaultService)
+App::App(UserRepo &userRepo, AuthService *authService,
+         VaultService &vaultService, SyncService &syncService,
+         RootScanner &rootScanner, ScanRepo &scanRepo)
     : userRepo_(userRepo), authService_(authService),
-      vaultService_(vaultService) {}
+      vaultService_(vaultService), syncService_(syncService),
+      rootScanner_(rootScanner), scanRepo_(scanRepo) {}
 
 App::~App() {}
 
 int App::run(int argc, char *argv[]) {
   if (argc < 2) {
     spdlog::info("Usage: arkive-sync "
-                 "<status|set-base-url|login|logout|secure-storage-smoke|daemon>");
+                 "<status|set-base-url|login|logout|sync|secure-storage-smoke|daemon>");
     return 0;
   }
 
@@ -104,19 +119,24 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Login: {
+    if (authService_ == nullptr) {
+      throw std::runtime_error(
+          "Base URL is not configured. Run: arkive-sync set-base-url <url>");
+    }
+
     spdlog::info("Logging into arkive");
     const auto account = userRepo_.getAccount();
     if (!account.has_value()) {
       throw std::runtime_error("Base URL is missing");
     }
 
-    const bool hasValidSession = authService_.hasValidSession();
+    const bool hasValidSession = authService_->hasValidSession();
     std::string password;
 
     if (hasValidSession) {
       password = readPasswordFromTerminal("Enter your vault password: ");
       if (!hasPersistedVaultMaterial(*account)) {
-        authService_.refreshVaultMaterial(password);
+        authService_->refreshVaultMaterial(password);
       }
       vaultService_.unlock(password);
       spdlog::info("Session is already valid. Vault unlocked.");
@@ -128,7 +148,7 @@ int App::run(int argc, char *argv[]) {
     std::getline(std::cin, email);
     password = readPasswordFromTerminal("Enter your password: ");
 
-    authService_.login(email, password);
+    authService_->login(email, password);
     vaultService_.unlock(password);
     if (vaultService_.isUnlocked()) {
       spdlog::info("Successfully logged in and unlocked vault!");
@@ -139,14 +159,53 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Logout: {
+    if (authService_ == nullptr) {
+      throw std::runtime_error(
+          "Base URL is not configured. Run: arkive-sync set-base-url <url>");
+    }
+
     spdlog::info("Logging out of arkive");
     vaultService_.lock();
     vaultService_.clearPersistedSession();
-    if (authService_.logout()) {
+    if (authService_->logout()) {
       spdlog::info("Successfully logged out!");
     } else {
       spdlog::info("No valid session found. Cleared local auth state.");
     }
+    return 0;
+  }
+
+  case Command::SyncAdd: {
+    const SyncRoot root = syncService_.addSyncRoot(argv[3]);
+    spdlog::info("Added sync root id={} path={}", root.Id, root.localPath);
+    return 0;
+  }
+
+  case Command::SyncRun: {
+    const auto roots = syncService_.getSyncRoots();
+    if (roots.empty()) {
+      throw std::runtime_error("No sync roots configured");
+    }
+
+    size_t scanned = 0;
+    for (const auto &root : roots) {
+      if (!root.enabled) {
+        continue;
+      }
+
+      while (true) {
+        if (!rootScanner_.scanRoot(root.Id)) {
+          throw std::runtime_error("Failed to scan sync root: " + root.Id);
+        }
+
+        if (!scanRepo_.hasRunningScanJob(root.Id)) {
+          scanned++;
+          break;
+        }
+      }
+    }
+
+    spdlog::info("Ran scan for {} sync root(s)", scanned);
     return 0;
   }
 
@@ -190,6 +249,7 @@ int App::run(int argc, char *argv[]) {
     spdlog::error(
         "Usage: arkive-sync login | arkive-sync logout | "
         "arkive-sync set-base-url <url> | arkive-sync status | "
+        "arkive-sync sync add <path> | arkive-sync sync run | "
         "arkive-sync secure-storage-smoke | arkive-sync daemon");
     return 1;
   }

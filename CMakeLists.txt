@@ -114,6 +114,7 @@ add_executable(arkive-sync
     src/service/AuthService.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
+    src/sync/RootScanner.cpp
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
@@ -197,6 +198,7 @@ add_executable(arkive-sync-tests
     src/repo/UserRepo.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
+    src/sync/RootScanner.cpp
     src/upload/MultipartUploader.cpp
     src/upload/UploadPlanner.cpp
     src/upload/UploadPolicy.cpp

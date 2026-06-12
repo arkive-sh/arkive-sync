@@ -120,6 +120,36 @@ LIMIT 1;
   return readScanJob(stmt.get());
 }
 
+bool ScanRepo::hasRunningScanJob(const std::string &syncRootId) {
+  static constexpr const char *sql = R"sql(
+SELECT 1
+FROM scan_jobs
+WHERE sync_root_id = ?
+  AND status = 'running'
+LIMIT 1;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return false;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  return true;
+}
+
 void ScanRepo::updateScanCursor(const std::string &jobId,
                                 const std::string &cursorPath) {
   static constexpr const char *sql = R"sql(

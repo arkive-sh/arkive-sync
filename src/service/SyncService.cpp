@@ -24,7 +24,6 @@ SyncRoot SyncService::addSyncRoot(const std::filesystem::path &localPath,
   SyncRoot root{
       .Id = makeRootId(pathHash),
       .localPath = normalizedPath,
-      .localHash = pathHash,
       .folderId = folderId.value_or(""),
       .enabled = enabled ? 1 : 0,
       .createdAt = "",
@@ -38,3 +37,5 @@ std::optional<SyncRoot>
 SyncService::findSyncRootById(const std::string &syncRootId) {
   return syncRepo_.findSyncRootById(syncRootId);
 }
+
+std::vector<SyncRoot> SyncService::getSyncRoots() { return syncRepo_.getSyncRoots(); }
