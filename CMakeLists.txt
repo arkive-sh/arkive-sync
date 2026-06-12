@@ -99,13 +99,16 @@ add_executable(arkive-sync
     src/helpers/Helpers.cpp
     src/helpers/Hex.cpp
     src/helpers/Mime.cpp
+    src/fs/helpers/PathHelpers.cpp
     src/platform/AppDataPaths.cpp
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/QueueRepo.cpp
+    src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/AuthService.cpp
+    src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
@@ -178,10 +181,13 @@ add_executable(arkive-sync-tests
     src/helpers/Base64.cpp
     src/helpers/Hex.cpp
     src/helpers/Mime.cpp
+    src/fs/helpers/PathHelpers.cpp
     src/fs/FileHasher.cpp
     src/repo/QueueRepo.cpp
+    src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
+    src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/upload/MultipartUploader.cpp
     src/upload/UploadPlanner.cpp

@@ -21,7 +21,6 @@ ON CONFLICT(id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS sync_roots (
   id TEXT PRIMARY KEY,
   local_path TEXT NOT NULL UNIQUE,
-  encrypted_local_path TEXT NOT NULL,
   local_path_hash TEXT NOT NULL UNIQUE,
   folder_id TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
@@ -34,7 +33,6 @@ CREATE TABLE IF NOT EXISTS entries (
   sync_root_id TEXT NOT NULL,
   remote_type TEXT NOT NULL,
   local_path TEXT NOT NULL,
-  encrypted_local_path TEXT NOT NULL,
   local_path_hash TEXT NOT NULL,
   is_directory INTEGER NOT NULL DEFAULT 0,
   parent_folder_id TEXT,

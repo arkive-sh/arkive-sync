@@ -11,6 +11,7 @@ public:
   FileHasher(const std::filesystem::path &path, RustCrypto &crypto);
 
   std::string hashFile();
+  std::string hashPath() const;
 
 private:
   const std::filesystem::path path_;

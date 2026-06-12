@@ -1,4 +1,5 @@
 #include "fs/FileHasher.hpp"
+#include "fs/helpers/PathHelpers.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -34,4 +35,10 @@ std::string FileHasher::hashFile() {
   }
 
   return hasher.finalizeHex();
+}
+
+std::string FileHasher::hashPath() const {
+  const std::string normalizedPath = normalizeFsPath(path_);
+  return crypto_.sha256HashHex(
+      std::vector<uint8_t>(normalizedPath.begin(), normalizedPath.end()));
 }
