@@ -14,6 +14,7 @@ public:
   SyncRoot addSyncRoot(const std::filesystem::path &localPath,
                        std::optional<std::string> folderId = std::nullopt,
                        bool enabled = true);
+  std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
 
 private:
   std::string makeRootId(const std::string &pathHash) const;

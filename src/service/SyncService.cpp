@@ -33,3 +33,8 @@ SyncRoot SyncService::addSyncRoot(const std::filesystem::path &localPath,
   syncRepo_.upsertSyncRoot(root);
   return root;
 }
+
+std::optional<SyncRoot>
+SyncService::findSyncRootById(const std::string &syncRootId) {
+  return syncRepo_.findSyncRootById(syncRootId);
+}

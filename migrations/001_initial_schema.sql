@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS transfer_queue (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS scan_jobs (
+  id TEXT PRIMARY KEY,
+  sync_root_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  cursor_path TEXT,
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS dirty_paths (
+  sync_root_id TEXT NOT NULL,
+  relative_path TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path
 ON entries(sync_root_id, local_path);
 
@@ -79,6 +96,12 @@ ON entries(sync_root_id, local_path_hash);
 
 CREATE INDEX IF NOT EXISTS idx_transfer_queue_status
 ON transfer_queue(status);
+
+CREATE INDEX IF NOT EXISTS idx_scan_jobs_sync_root_status
+ON scan_jobs(sync_root_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_dirty_paths_sync_root_created_at
+ON dirty_paths(sync_root_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_entries_remote_id
 ON entries(remote_id);

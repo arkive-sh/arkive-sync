@@ -103,7 +103,9 @@ add_executable(arkive-sync
     src/platform/AppDataPaths.cpp
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
+    src/repo/DirtyPathRepo.cpp
     src/repo/QueueRepo.cpp
+    src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
@@ -183,7 +185,9 @@ add_executable(arkive-sync-tests
     src/helpers/Mime.cpp
     src/fs/helpers/PathHelpers.cpp
     src/fs/FileHasher.cpp
+    src/repo/DirtyPathRepo.cpp
     src/repo/QueueRepo.cpp
+    src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp

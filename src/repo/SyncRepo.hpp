@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <sqlite3.h>
 #include <string>
 
@@ -17,6 +18,7 @@ public:
   explicit SyncRepo(sqlite3 *db);
 
   void upsertSyncRoot(const SyncRoot &input);
+  std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
 
 private:
   sqlite3 *db_;
