@@ -1,6 +1,14 @@
 #include "platform/linux/daemon/LinuxDaemon.hpp"
 
+#include "crypto/RustCrypto.hpp"
+#include "db/Sqlite.hpp"
 #include "fs/FileWatcher.hpp"
+#include "repo/DirtyPathRepo.hpp"
+#include "repo/EntryRepo.hpp"
+#include "repo/ScanRepo.hpp"
+#include "repo/SyncRepo.hpp"
+#include "service/SyncService.hpp"
+#include "sync/RootScanner.hpp"
 
 #include <cerrno>
 #include <csignal>
@@ -58,14 +66,43 @@ private:
 
 } // namespace
 
-LinuxDaemon::LinuxDaemon(std::unique_ptr<IFileWatcher> watcher)
-    : watcher_(std::move(watcher)) {}
+LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
+                         std::unique_ptr<RustCrypto> crypto,
+                         std::unique_ptr<SyncRepo> syncRepo,
+                         std::unique_ptr<ScanRepo> scanRepo,
+                         std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
+                         std::unique_ptr<EntryRepo> entryRepo,
+                         std::unique_ptr<SyncService> syncService,
+                         std::unique_ptr<RootScanner> rootScanner,
+                         std::unique_ptr<IFileWatcher> watcher)
+    : db_(std::move(db)), crypto_(std::move(crypto)),
+      syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
+      dirtyPathRepo_(std::move(dirtyPathRepo)),
+      entryRepo_(std::move(entryRepo)), syncService_(std::move(syncService)),
+      rootScanner_(std::move(rootScanner)), watcher_(std::move(watcher)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
+  const auto roots = syncService_->getSyncRoots();
+
+  for (const auto &root : roots) {
+    if (!root.enabled) {
+      continue;
+    }
+
+    watcher_->addRoot(WatchRoot{
+        .rootId = root.Id,
+        .path = root.localPath,
+    });
+
+    if (!rootScanner_->scanRoot(root.Id)) {
+      spdlog::error("Failed to start scan for sync root {}", root.Id);
+    }
+  }
+
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
   if (epollFd.get() < 0) {
     throw std::system_error(errno, std::generic_category(),
@@ -81,9 +118,18 @@ int LinuxDaemon::run() {
                             "epoll_ctl add watcher failed");
   }
 
-  spdlog::warn("Daemon orchestration has been removed; running passive watcher loop");
-
   while (!gStopRequested) {
+    for (const auto &root : roots) {
+      if (!root.enabled) {
+        continue;
+      }
+
+      if (scanRepo_->hasRunningScanJob(root.Id) &&
+          !rootScanner_->scanRoot(root.Id)) {
+        spdlog::error("Failed to continue scan for sync root {}", root.Id);
+      }
+    }
+
     epoll_event readyEvents[8]{};
     const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, 1000);
 

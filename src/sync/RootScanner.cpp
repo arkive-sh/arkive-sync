@@ -114,12 +114,12 @@ bool RootScanner::handleFileEntry(const std::string &syncRootId,
     }
   }
 
-  std::string syncState = "unchanged";
+  EntrySyncState syncState = EntrySyncState::Unchanged;
 
   if (!existing || existing->deleted) {
-    syncState = "pending_upload";
+    syncState = EntrySyncState::PendingUpload;
   } else if (shouldHash && existing->contentHash != contentHash) {
-    syncState = "pending_upload";
+    syncState = EntrySyncState::PendingUpload;
   }
 
   entryRepo_.upsertFileEntry({

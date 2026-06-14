@@ -8,6 +8,38 @@
 
 namespace {
 
+const char *toEntrySyncStateString(EntrySyncState state) {
+  switch (state) {
+  case EntrySyncState::Unchanged:
+    return "unchanged";
+  case EntrySyncState::PendingUpload:
+    return "pending_upload";
+  case EntrySyncState::Deleted:
+    return "deleted";
+  }
+
+  throw std::runtime_error("Unknown EntrySyncState");
+}
+
+EntrySyncState parseEntrySyncState(const char *value) {
+  if (value == nullptr) {
+    throw std::runtime_error("entries.sync_state was NULL");
+  }
+
+  const std::string raw(value);
+  if (raw == "unchanged") {
+    return EntrySyncState::Unchanged;
+  }
+  if (raw == "pending_upload") {
+    return EntrySyncState::PendingUpload;
+  }
+  if (raw == "deleted") {
+    return EntrySyncState::Deleted;
+  }
+
+  throw std::runtime_error("Unknown entries.sync_state: " + raw);
+}
+
 std::string toMtimeString(const std::filesystem::file_time_type &time) {
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                       time.time_since_epoch())
@@ -45,18 +77,20 @@ Entry readEntry(sqlite3_stmt *stmt) {
     throw std::runtime_error("entries row contained NULL value");
   }
 
+  const EntrySyncState parsedSyncState = parseEntrySyncState(syncState);
+
   return Entry{
       .syncRootId = syncRootId,
       .relativePath = relativePath,
       .isDirectory = isDirectory != 0,
-      .deleted = std::string(syncState) == "deleted",
+      .deleted = parsedSyncState == EntrySyncState::Deleted,
       .size = localSize != nullptr ? std::optional<int64_t>(std::stoll(localSize))
                                    : std::nullopt,
       .mtime = parseMtime(localMtime),
       .contentHash =
           contentHash != nullptr ? std::optional<std::string>(contentHash)
                                  : std::nullopt,
-      .syncState = syncState,
+      .syncState = parsedSyncState,
       .lastSeenScanJobId =
           lastSeenScanJobId != nullptr
               ? std::optional<std::string>(lastSeenScanJobId)
@@ -204,7 +238,7 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   throwIfBindFailed(db_, sqlite3_bind_int64(stmt.get(), 4, entry.size));
   bindText(db_, stmt.get(), 5, toMtimeString(entry.mtime));
   bindText(db_, stmt.get(), 6, entry.contentHash);
-  bindText(db_, stmt.get(), 7, entry.syncState);
+  bindText(db_, stmt.get(), 7, toEntrySyncStateString(entry.syncState));
   bindText(db_, stmt.get(), 8, entry.lastSeenScanId);
 
   const int rc = sqlite3_step(stmt.get());

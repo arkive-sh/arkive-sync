@@ -71,10 +71,13 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
 );
 
 CREATE TABLE IF NOT EXISTS dirty_paths (
+  id TEXT PRIMARY KEY,
   sync_root_id TEXT NOT NULL,
-  relative_path TEXT NOT NULL,
+  relative_path TEXT,
   event_type TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path

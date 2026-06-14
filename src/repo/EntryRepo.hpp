@@ -5,6 +5,12 @@
 #include <sqlite3.h>
 #include <string>
 
+enum class EntrySyncState {
+  Unchanged,
+  PendingUpload,
+  Deleted,
+};
+
 struct Entry {
   std::string syncRootId;
   std::string relativePath;
@@ -13,7 +19,7 @@ struct Entry {
   std::optional<int64_t> size;
   std::optional<std::filesystem::file_time_type> mtime;
   std::optional<std::string> contentHash;
-  std::string syncState;
+  EntrySyncState syncState;
   std::optional<std::string> lastSeenScanJobId;
 };
 
@@ -29,7 +35,7 @@ struct FileEntryUpsert {
   int64_t size{0};
   std::filesystem::file_time_type mtime{};
   std::string contentHash;
-  std::string syncState;
+  EntrySyncState syncState;
   std::string lastSeenScanId;
 };
 
