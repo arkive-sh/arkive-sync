@@ -1,10 +1,28 @@
 #include "repo/DirtyPathRepo.hpp"
 
 #include "db/SqliteHelpers.hpp"
+#include "fs/helpers/PathHelpers.hpp"
+#include "helpers/GenUUID.hpp"
+#include "repo/SyncRepo.hpp"
 
+#include <spdlog/spdlog.h>
+#include <filesystem>
 #include <stdexcept>
 
 namespace {
+
+const char *toDirtyPathEventTypeString(DirtyPathEventType type) {
+  switch (type) {
+  case DirtyPathEventType::Scan:
+    return "scan";
+  case DirtyPathEventType::Delete:
+    return "delete";
+  case DirtyPathEventType::FullRescan:
+    return "full_rescan";
+  }
+
+  throw std::runtime_error("Unknown DirtyPathEventType");
+}
 
 DirtyPathEventType parseDirtyPathEventType(const char *value) {
   if (value == nullptr) {
@@ -86,6 +104,168 @@ DirtyPathRepo::DirtyPathRepo(sqlite3 *db) : db_(db) {
   if (db == nullptr) {
     throw std::invalid_argument(
         "DirtyPathRepo needs a valid sqlite3 connection");
+  }
+}
+
+void DirtyPathRepo::record(const FileEvent &event) {
+  if (event.type == FileEventType::Unknown) {
+    spdlog::warn("Ignoring unknown file event for root {}", event.rootId);
+    return;
+  }
+
+  if (event.type == FileEventType::Overflow) {
+    for (const auto &root : SyncRepo(db_).getSyncRoots()) {
+      insertFullRescan(root.Id);
+    }
+    return;
+  }
+
+  const auto root = SyncRepo(db_).findSyncRootById(event.rootId);
+  if (!root.has_value()) {
+    spdlog::warn("Ignoring file event for unknown root {}", event.rootId);
+    return;
+  }
+
+  const auto toRelativePath =
+      [&](const std::filesystem::path &path) -> std::optional<std::string> {
+    const std::filesystem::path normalizedPath = normalizeFsPath(path);
+    const std::filesystem::path normalizedRoot = normalizeFsPath(root->localPath);
+    const std::filesystem::path relative =
+        normalizedPath.lexically_relative(normalizedRoot);
+
+    if (relative.empty()) {
+      return std::string();
+    }
+    if (relative == "." || *relative.begin() == "..") {
+      spdlog::warn("Ignoring file event outside root {} path={}", root->Id,
+                   normalizedPath.string());
+      return std::nullopt;
+    }
+
+    return relative.string();
+  };
+
+  const auto insertScan = [&](const std::filesystem::path &path) {
+    const auto relativePath = toRelativePath(path);
+    if (!relativePath.has_value()) {
+      return;
+    }
+    insertDirtyPath(root->Id, relativePath, DirtyPathEventType::Scan);
+  };
+  const auto insertDelete = [&](const std::filesystem::path &path) {
+    const auto relativePath = toRelativePath(path);
+    if (!relativePath.has_value()) {
+      return;
+    }
+    insertDirtyPath(root->Id, relativePath, DirtyPathEventType::Delete);
+  };
+
+  switch (event.type) {
+  case FileEventType::Created:
+  case FileEventType::Modified:
+  case FileEventType::AttributeChanged:
+  case FileEventType::MovedTo:
+    insertScan(event.path);
+    return;
+  case FileEventType::Deleted:
+  case FileEventType::MovedFrom:
+    insertDelete(event.path);
+    return;
+  case FileEventType::Renamed:
+    if (event.oldPath.has_value()) {
+      insertDelete(*event.oldPath);
+    }
+    insertScan(event.path);
+    return;
+  case FileEventType::Overflow:
+  case FileEventType::Unknown:
+    return;
+  }
+}
+
+void DirtyPathRepo::insertFullRescan(const std::string &syncRootId) {
+  insertDirtyPath(syncRootId, std::nullopt, DirtyPathEventType::FullRescan);
+}
+
+void DirtyPathRepo::insertDirtyPath(
+    const std::string &syncRootId,
+    const std::optional<std::string> &relativePath,
+    DirtyPathEventType action) {
+  static constexpr const char *pathSql = R"sql(
+INSERT INTO dirty_paths (
+  id,
+  sync_root_id,
+  relative_path,
+  event_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  ?,
+  ?,
+  ?,
+  ?,
+  'pending',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+) ON CONFLICT(sync_root_id, relative_path)
+WHERE status = 'pending' AND relative_path IS NOT NULL
+DO UPDATE SET
+  event_type = excluded.event_type,
+  updated_at = CURRENT_TIMESTAMP;
+  )sql";
+
+  static constexpr const char *fullRescanSql = R"sql(
+INSERT INTO dirty_paths (
+  id,
+  sync_root_id,
+  relative_path,
+  event_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  ?,
+  ?,
+  NULL,
+  ?,
+  'pending',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+) ON CONFLICT(sync_root_id)
+WHERE status = 'pending'
+  AND relative_path IS NULL
+  AND event_type = 'full_rescan'
+DO UPDATE SET
+  updated_at = CURRENT_TIMESTAMP;
+  )sql";
+
+  if (action != DirtyPathEventType::FullRescan && !relativePath.has_value()) {
+    throw std::invalid_argument("Path events require a relative path");
+  }
+
+  const char *sql =
+      action == DirtyPathEventType::FullRescan ? fullRescanSql : pathSql;
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, generateUUID());
+  bindText(db_, stmt.get(), 2, syncRootId);
+  if (action == DirtyPathEventType::FullRescan) {
+    bindText(db_, stmt.get(), 3, toDirtyPathEventTypeString(action));
+  } else {
+    bindOptionalText(db_, stmt.get(), 3, relativePath);
+    bindText(db_, stmt.get(), 4, toDirtyPathEventTypeString(action));
+  }
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
   }
 }
 

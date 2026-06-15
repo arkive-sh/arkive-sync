@@ -13,7 +13,6 @@
 #include <cerrno>
 #include <csignal>
 #include <spdlog/spdlog.h>
-#include <stdexcept>
 #include <sys/epoll.h>
 #include <system_error>
 #include <unistd.h>
@@ -156,6 +155,8 @@ int LinuxDaemon::run() {
           spdlog::info("watch event type={} path={}",
                        eventTypeName(fileEvent.type), fileEvent.path.string());
         }
+
+        dirtyPathRepo_->record(fileEvent);
       }
     }
   }
