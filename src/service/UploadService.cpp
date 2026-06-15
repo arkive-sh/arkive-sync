@@ -51,7 +51,7 @@ bool shouldResetResumeSession(const HttpError &error) {
 }
 
 bool sessionMatchesEntry(const UploadResumeSessionRecord &session,
-                         const EntryRecord &entry, const std::string &localPath,
+                         const Entry &entry, const std::string &localPath,
                          uint64_t localSize,
                          const std::optional<std::string> &localMtime,
                          const UploadPlan &plan) {
@@ -68,8 +68,8 @@ bool sessionMatchesEntry(const UploadResumeSessionRecord &session,
       session.uploadPartCount != static_cast<int>(plan.uploadPartCount)) {
     return false;
   }
-  if (session.localHash.has_value() && entry.localHash.has_value()) {
-    return session.localHash == entry.localHash;
+  if (session.localHash.has_value() && entry.contentHash.has_value()) {
+    return session.localHash == entry.contentHash;
   }
   return session.localMtime == localMtime;
 }
@@ -162,16 +162,16 @@ UploadService::UploadService(ArkiveApi &api, FileEncryptor &fileEncryptor,
       uploadFinalizer_(api, fileEncryptor) {}
 
 UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
-                                             const EntryRecord &entry) {
+                                             const Entry &entry) {
   if (entry.isDirectory) {
     throw std::invalid_argument("uploadFile does not support directories");
   }
-  if (!entry.localSize.has_value() || *entry.localSize < 0) {
+  if (!entry.size.has_value() || *entry.size < 0) {
     throw std::invalid_argument("uploadFile requires a valid local file size");
   }
 
   const std::string localPath = normalizedPath(path);
-  const uint64_t originalSize = static_cast<uint64_t>(*entry.localSize);
+  const uint64_t originalSize = static_cast<uint64_t>(*entry.size);
   const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
   const std::optional<std::string> localMtime = currentMtimeString(path);
   const UploadLimitsResponse limits = api_.uploadLimits();
@@ -233,7 +233,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
             .localPath = localPath,
             .localSize = static_cast<int64_t>(originalSize),
             .localMtime = localMtime,
-            .localHash = entry.localHash,
+            .localHash = entry.contentHash,
             .folderId = entry.parentFolderId,
             .vaultId = started.vaultId,
             .fileId = started.fileId,

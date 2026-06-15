@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/ArkiveApi.hpp"
-#include "repo/SyncRepo.hpp"
+#include "repo/EntryRepo.hpp"
 #include "upload/UploadTypes.hpp"
 #include <filesystem>
 #include <vector>
@@ -13,7 +13,7 @@ public:
   UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor);
 
   UploadArtifacts completeUpload(const std::filesystem::path &path,
-                                 const EntryRecord &entry,
+                                 const Entry &entry,
                                  const StartUploadResponse &started,
                                  const UploadPlan &plan,
                                  const std::vector<UploadedPartResult> &parts,

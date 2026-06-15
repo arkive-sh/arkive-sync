@@ -14,7 +14,7 @@ void appendBytes(std::vector<uint8_t> &target,
 }
 
 nlohmann::json buildMetadata(const std::filesystem::path &path,
-                             const EntryRecord &entry) {
+                             const Entry &entry) {
   const FileMimeDetails details = describeFileMime(path);
   return {
       {"schema", "arkive.file.metadata"},
@@ -22,7 +22,7 @@ nlohmann::json buildMetadata(const std::filesystem::path &path,
       {"name", details.name},
       {"mime", details.mime},
       {"extension", details.extension},
-      {"size", entry.localSize.value_or(0)},
+      {"size", entry.size.value_or(0)},
       {"preview", nullptr},
   };
 }
@@ -33,7 +33,7 @@ UploadFinalizer::UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor)
     : api_(api), fileEncryptor_(fileEncryptor) {}
 
 UploadArtifacts UploadFinalizer::completeUpload(
-    const std::filesystem::path &path, const EntryRecord &entry,
+    const std::filesystem::path &path, const Entry &entry,
     const StartUploadResponse &started, const UploadPlan &plan,
     const std::vector<UploadedPartResult> &parts,
     const std::vector<uint8_t> &fileKey) {

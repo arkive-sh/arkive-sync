@@ -2,6 +2,7 @@
 
 #include "api/ArkiveApi.hpp"
 #include "fs/FileEncryptor.hpp"
+#include "repo/EntryRepo.hpp"
 #include "repo/UploadResumeRepo.hpp"
 #include "upload/MultipartUploader.hpp"
 #include "upload/UploadFinalizer.hpp"
@@ -19,7 +20,7 @@ class IUploadService {
 public:
   virtual ~IUploadService() = default;
   virtual UploadFileResponse uploadFile(const std::filesystem::path &path,
-                                        const EntryRecord &entry) = 0;
+                                        const Entry &entry) = 0;
 };
 
 class UploadService : public IUploadService {
@@ -28,7 +29,7 @@ public:
                 UploadResumeRepo &uploadResumeRepo);
 
   UploadFileResponse uploadFile(const std::filesystem::path &path,
-                                const EntryRecord &entry) override;
+                                const Entry &entry) override;
 
 private:
   ArkiveApi &api_;

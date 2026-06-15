@@ -1,6 +1,5 @@
 #include "service/UploadJobRunner.hpp"
 
-#include "helpers/PathCodec.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/UploadService.hpp"
 
@@ -37,22 +36,24 @@ StaleUploadError::StaleUploadError(std::string message, std::string syncRootPath
 const std::string &StaleUploadError::syncRootPath() const { return syncRootPath_; }
 
 UploadJobRunner::UploadJobRunner(SyncRepo &syncRepo,
+                                 EntryRepo &entryRepo,
                                  IUploadService &uploadService)
-    : syncRepo_(syncRepo), uploadService_(uploadService) {}
+    : syncRepo_(syncRepo), entryRepo_(entryRepo),
+      uploadService_(uploadService) {}
 
 void UploadJobRunner::run(const TransferJob &job) {
-  const auto entry = syncRepo_.local().getEntryById(job.entryId);
+  const auto entry = entryRepo_.getEntryById(job.entryId);
   if (!entry.has_value()) {
     throw std::runtime_error("Queued upload entry is missing");
   }
 
-  const auto syncRoot = syncRepo_.roots().getSyncRootById(entry->syncRootId);
+  const auto syncRoot = syncRepo_.findSyncRootById(entry->syncRootId);
   if (!syncRoot.has_value()) {
     throw std::runtime_error("Queued upload sync root is missing");
   }
 
   const std::filesystem::path absolutePath =
-      PathCodec::joinRoot(syncRoot->localPath, entry->localPath);
+      std::filesystem::path(syncRoot->localPath) / entry->relativePath;
 
   if (!std::filesystem::exists(absolutePath)) {
     throw std::runtime_error("Queued upload file is missing");
@@ -61,19 +62,20 @@ void UploadJobRunner::run(const TransferJob &job) {
     throw std::runtime_error("Queued upload path is not a regular file");
   }
 
-  if (entry->localSize.has_value()) {
+  if (entry->size.has_value()) {
     std::error_code error;
     const auto currentSize = std::filesystem::file_size(absolutePath, error);
-    if (error || currentSize != static_cast<uint64_t>(*entry->localSize)) {
+    if (error || currentSize != static_cast<uint64_t>(*entry->size)) {
       throw StaleUploadError(
           "Queued upload file size changed since the last sync scan",
           syncRoot->localPath);
     }
   }
 
-  if (entry->localMtime.has_value()) {
+  if (entry->mtime.has_value()) {
     const auto currentMtime = currentMtimeString(absolutePath);
-    if (!currentMtime.has_value() || currentMtime != entry->localMtime) {
+    if (!currentMtime.has_value() ||
+        *currentMtime != toMtimeString(*entry->mtime)) {
       throw StaleUploadError(
           "Queued upload file mtime changed since the last sync scan",
           syncRoot->localPath);
@@ -81,5 +83,5 @@ void UploadJobRunner::run(const TransferJob &job) {
   }
 
   const UploadFileResponse uploaded = uploadService_.uploadFile(absolutePath, *entry);
-  syncRepo_.local().markEntryUploaded(job.entryId, uploaded.fileId);
+  entryRepo_.markEntryUploaded(job.entryId, uploaded.fileId);
 }

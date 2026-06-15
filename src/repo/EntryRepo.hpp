@@ -12,10 +12,13 @@ enum class EntrySyncState {
 };
 
 struct Entry {
+  std::string id;
+  std::optional<std::string> remoteId;
   std::string syncRootId;
   std::string relativePath;
   bool isDirectory{false};
   bool deleted{false};
+  std::optional<std::string> parentFolderId;
   std::optional<int64_t> size;
   std::optional<std::filesystem::file_time_type> mtime;
   std::optional<std::string> contentHash;
@@ -43,10 +46,12 @@ class EntryRepo {
 public:
   explicit EntryRepo(sqlite3 *db);
 
+  std::optional<Entry> getEntryById(const std::string &entryId);
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
+  void markEntryUploaded(const std::string &entryId, const std::string &remoteId);
   void markEntriesNotSeenInScanDeleted(const std::string &syncRootId,
                                        const std::string &scanJobId);
   void markPathDeleted(const std::string &syncRootId,

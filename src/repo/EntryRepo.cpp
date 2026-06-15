@@ -58,32 +58,44 @@ parseMtime(const unsigned char *raw) {
 }
 
 Entry readEntry(sqlite3_stmt *stmt) {
-  const char *syncRootId =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-  const char *relativePath =
+  const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+  const char *remoteId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-  const char *localSize =
+  const char *syncRootId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-  const unsigned char *localMtime = sqlite3_column_text(stmt, 3);
-  const char *contentHash =
+  const char *relativePath =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+  const char *parentFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-  const char *syncState =
+  const char *localSize =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+  const unsigned char *localMtime = sqlite3_column_text(stmt, 6);
+  const char *contentHash =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
+  const char *syncState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
   const char *lastSeenScanJobId =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-  const int isDirectory = sqlite3_column_int(stmt, 7);
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
+  const int isDirectory = sqlite3_column_int(stmt, 10);
 
-  if (syncRootId == nullptr || relativePath == nullptr || syncState == nullptr) {
+  if (id == nullptr || syncRootId == nullptr || relativePath == nullptr ||
+      syncState == nullptr) {
     throw std::runtime_error("entries row contained NULL value");
   }
 
   const EntrySyncState parsedSyncState = parseEntrySyncState(syncState);
 
   return Entry{
+      .id = id,
+      .remoteId =
+          remoteId != nullptr ? std::optional<std::string>(remoteId) : std::nullopt,
       .syncRootId = syncRootId,
       .relativePath = relativePath,
       .isDirectory = isDirectory != 0,
       .deleted = parsedSyncState == EntrySyncState::Deleted,
+      .parentFolderId = parentFolderId != nullptr
+                            ? std::optional<std::string>(parentFolderId)
+                            : std::nullopt,
       .size = localSize != nullptr ? std::optional<int64_t>(std::stoll(localSize))
                                    : std::nullopt,
       .mtime = parseMtime(localMtime),
@@ -106,12 +118,53 @@ EntryRepo::EntryRepo(sqlite3 *db) : db_(db) {
   }
 }
 
+std::optional<Entry> EntryRepo::getEntryById(const std::string &entryId) {
+  static constexpr const char *sql = R"sql(
+SELECT
+  id,
+  remote_id,
+  sync_root_id,
+  local_path,
+  parent_folder_id,
+  local_size,
+  local_mtime,
+  content_hash,
+  sync_state,
+  last_seen_scan_job_id,
+  is_directory
+FROM entries
+WHERE id = ?
+LIMIT 1;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+  }
+
+  return readEntry(stmt.get());
+}
+
 std::optional<Entry> EntryRepo::findEntryByPath(const std::string &syncRootId,
                                                 const std::string &relativePath) {
   static constexpr const char *sql = R"sql(
 SELECT
+  id,
+  remote_id,
   sync_root_id,
   local_path,
+  parent_folder_id,
   local_size,
   local_mtime,
   content_hash,
@@ -240,6 +293,33 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   bindText(db_, stmt.get(), 6, entry.contentHash);
   bindText(db_, stmt.get(), 7, toEntrySyncStateString(entry.syncState));
   bindText(db_, stmt.get(), 8, entry.lastSeenScanId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+  }
+}
+
+void EntryRepo::markEntryUploaded(const std::string &entryId,
+                                  const std::string &remoteId) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  remote_id = ?,
+  sync_state = 'unchanged',
+  last_synced_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, remoteId);
+  bindText(db_, stmt.get(), 2, entryId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
