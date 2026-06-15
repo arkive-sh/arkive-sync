@@ -19,6 +19,8 @@
 
 namespace {
 
+constexpr int kMaxDirtyPathsPerRootPerTick = 100;
+
 volatile std::sig_atomic_t gStopRequested = 0;
 
 void handleStopSignal(int) { gStopRequested = 1; }
@@ -123,9 +125,56 @@ int LinuxDaemon::run() {
         continue;
       }
 
-      if (scanRepo_->hasRunningScanJob(root.Id) &&
-          !rootScanner_->scanRoot(root.Id)) {
-        spdlog::error("Failed to continue scan for sync root {}", root.Id);
+      if (scanRepo_->hasRunningScanJob(root.Id)) {
+        if (!rootScanner_->scanRoot(root.Id)) {
+          spdlog::error("Failed to continue scan for sync root {}", root.Id);
+        }
+        continue;
+      }
+
+      int processedDirtyPaths = 0;
+
+      while (processedDirtyPaths < kMaxDirtyPathsPerRootPerTick) {
+        const auto dirtyPath = dirtyPathRepo_->claimNextPending(root.Id);
+        if (!dirtyPath.has_value()) {
+          break;
+        }
+
+        processedDirtyPaths++;
+        spdlog::info("Claimed dirty path {} for root {}", dirtyPath->id,
+                     root.Id);
+
+        try {
+          bool ok = false;
+
+          switch (dirtyPath->eventType) {
+          case DirtyPathEventType::Scan:
+          case DirtyPathEventType::Delete:
+            ok = dirtyPath->relativePath.has_value() &&
+                 rootScanner_->scanPath(root.Id, *dirtyPath->relativePath);
+            if (!ok) {
+              dirtyPathRepo_->markFailed(dirtyPath->id, "scanPath failed");
+              spdlog::error("Failed to scan dirty path {} for root {}",
+                            dirtyPath->id, root.Id);
+              break;
+            }
+            dirtyPathRepo_->markDone(dirtyPath->id);
+            break;
+          case DirtyPathEventType::FullRescan:
+            scanRepo_->ensureRunningScanJob(root.Id);
+            dirtyPathRepo_->markDone(dirtyPath->id);
+            break;
+          }
+        } catch (const std::exception &error) {
+          dirtyPathRepo_->markFailed(dirtyPath->id, error.what());
+          spdlog::error("Dirty path {} failed for root {}: {}", dirtyPath->id,
+                        root.Id, error.what());
+        } catch (...) {
+          dirtyPathRepo_->markFailed(dirtyPath->id,
+                                     "Unknown dirty path processing error");
+          spdlog::error("Dirty path {} failed for root {} with unknown error",
+                        dirtyPath->id, root.Id);
+        }
       }
     }
 

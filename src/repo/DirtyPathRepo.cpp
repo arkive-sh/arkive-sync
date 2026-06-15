@@ -269,6 +269,141 @@ DO UPDATE SET
   }
 }
 
+std::optional<DirtyPath>
+DirtyPathRepo::claimNextPending(const std::string &syncRootId) {
+  static constexpr const char *selectSql = R"sql(
+SELECT
+  id,
+  sync_root_id,
+  relative_path,
+  event_type,
+  status,
+  created_at,
+  updated_at
+FROM dirty_paths
+WHERE sync_root_id = ?
+  AND status IN ('pending', 'failed')
+ORDER BY
+  CASE status
+    WHEN 'pending' THEN 0
+    ELSE 1
+  END,
+  created_at ASC,
+  rowid ASC
+LIMIT 1;
+  )sql";
+
+  static constexpr const char *updateSql = R"sql(
+UPDATE dirty_paths
+SET
+  status = 'running',
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  execOrThrow(db_, "BEGIN IMMEDIATE;");
+  try {
+    sqlite3_stmt *rawSelectStmt = nullptr;
+    if (sqlite3_prepare_v2(db_, selectSql, -1, &rawSelectStmt, nullptr) !=
+        SQLITE_OK) {
+      throw std::runtime_error(std::string("Prepare failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+
+    StmtUniquePtr selectStmt(rawSelectStmt);
+    bindText(db_, selectStmt.get(), 1, syncRootId);
+
+    const int selectRc = sqlite3_step(selectStmt.get());
+    if (selectRc == SQLITE_DONE) {
+      execOrThrow(db_, "COMMIT;");
+      return std::nullopt;
+    }
+    if (selectRc != SQLITE_ROW) {
+      throw std::runtime_error(std::string("Step failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+
+    DirtyPath dirtyPath = readDirtyPath(selectStmt.get());
+
+    sqlite3_stmt *rawUpdateStmt = nullptr;
+    if (sqlite3_prepare_v2(db_, updateSql, -1, &rawUpdateStmt, nullptr) !=
+        SQLITE_OK) {
+      throw std::runtime_error(std::string("Prepare failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+
+    StmtUniquePtr updateStmt(rawUpdateStmt);
+    bindText(db_, updateStmt.get(), 1, dirtyPath.id);
+
+    const int updateRc = sqlite3_step(updateStmt.get());
+    if (updateRc != SQLITE_DONE) {
+      throw std::runtime_error(std::string("Step failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+
+    execOrThrow(db_, "COMMIT;");
+    dirtyPath.status = DirtyPathStatus::Running;
+    return dirtyPath;
+  } catch (...) {
+    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    throw;
+  }
+}
+
+void DirtyPathRepo::markDone(const std::string &dirtyPathId) {
+  static constexpr const char *sql = R"sql(
+UPDATE dirty_paths
+SET
+  status = 'done',
+  error_message = NULL,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, dirtyPathId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void DirtyPathRepo::markFailed(const std::string &dirtyPathId,
+                               const std::string &reason) {
+  static constexpr const char *sql = R"sql(
+UPDATE dirty_paths
+SET
+  status = 'failed',
+  error_message = ?,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, reason);
+  bindText(db_, stmt.get(), 2, dirtyPathId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
 std::vector<DirtyPath>
 DirtyPathRepo::getDirtyPathsBySyncRootId(const std::string &syncRootId) {
   static constexpr const char *sql = R"sql(

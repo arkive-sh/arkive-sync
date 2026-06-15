@@ -37,6 +37,9 @@ public:
   void insertDirtyPath(const std::string &syncRootId,
                        const std::optional<std::string> &relativePath,
                        DirtyPathEventType action);
+  std::optional<DirtyPath> claimNextPending(const std::string &syncRootId);
+  void markDone(const std::string &dirtyPathId);
+  void markFailed(const std::string &dirtyPathId, const std::string &reason);
   void record(const FileEvent &event);
   std::vector<DirtyPath>
   getDirtyPathsBySyncRootId(const std::string &syncRootId);

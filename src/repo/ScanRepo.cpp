@@ -1,6 +1,7 @@
 #include "repo/ScanRepo.hpp"
 
 #include "db/SqliteHelpers.hpp"
+#include "helpers/GenUUID.hpp"
 
 #include <stdexcept>
 
@@ -148,6 +149,19 @@ LIMIT 1;
   }
 
   return true;
+}
+
+void ScanRepo::ensureRunningScanJob(const std::string &syncRootId) {
+  if (hasRunningScanJob(syncRootId)) {
+    return;
+  }
+
+  insertScanJob(ScanJob{
+      .id = generateUUID(),
+      .syncRootId = syncRootId,
+      .status = "running",
+      .cursorPath = std::nullopt,
+  });
 }
 
 void ScanRepo::updateScanCursor(const std::string &jobId,
