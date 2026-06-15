@@ -273,3 +273,68 @@ WHERE sync_root_id = ?
     throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
   }
 }
+
+void EntryRepo::markPathDeleted(const std::string &syncRootId,
+                                const std::string &relativePath) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  sync_state = 'deleted',
+  updated_at = CURRENT_TIMESTAMP
+WHERE sync_root_id = ?
+  AND sync_state != 'deleted'
+  AND (
+    local_path = ?
+    OR local_path LIKE ?
+  );
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+  bindText(db_, stmt.get(), 2, relativePath);
+  bindText(db_, stmt.get(), 3, relativePath + "/%");
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+  }
+}
+
+void EntryRepo::markSubtreeEntriesNotSeenInScanDeleted(
+    const std::string &syncRootId, const std::string &relativePath,
+    const std::string &scanJobId) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  sync_state = 'deleted',
+  updated_at = CURRENT_TIMESTAMP
+WHERE sync_root_id = ?
+  AND sync_state != 'deleted'
+  AND (last_seen_scan_job_id IS NULL OR last_seen_scan_job_id != ?)
+  AND (
+    local_path = ?
+    OR local_path LIKE ?
+  );
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+  bindText(db_, stmt.get(), 2, scanJobId);
+  bindText(db_, stmt.get(), 3, relativePath);
+  bindText(db_, stmt.get(), 4, relativePath + "/%");
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+  }
+}

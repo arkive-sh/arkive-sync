@@ -49,6 +49,11 @@ public:
   void upsertFileEntry(const FileEntryUpsert &entry);
   void markEntriesNotSeenInScanDeleted(const std::string &syncRootId,
                                        const std::string &scanJobId);
+  void markPathDeleted(const std::string &syncRootId,
+                       const std::string &relativePath);
+  void markSubtreeEntriesNotSeenInScanDeleted(const std::string &syncRootId,
+                                              const std::string &relativePath,
+                                              const std::string &scanJobId);
 
 private:
   sqlite3 *db_;

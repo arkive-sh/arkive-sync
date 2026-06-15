@@ -25,8 +25,8 @@ RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
                          ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
                          EntryRepo &entryRepo,
                          std::unique_ptr<IFileWatcher> watcher)
-    : watcher_(std::move(watcher)), db_(db), crypto_(crypto),
-      syncSvc_(syncSvc), scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
+    : watcher_(std::move(watcher)), db_(db), crypto_(crypto), syncSvc_(syncSvc),
+      scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
       entryRepo_(entryRepo) {}
 
 // Helper to create a iterator
@@ -39,7 +39,7 @@ auto makeIterator = [](const std::filesystem::path &path,
 bool positionAfterCursor(ScanJob &job, std::error_code &ec,
                          std::filesystem::recursive_directory_iterator &it,
                          std::filesystem::recursive_directory_iterator &end,
-                         std::filesystem::path &rootPath) {
+                         const std::filesystem::path &rootPath) {
   if (!job.cursorPath.has_value()) {
     return true;
   }
@@ -64,8 +64,9 @@ bool positionAfterCursor(ScanJob &job, std::error_code &ec,
   }
 
   if (it == end) {
-    spdlog::warn("Scan cursor not found for root {} at {}, restarting from root",
-                 job.syncRootId, *job.cursorPath);
+    spdlog::warn(
+        "Scan cursor not found for root {} at {}, restarting from root",
+        job.syncRootId, *job.cursorPath);
     job.cursorPath = std::nullopt;
     it = makeIterator(rootPath, ec);
   } else {
@@ -86,8 +87,7 @@ bool RootScanner::handleFileEntry(const std::string &syncRootId,
     return false;
   }
 
-  if (fileSize >
-      static_cast<uintmax_t>(std::numeric_limits<int64_t>::max())) {
+  if (fileSize > static_cast<uintmax_t>(std::numeric_limits<int64_t>::max())) {
     return false;
   }
 
@@ -135,6 +135,111 @@ bool RootScanner::handleFileEntry(const std::string &syncRootId,
   return true;
 }
 
+bool RootScanner::scanSubtree(const std::string &syncRootId, ScanJob job,
+                              const std::filesystem::path &rootPath,
+                              const std::filesystem::path &subtreePath,
+                              const std::string &relativePath,
+                              std::error_code &ec) {
+  execOrThrow(db_, "BEGIN IMMEDIATE;");
+  try {
+    entryRepo_.upsertDirectoryEntry({
+        .syncRootId = syncRootId,
+        .relativePath = relativePath,
+        .lastSeenScanId = job.id,
+    });
+
+    while (true) {
+      std::filesystem::recursive_directory_iterator it =
+          makeIterator(subtreePath, ec);
+      if (ec) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+
+      std::filesystem::recursive_directory_iterator end;
+      if (!positionAfterCursor(job, ec, it, end, rootPath)) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+
+      size_t processed = 0;
+      std::optional<std::string> lastCursor;
+
+      while (it != end && processed < kMaxScanBatchSize) {
+        const std::filesystem::path childAbsPath = it->path();
+        const std::filesystem::path childRelPath =
+            std::filesystem::relative(childAbsPath, rootPath, ec);
+        if (ec) {
+          it.increment(ec);
+          continue;
+        }
+
+        const auto childStatus = it->symlink_status(ec);
+        if (ec) {
+          it.increment(ec);
+          continue;
+        }
+
+        if (std::filesystem::is_symlink(childStatus)) {
+          it.disable_recursion_pending();
+          it.increment(ec);
+          continue;
+        }
+
+        if (std::filesystem::is_directory(childStatus)) {
+          entryRepo_.upsertDirectoryEntry({
+              .syncRootId = syncRootId,
+              .relativePath = childRelPath.generic_string(),
+              .lastSeenScanId = job.id,
+          });
+          lastCursor = childRelPath.generic_string();
+          processed++;
+          it.increment(ec);
+          continue;
+        }
+
+        if (std::filesystem::is_regular_file(childStatus)) {
+          if (!handleFileEntry(syncRootId, job, childAbsPath,
+                               childRelPath.generic_string(), ec)) {
+            it.increment(ec);
+            continue;
+          }
+
+          lastCursor = childRelPath.generic_string();
+          processed++;
+          it.increment(ec);
+          continue;
+        }
+
+        it.disable_recursion_pending();
+        it.increment(ec);
+      }
+
+      if (ec) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+
+      if (it == end) {
+        entryRepo_.markSubtreeEntriesNotSeenInScanDeleted(syncRootId,
+                                                          relativePath, job.id);
+        execOrThrow(db_, "COMMIT;");
+        return true;
+      }
+
+      if (!lastCursor.has_value()) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+
+      job.cursorPath = *lastCursor;
+    }
+  } catch (...) {
+    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    throw;
+  }
+}
+
 bool RootScanner::scanRoot(const std::string &syncRootId) {
   auto syncRoot = syncSvc_.findSyncRootById(syncRootId);
   if (!syncRoot || !syncRoot->enabled) {
@@ -152,13 +257,13 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
   auto scanJob = scanRepo_.getScanJob(syncRootId);
 
   ScanJob job;
-  execOrThrow(db_, "BEGIN IMMEDIATE;");
+  execOrThrow(db_, "BEGIN IMMEDIATE;"); // Later move this after file hashing
   try {
     if (scanJob) {
       job = *scanJob;
       if (job.cursorPath.has_value()) {
-        spdlog::info("Starting scan batch for root {} from cursor {}", syncRootId,
-                     *job.cursorPath);
+        spdlog::info("Starting scan batch for root {} from cursor {}",
+                     syncRootId, *job.cursorPath);
       } else {
         spdlog::info("Starting scan batch for root {} from root", syncRootId);
       }
@@ -178,7 +283,8 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       spdlog::info("Created new scan job {} for root {}", job.id, syncRootId);
     }
 
-    std::filesystem::recursive_directory_iterator it = makeIterator(rootPath, ec);
+    std::filesystem::recursive_directory_iterator it =
+        makeIterator(rootPath, ec);
     if (ec) {
       sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
       return false;
@@ -224,7 +330,6 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
             .lastSeenScanId = job.id,
         });
 
-        // Later: daemon/watcher can add watch for this directory.
         lastCursor = rel;
         processed++;
 
@@ -269,4 +374,82 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
     sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     throw;
   }
+}
+
+bool RootScanner::scanPath(const std::string &rootId,
+                           const std::filesystem::path &relativePath) {
+  std::optional<SyncRoot> syncRoot = syncSvc_.findSyncRootById(rootId);
+  if (!syncRoot.has_value() || syncRoot->localPath == "") {
+    return false;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path rootPath =
+      std::filesystem::absolute(syncRoot->localPath, ec);
+  if (ec) {
+    return false;
+  }
+
+  const std::filesystem::path absPath = relativePath.is_absolute()
+                                            ? relativePath
+                                            : rootPath / relativePath;
+  const std::filesystem::path normalizedAbsPath =
+      std::filesystem::absolute(absPath, ec).lexically_normal();
+  if (ec) {
+    return false;
+  }
+
+  const std::filesystem::path normalizedRootPath = rootPath.lexically_normal();
+  const std::filesystem::path relPath =
+      normalizedAbsPath.lexically_relative(normalizedRootPath);
+  if (relPath.empty() || relPath == "." || *relPath.begin() == "..") {
+    return false;
+  }
+
+  if (!std::filesystem::exists(normalizedAbsPath, ec)) {
+    if (ec) {
+      return false;
+    }
+
+    entryRepo_.markPathDeleted(rootId, relPath.generic_string());
+    return true;
+  }
+
+  const auto status = std::filesystem::symlink_status(normalizedAbsPath, ec);
+  if (ec) {
+    return false;
+  }
+
+  const ScanJob pathJob{
+      .id = generateUUID(),
+      .syncRootId = rootId,
+      .status = "running",
+      .cursorPath = std::nullopt,
+  };
+
+  if (std::filesystem::is_regular_file(status)) {
+    execOrThrow(db_, "BEGIN IMMEDIATE;");
+    try {
+      const bool ok = handleFileEntry(rootId, pathJob, normalizedAbsPath,
+                                      relPath.generic_string(), ec) &&
+                      !ec;
+      if (!ok) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+
+      execOrThrow(db_, "COMMIT;");
+      return true;
+    } catch (...) {
+      sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+      throw;
+    }
+  }
+
+  if (!std::filesystem::is_directory(status)) {
+    return false;
+  }
+
+  return scanSubtree(rootId, pathJob, normalizedRootPath, normalizedAbsPath,
+                     relPath.generic_string(), ec);
 }
