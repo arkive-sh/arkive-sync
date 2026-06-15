@@ -197,6 +197,51 @@ LIMIT 1;
   return readEntry(stmt.get());
 }
 
+std::vector<Entry>
+EntryRepo::listPendingUploadFilesBySyncRootId(const std::string &syncRootId) {
+  static constexpr const char *sql = R"sql(
+SELECT
+  id,
+  remote_id,
+  sync_root_id,
+  local_path,
+  parent_folder_id,
+  local_size,
+  local_mtime,
+  content_hash,
+  sync_state,
+  last_seen_scan_job_id,
+  is_directory
+FROM entries
+WHERE sync_root_id = ?
+  AND sync_state = 'pending_upload'
+  AND is_directory = 0
+ORDER BY local_path ASC;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  std::vector<Entry> entries;
+  while (true) {
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    if (rc != SQLITE_ROW) {
+      throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+    }
+    entries.push_back(readEntry(stmt.get()));
+  }
+
+  return entries;
+}
+
 void EntryRepo::upsertDirectoryEntry(const DirectoryEntryUpsert &entry) {
   static constexpr const char *sql = R"sql(
 INSERT INTO entries (

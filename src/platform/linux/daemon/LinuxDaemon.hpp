@@ -11,6 +11,8 @@ class SyncRepo;
 class ScanRepo;
 class DirtyPathRepo;
 class EntryRepo;
+class QueueRepo;
+class QueueBuilder;
 class SyncService;
 class RootScanner;
 
@@ -21,6 +23,8 @@ public:
               std::unique_ptr<ScanRepo> scanRepo,
               std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
               std::unique_ptr<EntryRepo> entryRepo,
+              std::unique_ptr<QueueRepo> queueRepo,
+              std::unique_ptr<QueueBuilder> queueBuilder,
               std::unique_ptr<SyncService> syncService,
               std::unique_ptr<RootScanner> rootScanner,
               std::unique_ptr<IFileWatcher> watcher);
@@ -35,6 +39,8 @@ private:
   std::unique_ptr<ScanRepo> scanRepo_;
   std::unique_ptr<DirtyPathRepo> dirtyPathRepo_;
   std::unique_ptr<EntryRepo> entryRepo_;
+  std::unique_ptr<QueueRepo> queueRepo_;
+  std::unique_ptr<QueueBuilder> queueBuilder_;
   std::unique_ptr<SyncService> syncService_;
   std::unique_ptr<RootScanner> rootScanner_;
   std::unique_ptr<IFileWatcher> watcher_;

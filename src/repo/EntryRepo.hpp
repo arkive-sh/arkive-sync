@@ -4,6 +4,7 @@
 #include <optional>
 #include <sqlite3.h>
 #include <string>
+#include <vector>
 
 enum class EntrySyncState {
   Unchanged,
@@ -49,6 +50,8 @@ public:
   std::optional<Entry> getEntryById(const std::string &entryId);
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
+  std::vector<Entry>
+  listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
   void markEntryUploaded(const std::string &entryId, const std::string &remoteId);

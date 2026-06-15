@@ -23,8 +23,7 @@ RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
 
 RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
                          ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-                         EntryRepo &entryRepo,
-                         std::unique_ptr<IFileWatcher> watcher)
+                         EntryRepo &entryRepo, std::unique_ptr<IFileWatcher> watcher)
     : watcher_(std::move(watcher)), db_(db), crypto_(crypto), syncSvc_(syncSvc),
       scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
       entryRepo_(entryRepo) {}
@@ -338,10 +337,10 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       }
 
       if (std::filesystem::is_regular_file(status)) {
-        if (!handleFileEntry(syncRootId, job, absPath, rel, ec)) {
-          it.increment(ec);
-          continue;
-        }
+          if (!handleFileEntry(syncRootId, job, absPath, rel, ec)) {
+            it.increment(ec);
+            continue;
+          }
 
         lastCursor = rel;
         processed++;

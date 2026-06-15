@@ -7,6 +7,7 @@
 #include "repo/EntryRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "service/QueueBuilder.hpp"
 #include "service/SyncService.hpp"
 #include "sync/RootScanner.hpp"
 
@@ -73,14 +74,18 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<ScanRepo> scanRepo,
                          std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
                          std::unique_ptr<EntryRepo> entryRepo,
+                         std::unique_ptr<QueueRepo> queueRepo,
+                         std::unique_ptr<QueueBuilder> queueBuilder,
                          std::unique_ptr<SyncService> syncService,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
     : db_(std::move(db)), crypto_(std::move(crypto)),
       syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
       dirtyPathRepo_(std::move(dirtyPathRepo)),
-      entryRepo_(std::move(entryRepo)), syncService_(std::move(syncService)),
-      rootScanner_(std::move(rootScanner)), watcher_(std::move(watcher)) {}
+      entryRepo_(std::move(entryRepo)), queueRepo_(std::move(queueRepo)),
+      queueBuilder_(std::move(queueBuilder)),
+      syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
+      watcher_(std::move(watcher)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
@@ -144,6 +149,7 @@ int LinuxDaemon::run() {
         if (!rootScanner_->scanRoot(root.Id)) {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
+        queueBuilder_->build(root.Id);
         continue;
       }
 
@@ -173,6 +179,7 @@ int LinuxDaemon::run() {
                             dirtyPath->id, root.Id);
               break;
             }
+            queueBuilder_->build(root.Id);
             dirtyPathRepo_->markDone(dirtyPath->id);
             break;
           case DirtyPathEventType::FullRescan:
