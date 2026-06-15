@@ -119,6 +119,21 @@ int LinuxDaemon::run() {
                             "epoll_ctl add watcher failed");
   }
 
+  const auto processWatcherEvents = [&]() {
+    for (const auto &fileEvent : watcher_->poll()) {
+      if (fileEvent.oldPath.has_value()) {
+        spdlog::info("watch event type={} path={} old_path={}",
+                     eventTypeName(fileEvent.type), fileEvent.path.string(),
+                     fileEvent.oldPath->string());
+      } else {
+        spdlog::info("watch event type={} path={}",
+                     eventTypeName(fileEvent.type), fileEvent.path.string());
+      }
+
+      dirtyPathRepo_->record(fileEvent);
+    }
+  };
+
   while (!gStopRequested) {
     for (const auto &root : roots) {
       if (!root.enabled) {
@@ -190,23 +205,19 @@ int LinuxDaemon::run() {
                               "epoll_wait failed");
     }
 
+    // poll every tick so expired move/delete events are flushed
+    // even when no new inotify fd readability arrives.
+    if (readyCount == 0) {
+      processWatcherEvents();
+      continue;
+    }
+
     for (int i = 0; i < readyCount; ++i) {
       if (readyEvents[i].data.fd != watcher_->fd()) {
         continue;
       }
 
-      for (const auto &fileEvent : watcher_->poll()) {
-        if (fileEvent.oldPath.has_value()) {
-          spdlog::info("watch event type={} path={} old_path={}",
-                       eventTypeName(fileEvent.type), fileEvent.path.string(),
-                       fileEvent.oldPath->string());
-        } else {
-          spdlog::info("watch event type={} path={}",
-                       eventTypeName(fileEvent.type), fileEvent.path.string());
-        }
-
-        dirtyPathRepo_->record(fileEvent);
-      }
+      processWatcherEvents();
     }
   }
 
