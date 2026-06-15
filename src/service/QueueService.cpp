@@ -4,6 +4,7 @@
 #include "repo/QueueRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
+#include "service/UploadJobRunner.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -12,9 +13,11 @@
 
 QueueService::QueueService(EntryRepo &entryRepo, QueueRepo &queueRepo,
                            SyncRepo &syncRepo,
-                           FolderCreateWorker *folderCreateWorker)
+                           FolderCreateWorker *folderCreateWorker,
+                           UploadJobRunner *uploadJobRunner)
     : entryRepo_(entryRepo), queueRepo_(queueRepo), syncRepo_(syncRepo),
-      folderCreateWorker_(folderCreateWorker) {}
+      folderCreateWorker_(folderCreateWorker),
+      uploadJobRunner_(uploadJobRunner) {}
 
 void QueueService::build(const std::string &syncRootId) {
   const auto syncRoot = syncRepo_.findSyncRootById(syncRootId);
@@ -95,6 +98,35 @@ void QueueService::runTick() {
 
     try {
       folderCreateWorker_->run(*job);
+      queueRepo_.markDone(job->id);
+      if (!syncRootId.empty()) {
+        build(syncRootId);
+      }
+    } catch (const std::exception &error) {
+      queueRepo_.markFailed(job->id, error.what());
+      spdlog::error("Queue job {} failed: {}", job->id, error.what());
+    } catch (...) {
+      queueRepo_.markFailed(job->id, "Unknown queue job error");
+      spdlog::error("Queue job {} failed with unknown error", job->id);
+    }
+  }
+
+  if (uploadJobRunner_ == nullptr) {
+    return;
+  }
+
+  while (true) {
+    const auto job = queueRepo_.claimNextQueuedByType("upload_file");
+    if (!job.has_value()) {
+      break;
+    }
+
+    const auto entry = entryRepo_.getEntryById(job->entryId);
+    const std::string syncRootId =
+        entry.has_value() ? entry->syncRootId : std::string();
+
+    try {
+      uploadJobRunner_->run(*job);
       queueRepo_.markDone(job->id);
       if (!syncRootId.empty()) {
         build(syncRootId);

@@ -15,6 +15,7 @@ enum class EntrySyncState {
 struct Entry {
   std::string id;
   std::optional<std::string> remoteId;
+  std::optional<std::string> remoteFileId;
   std::string syncRootId;
   std::string relativePath;
   bool isDirectory{false};
@@ -56,7 +57,8 @@ public:
   listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
-  void markEntryUploaded(const std::string &entryId, const std::string &remoteId);
+  void markEntryUploaded(const std::string &entryId, const std::string &remoteId,
+                         const std::optional<std::string> &remoteParentFolderId);
   void markFolderCreated(const std::string &entryId,
                          const std::string &remoteFolderId,
                          const std::optional<std::string> &remoteParentFolderId);

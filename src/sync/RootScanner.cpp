@@ -23,7 +23,8 @@ RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
 
 RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
                          ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-                         EntryRepo &entryRepo, std::unique_ptr<IFileWatcher> watcher)
+                         EntryRepo &entryRepo,
+                         std::unique_ptr<IFileWatcher> watcher)
     : watcher_(std::move(watcher)), db_(db), crypto_(crypto), syncSvc_(syncSvc),
       scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
       entryRepo_(entryRepo) {}
@@ -116,6 +117,8 @@ bool RootScanner::handleFileEntry(const std::string &syncRootId,
   EntrySyncState syncState = EntrySyncState::Unchanged;
 
   if (!existing || existing->deleted) {
+    syncState = EntrySyncState::PendingUpload;
+  } else if (!existing->remoteId.has_value()) {
     syncState = EntrySyncState::PendingUpload;
   } else if (shouldHash && existing->contentHash != contentHash) {
     syncState = EntrySyncState::PendingUpload;
@@ -337,10 +340,10 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       }
 
       if (std::filesystem::is_regular_file(status)) {
-          if (!handleFileEntry(syncRootId, job, absPath, rel, ec)) {
-            it.increment(ec);
-            continue;
-          }
+        if (!handleFileEntry(syncRootId, job, absPath, rel, ec)) {
+          it.increment(ec);
+          continue;
+        }
 
         lastCursor = rel;
         processed++;
@@ -389,9 +392,8 @@ bool RootScanner::scanPath(const std::string &rootId,
     return false;
   }
 
-  const std::filesystem::path absPath = relativePath.is_absolute()
-                                            ? relativePath
-                                            : rootPath / relativePath;
+  const std::filesystem::path absPath =
+      relativePath.is_absolute() ? relativePath : rootPath / relativePath;
   const std::filesystem::path normalizedAbsPath =
       std::filesystem::absolute(absPath, ec).lexically_normal();
   if (ec) {

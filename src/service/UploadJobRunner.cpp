@@ -29,19 +29,25 @@ currentMtimeString(const std::filesystem::path &path) {
 
 } // namespace
 
-StaleUploadError::StaleUploadError(std::string message, std::string syncRootPath)
+StaleUploadError::StaleUploadError(std::string message,
+                                   std::string syncRootPath)
     : std::runtime_error(std::move(message)),
       syncRootPath_(std::move(syncRootPath)) {}
 
-const std::string &StaleUploadError::syncRootPath() const { return syncRootPath_; }
+const std::string &StaleUploadError::syncRootPath() const {
+  return syncRootPath_;
+}
 
-UploadJobRunner::UploadJobRunner(SyncRepo &syncRepo,
-                                 EntryRepo &entryRepo,
+UploadJobRunner::UploadJobRunner(SyncRepo &syncRepo, EntryRepo &entryRepo,
                                  IUploadService &uploadService)
     : syncRepo_(syncRepo), entryRepo_(entryRepo),
       uploadService_(uploadService) {}
 
 void UploadJobRunner::run(const TransferJob &job) {
+  if (job.jobType != "upload_file") {
+    throw std::invalid_argument("UploadJobRunner requires upload_file job");
+  }
+
   const auto entry = entryRepo_.getEntryById(job.entryId);
   if (!entry.has_value()) {
     throw std::runtime_error("Queued upload entry is missing");
@@ -54,6 +60,8 @@ void UploadJobRunner::run(const TransferJob &job) {
 
   const std::filesystem::path absolutePath =
       std::filesystem::path(syncRoot->localPath) / entry->relativePath;
+  const std::filesystem::path parentPath =
+      std::filesystem::path(entry->relativePath).parent_path();
 
   if (!std::filesystem::exists(absolutePath)) {
     throw std::runtime_error("Queued upload file is missing");
@@ -82,6 +90,27 @@ void UploadJobRunner::run(const TransferJob &job) {
     }
   }
 
-  const UploadFileResponse uploaded = uploadService_.uploadFile(absolutePath, *entry);
-  entryRepo_.markEntryUploaded(job.entryId, uploaded.fileId);
+  std::optional<std::string> remoteParentFolderId;
+  if (parentPath.empty()) {
+    if (!syncRoot->folderId.empty()) {
+      remoteParentFolderId = syncRoot->folderId;
+    } else {
+      remoteParentFolderId = std::nullopt;
+    }
+  } else {
+    const auto parentEntry = entryRepo_.findEntryByPath(
+        entry->syncRootId, parentPath.generic_string());
+    if (!parentEntry.has_value() || !parentEntry->remoteId.has_value()) {
+      throw std::runtime_error("Queued upload parent folder has no remote_id");
+    }
+    remoteParentFolderId = parentEntry->remoteId;
+  }
+
+  Entry uploadEntry = *entry;
+  uploadEntry.parentFolderId = remoteParentFolderId;
+
+  const UploadFileResponse uploaded =
+      uploadService_.uploadFile(absolutePath, uploadEntry);
+  entryRepo_.markEntryUploaded(job.entryId, uploaded.fileId,
+                               remoteParentFolderId);
 }

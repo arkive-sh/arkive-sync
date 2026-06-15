@@ -11,10 +11,13 @@
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "repo/UploadResumeRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
+#include "service/UploadJobRunner.hpp"
+#include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "sync/RootScanner.hpp"
@@ -33,6 +36,7 @@ std::unique_ptr<Daemon> Daemon::create() {
   auto entryRepo = std::make_unique<EntryRepo>(db->getDb());
   auto queueRepo = std::make_unique<QueueRepo>(db->getDb());
   auto userRepo = std::make_unique<UserRepo>(db->getDb());
+  auto uploadResumeRepo = std::make_unique<UploadResumeRepo>(db->getDb());
   auto syncService = std::make_unique<SyncService>(*syncRepo, *crypto);
   auto vaultService = std::make_unique<VaultService>(*userRepo, *crypto);
   auto fileEncryptor =
@@ -44,6 +48,8 @@ std::unique_ptr<Daemon> Daemon::create() {
   std::unique_ptr<ArkiveHttpClient> client;
   std::unique_ptr<ArkiveApi> api;
   std::unique_ptr<FolderCreateWorker> folderCreateWorker;
+  std::unique_ptr<UploadService> uploadService;
+  std::unique_ptr<UploadJobRunner> uploadJobRunner;
 
   if (const auto account = userRepo->getAccount();
       account.has_value() && !account->baseUrl.empty()) {
@@ -52,17 +58,23 @@ std::unique_ptr<Daemon> Daemon::create() {
     api = std::make_unique<ArkiveApi>(*client);
     folderCreateWorker = std::make_unique<FolderCreateWorker>(
         *syncRepo, *entryRepo, *fileEncryptor, *api);
+    uploadService = std::make_unique<UploadService>(*api, *fileEncryptor,
+                                                    *uploadResumeRepo);
+    uploadJobRunner = std::make_unique<UploadJobRunner>(
+        *syncRepo, *entryRepo, *uploadService);
   }
   auto queueService = std::make_unique<QueueService>(
-      *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get());
+      *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
+      uploadJobRunner.get());
 
   return std::make_unique<LinuxDaemon>(
       std::move(db), std::move(crypto), std::move(syncRepo),
       std::move(scanRepo), std::move(dirtyPathRepo), std::move(entryRepo),
       std::move(queueRepo), std::move(queueService),
-      std::move(userRepo), std::move(vaultService), std::move(fileEncryptor),
-      std::move(client), std::move(api),
-      std::move(folderCreateWorker), std::move(syncService),
+      std::move(userRepo), std::move(uploadResumeRepo),
+      std::move(vaultService), std::move(fileEncryptor), std::move(client),
+      std::move(api), std::move(folderCreateWorker), std::move(uploadService),
+      std::move(uploadJobRunner), std::move(syncService),
       std::move(rootScanner), std::move(watcher));
 #elif defined(__APPLE__)
   throw std::runtime_error("Daemon is not implemented on macOS yet");

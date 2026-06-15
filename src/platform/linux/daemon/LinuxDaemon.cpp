@@ -9,12 +9,15 @@
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
+#include "repo/UploadResumeRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "api/ArkiveApi.hpp"
 #include "api/ArkiveHttpClient.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
+#include "service/UploadJobRunner.hpp"
+#include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
 #include "sync/RootScanner.hpp"
 
@@ -84,11 +87,14 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<QueueRepo> queueRepo,
                          std::unique_ptr<QueueService> queueService,
                          std::unique_ptr<UserRepo> userRepo,
+                         std::unique_ptr<UploadResumeRepo> uploadResumeRepo,
                          std::unique_ptr<VaultService> vaultService,
                          std::unique_ptr<FileEncryptor> fileEncryptor,
                          std::unique_ptr<ArkiveHttpClient> client,
                          std::unique_ptr<ArkiveApi> api,
                          std::unique_ptr<FolderCreateWorker> folderCreateWorker,
+                         std::unique_ptr<UploadService> uploadService,
+                         std::unique_ptr<UploadJobRunner> uploadJobRunner,
                          std::unique_ptr<SyncService> syncService,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
@@ -98,10 +104,13 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       entryRepo_(std::move(entryRepo)), queueRepo_(std::move(queueRepo)),
       queueService_(std::move(queueService)),
       userRepo_(std::move(userRepo)),
+      uploadResumeRepo_(std::move(uploadResumeRepo)),
       vaultService_(std::move(vaultService)),
       fileEncryptor_(std::move(fileEncryptor)), client_(std::move(client)),
       api_(std::move(api)),
       folderCreateWorker_(std::move(folderCreateWorker)),
+      uploadService_(std::move(uploadService)),
+      uploadJobRunner_(std::move(uploadJobRunner)),
       syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
       watcher_(std::move(watcher)) {}
 
@@ -124,7 +133,10 @@ int LinuxDaemon::run() {
 
     if (!rootScanner_->scanRoot(root.Id)) {
       spdlog::error("Failed to start scan for sync root {}", root.Id);
+      continue;
     }
+
+    queueService_->build(root.Id);
   }
 
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));

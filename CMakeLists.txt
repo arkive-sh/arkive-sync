@@ -112,6 +112,8 @@ add_executable(arkive-sync
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/AuthService.cpp
+    src/service/UploadJobRunner.cpp
+    src/service/UploadService.cpp
     src/service/QueueService.cpp
     src/service/FolderCreateWorker.cpp
     src/service/SyncService.cpp
@@ -120,6 +122,7 @@ add_executable(arkive-sync
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
+    src/upload/UploadFinalizer.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/fs/UploadFileChunkReader.cpp
@@ -181,6 +184,7 @@ add_executable(arkive-sync-tests
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
+    tests/upload_job_runner2_test.cpp
     tests/upload_planner_test.cpp
     tests/vault_service_test.cpp
     src/crypto/Aad.cpp
@@ -200,6 +204,7 @@ add_executable(arkive-sync-tests
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/FolderCreateWorker.cpp
+    src/service/UploadJobRunner.cpp
     src/service/QueueService.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
