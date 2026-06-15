@@ -1,15 +1,22 @@
 #include "platform/Daemon.hpp"
 
+#include "api/ArkiveApi.hpp"
+#include "api/ArkiveHttpClient.hpp"
 #include "crypto/RustCrypto.hpp"
 #include "db/Sqlite.hpp"
 #include "fs/FileWatcher.hpp"
+#include "platform/AppDataPaths.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
-#include "service/QueueBuilder.hpp"
+#include "repo/UserRepo.hpp"
+#include "service/FolderCreateWorker.hpp"
+#include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
+#include "service/VaultService.hpp"
+#include "fs/FileEncryptor.hpp"
 #include "sync/RootScanner.hpp"
 
 #if defined(__linux__)
@@ -25,19 +32,37 @@ std::unique_ptr<Daemon> Daemon::create() {
   auto dirtyPathRepo = std::make_unique<DirtyPathRepo>(db->getDb());
   auto entryRepo = std::make_unique<EntryRepo>(db->getDb());
   auto queueRepo = std::make_unique<QueueRepo>(db->getDb());
-  auto queueBuilder =
-      std::make_unique<QueueBuilder>(*entryRepo, *queueRepo, *syncRepo);
-  auto syncService =
-      std::make_unique<SyncService>(*syncRepo, *crypto);
+  auto userRepo = std::make_unique<UserRepo>(db->getDb());
+  auto syncService = std::make_unique<SyncService>(*syncRepo, *crypto);
+  auto vaultService = std::make_unique<VaultService>(*userRepo, *crypto);
+  auto fileEncryptor =
+      std::make_unique<FileEncryptor>(*crypto, *vaultService);
   auto rootScanner = std::make_unique<RootScanner>(
       db->getDb(), *crypto, *syncService, *scanRepo, *dirtyPathRepo,
       *entryRepo);
   auto watcher = IFileWatcher::create();
+  std::unique_ptr<ArkiveHttpClient> client;
+  std::unique_ptr<ArkiveApi> api;
+  std::unique_ptr<FolderCreateWorker> folderCreateWorker;
+
+  if (const auto account = userRepo->getAccount();
+      account.has_value() && !account->baseUrl.empty()) {
+    client = std::make_unique<ArkiveHttpClient>(account->baseUrl,
+                                                cookieJarPath().string());
+    api = std::make_unique<ArkiveApi>(*client);
+    folderCreateWorker = std::make_unique<FolderCreateWorker>(
+        *syncRepo, *entryRepo, *fileEncryptor, *api);
+  }
+  auto queueService = std::make_unique<QueueService>(
+      *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get());
 
   return std::make_unique<LinuxDaemon>(
       std::move(db), std::move(crypto), std::move(syncRepo),
       std::move(scanRepo), std::move(dirtyPathRepo), std::move(entryRepo),
-      std::move(queueRepo), std::move(queueBuilder), std::move(syncService),
+      std::move(queueRepo), std::move(queueService),
+      std::move(userRepo), std::move(vaultService), std::move(fileEncryptor),
+      std::move(client), std::move(api),
+      std::move(folderCreateWorker), std::move(syncService),
       std::move(rootScanner), std::move(watcher));
 #elif defined(__APPLE__)
   throw std::runtime_error("Daemon is not implemented on macOS yet");

@@ -62,6 +62,20 @@ struct UploadCompleteSearchToken {
   int weight;
 };
 
+struct CreateFolderRequest {
+  std::optional<std::string> parentFolderId;
+  std::string encryptedName;
+  std::string encryptedMetadata;
+  std::vector<UploadCompleteSearchToken> searchTokens;
+};
+
+struct CreateFolderResponse {
+  std::string id;
+  std::optional<std::string> parentFolderId;
+  std::string encryptedName;
+  std::optional<std::string> encryptedMetadata;
+};
+
 struct UploadCompleteRequest {
   std::string encryptedMetadata;
   std::string encryptedFileKey;
@@ -113,6 +127,7 @@ public:
   virtual nlohmann::json me();
 
   virtual UploadLimitsResponse uploadLimits();
+  virtual CreateFolderResponse createFolder(const CreateFolderRequest &request);
   virtual StartUploadResponse startUpload(const StartUploadRequest &request);
   virtual PresignPartsResponse
   presignParts(const std::string &uploadSessionId,

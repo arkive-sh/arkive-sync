@@ -185,6 +185,40 @@ FileEncryptor::encryptMetadata(const std::string &metadataJson,
 }
 
 std::vector<uint8_t>
+FileEncryptor::encryptFolderName(const std::string &metadataJson) {
+  if (!vaultService_.isUnlocked()) {
+    vaultService_.restoreSession();
+  }
+  if (!vaultService_.isUnlocked()) {
+    throw std::runtime_error(
+        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
+  }
+
+  const std::vector<uint8_t> metadataBytes(metadataJson.begin(),
+                                           metadataJson.end());
+  return crypto_.encryptChunk(vaultService_.masterKey(),
+                              ArkiveAad::toBytes(ArkiveAad::kFolderName),
+                              metadataBytes);
+}
+
+std::vector<uint8_t>
+FileEncryptor::encryptFolderMetadata(const std::string &metadataJson) {
+  if (!vaultService_.isUnlocked()) {
+    vaultService_.restoreSession();
+  }
+  if (!vaultService_.isUnlocked()) {
+    throw std::runtime_error(
+        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
+  }
+
+  const std::vector<uint8_t> metadataBytes(metadataJson.begin(),
+                                           metadataJson.end());
+  return crypto_.encryptChunk(vaultService_.masterKey(),
+                              ArkiveAad::toBytes(ArkiveAad::kFolderMetadata),
+                              metadataBytes);
+}
+
+std::vector<uint8_t>
 FileEncryptor::encryptChunk(const std::vector<uint8_t> &plaintextChunk,
                             const std::vector<uint8_t> &fileKey,
                             const std::vector<uint8_t> &aad) {

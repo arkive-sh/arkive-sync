@@ -112,7 +112,8 @@ add_executable(arkive-sync
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
     src/service/AuthService.cpp
-    src/service/QueueBuilder.cpp
+    src/service/QueueService.cpp
+    src/service/FolderCreateWorker.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/sync/RootScanner.cpp
@@ -177,6 +178,7 @@ add_executable(arkive-sync-tests
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
     tests/inotify_watcher_test.cpp
+    tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
     tests/upload_planner_test.cpp
@@ -197,7 +199,8 @@ add_executable(arkive-sync-tests
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
     src/repo/UserRepo.cpp
-    src/service/QueueBuilder.cpp
+    src/service/FolderCreateWorker.cpp
+    src/service/QueueService.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/sync/RootScanner.cpp

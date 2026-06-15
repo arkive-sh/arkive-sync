@@ -60,6 +60,19 @@ std::optional<std::string> optionalString(const nlohmann::json &json,
   return json[key].get<std::string>();
 }
 
+CreateFolderResponse decodeCreateFolderResponse(const nlohmann::json &json) {
+  const nlohmann::json folder =
+      json.contains("folder") && json["folder"].is_object()
+          ? json["folder"]
+          : nlohmann::json::object();
+  return CreateFolderResponse{
+      .id = folder.value("id", ""),
+      .parentFolderId = optionalString(folder, "parentFolderId"),
+      .encryptedName = folder.value("encryptedName", ""),
+      .encryptedMetadata = optionalString(folder, "encryptedMetadata"),
+  };
+}
+
 SyncEntryResponse decodeSyncEntryResponse(const nlohmann::json &json) {
   return SyncEntryResponse{
       .type = json.value("type", ""),
@@ -149,6 +162,19 @@ nlohmann::json ArkiveApi::me() { return client_.getJson("/api/me"); }
 
 UploadLimitsResponse ArkiveApi::uploadLimits() {
   return decodeUploadLimitsResponse(client_.getJson("/api/uploads/limits"));
+}
+
+CreateFolderResponse ArkiveApi::createFolder(const CreateFolderRequest &request) {
+  return decodeCreateFolderResponse(client_.postJson(
+      "/api/folders",
+      {
+          {"parentFolderId", request.parentFolderId.has_value()
+                                 ? nlohmann::json(*request.parentFolderId)
+                                 : nlohmann::json(nullptr)},
+          {"encryptedName", request.encryptedName},
+          {"encryptedMetadata", request.encryptedMetadata},
+          {"searchTokens", encodeSearchTokens(request.searchTokens)},
+      }));
 }
 
 StartUploadResponse ArkiveApi::startUpload(const StartUploadRequest &request) {

@@ -12,7 +12,13 @@ class ScanRepo;
 class DirtyPathRepo;
 class EntryRepo;
 class QueueRepo;
-class QueueBuilder;
+class QueueService;
+class FolderCreateWorker;
+class UserRepo;
+class VaultService;
+class FileEncryptor;
+class ArkiveHttpClient;
+class ArkiveApi;
 class SyncService;
 class RootScanner;
 
@@ -24,7 +30,13 @@ public:
               std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
               std::unique_ptr<EntryRepo> entryRepo,
               std::unique_ptr<QueueRepo> queueRepo,
-              std::unique_ptr<QueueBuilder> queueBuilder,
+              std::unique_ptr<QueueService> queueService,
+              std::unique_ptr<UserRepo> userRepo,
+              std::unique_ptr<VaultService> vaultService,
+              std::unique_ptr<FileEncryptor> fileEncryptor,
+              std::unique_ptr<ArkiveHttpClient> client,
+              std::unique_ptr<ArkiveApi> api,
+              std::unique_ptr<FolderCreateWorker> folderCreateWorker,
               std::unique_ptr<SyncService> syncService,
               std::unique_ptr<RootScanner> rootScanner,
               std::unique_ptr<IFileWatcher> watcher);
@@ -40,7 +52,13 @@ private:
   std::unique_ptr<DirtyPathRepo> dirtyPathRepo_;
   std::unique_ptr<EntryRepo> entryRepo_;
   std::unique_ptr<QueueRepo> queueRepo_;
-  std::unique_ptr<QueueBuilder> queueBuilder_;
+  std::unique_ptr<QueueService> queueService_;
+  std::unique_ptr<UserRepo> userRepo_;
+  std::unique_ptr<VaultService> vaultService_;
+  std::unique_ptr<FileEncryptor> fileEncryptor_;
+  std::unique_ptr<ArkiveHttpClient> client_;
+  std::unique_ptr<ArkiveApi> api_;
+  std::unique_ptr<FolderCreateWorker> folderCreateWorker_;
   std::unique_ptr<SyncService> syncService_;
   std::unique_ptr<RootScanner> rootScanner_;
   std::unique_ptr<IFileWatcher> watcher_;

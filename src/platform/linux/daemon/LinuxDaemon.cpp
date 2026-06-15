@@ -3,13 +3,19 @@
 #include "crypto/RustCrypto.hpp"
 #include "db/Sqlite.hpp"
 #include "fs/FileWatcher.hpp"
+#include "fs/FileEncryptor.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
-#include "service/QueueBuilder.hpp"
+#include "repo/UserRepo.hpp"
+#include "api/ArkiveApi.hpp"
+#include "api/ArkiveHttpClient.hpp"
+#include "service/FolderCreateWorker.hpp"
+#include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
+#include "service/VaultService.hpp"
 #include "sync/RootScanner.hpp"
 
 #include <cerrno>
@@ -76,7 +82,13 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
                          std::unique_ptr<EntryRepo> entryRepo,
                          std::unique_ptr<QueueRepo> queueRepo,
-                         std::unique_ptr<QueueBuilder> queueBuilder,
+                         std::unique_ptr<QueueService> queueService,
+                         std::unique_ptr<UserRepo> userRepo,
+                         std::unique_ptr<VaultService> vaultService,
+                         std::unique_ptr<FileEncryptor> fileEncryptor,
+                         std::unique_ptr<ArkiveHttpClient> client,
+                         std::unique_ptr<ArkiveApi> api,
+                         std::unique_ptr<FolderCreateWorker> folderCreateWorker,
                          std::unique_ptr<SyncService> syncService,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
@@ -84,7 +96,12 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
       dirtyPathRepo_(std::move(dirtyPathRepo)),
       entryRepo_(std::move(entryRepo)), queueRepo_(std::move(queueRepo)),
-      queueBuilder_(std::move(queueBuilder)),
+      queueService_(std::move(queueService)),
+      userRepo_(std::move(userRepo)),
+      vaultService_(std::move(vaultService)),
+      fileEncryptor_(std::move(fileEncryptor)), client_(std::move(client)),
+      api_(std::move(api)),
+      folderCreateWorker_(std::move(folderCreateWorker)),
       syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
       watcher_(std::move(watcher)) {}
 
@@ -150,7 +167,7 @@ int LinuxDaemon::run() {
         if (!rootScanner_->scanRoot(root.Id)) {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
-        queueBuilder_->build(root.Id);
+        queueService_->build(root.Id);
         continue;
       }
 
@@ -180,7 +197,7 @@ int LinuxDaemon::run() {
                             dirtyPath->id, root.Id);
               break;
             }
-            queueBuilder_->build(root.Id);
+            queueService_->build(root.Id);
             dirtyPathRepo_->markDone(dirtyPath->id);
             break;
           case DirtyPathEventType::FullRescan:
@@ -200,6 +217,8 @@ int LinuxDaemon::run() {
         }
       }
     }
+
+    queueService_->runTick();
 
     epoll_event readyEvents[8]{};
     const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, 1000);

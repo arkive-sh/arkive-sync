@@ -198,6 +198,51 @@ LIMIT 1;
 }
 
 std::vector<Entry>
+EntryRepo::listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId) {
+  static constexpr const char *sql = R"sql(
+SELECT
+  id,
+  remote_id,
+  sync_root_id,
+  local_path,
+  parent_folder_id,
+  local_size,
+  local_mtime,
+  content_hash,
+  sync_state,
+  last_seen_scan_job_id,
+  is_directory
+FROM entries
+WHERE sync_root_id = ?
+  AND sync_state = 'pending_upload'
+  AND is_directory = 1
+ORDER BY local_path ASC;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  std::vector<Entry> entries;
+  while (true) {
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    if (rc != SQLITE_ROW) {
+      throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+    }
+    entries.push_back(readEntry(stmt.get()));
+  }
+
+  return entries;
+}
+
+std::vector<Entry>
 EntryRepo::listPendingUploadFilesBySyncRootId(const std::string &syncRootId) {
   static constexpr const char *sql = R"sql(
 SELECT
@@ -259,13 +304,17 @@ INSERT INTO entries (
   'directory',
   ?,
   1,
-  'unchanged',
+  'pending_upload',
   ?,
   CURRENT_TIMESTAMP
 )
 ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   is_directory = 1,
-  sync_state = 'unchanged',
+  sync_state = CASE
+    WHEN entries.remote_id IS NULL OR entries.sync_state = 'deleted'
+      THEN 'pending_upload'
+    ELSE 'unchanged'
+  END,
   last_seen_scan_job_id = excluded.last_seen_scan_job_id,
   updated_at = CURRENT_TIMESTAMP;
   )sql";
@@ -365,6 +414,40 @@ WHERE id = ?;
   StmtUniquePtr stmt(rawStmt);
   bindText(db_, stmt.get(), 1, remoteId);
   bindText(db_, stmt.get(), 2, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") + sqlite3_errmsg(db_));
+  }
+}
+
+void EntryRepo::markFolderCreated(
+    const std::string &entryId, const std::string &remoteFolderId,
+    const std::optional<std::string> &remoteParentFolderId) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  remote_id = ?,
+  remote_folder_id = ?,
+  remote_parent_folder_id = ?,
+  parent_folder_id = ?,
+  sync_state = 'unchanged',
+  last_synced_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") + sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, remoteFolderId);
+  bindText(db_, stmt.get(), 2, remoteFolderId);
+  bindOptionalText(db_, stmt.get(), 3, remoteParentFolderId);
+  bindOptionalText(db_, stmt.get(), 4, remoteParentFolderId);
+  bindText(db_, stmt.get(), 5, entryId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {

@@ -51,10 +51,15 @@ public:
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
   std::vector<Entry>
+  listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId);
+  std::vector<Entry>
   listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
   void markEntryUploaded(const std::string &entryId, const std::string &remoteId);
+  void markFolderCreated(const std::string &entryId,
+                         const std::string &remoteFolderId,
+                         const std::optional<std::string> &remoteParentFolderId);
   void markEntriesNotSeenInScanDeleted(const std::string &syncRootId,
                                        const std::string &scanJobId);
   void markPathDeleted(const std::string &syncRootId,

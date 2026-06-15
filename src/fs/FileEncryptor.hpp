@@ -19,6 +19,8 @@ public:
                                        const std::vector<uint8_t> &fileKey,
                                        const std::string &vaultId,
                                        const std::string &fileId);
+  std::vector<uint8_t> encryptFolderName(const std::string &metadataJson);
+  std::vector<uint8_t> encryptFolderMetadata(const std::string &metadataJson);
   std::vector<uint8_t> encryptChunk(const std::vector<uint8_t> &plaintextChunk,
                                     const std::vector<uint8_t> &fileKey,
                                     const std::vector<uint8_t> &aad);

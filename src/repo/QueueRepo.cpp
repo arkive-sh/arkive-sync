@@ -246,7 +246,8 @@ FROM transfer_queue;
   };
 }
 
-std::optional<TransferJob> QueueRepo::claimNextQueued() {
+std::optional<TransferJob>
+QueueRepo::claimNextQueuedByType(const std::string &jobType) {
   static constexpr const char *claimNextQueuedSql = R"sql(
 SELECT
   id,
@@ -261,6 +262,7 @@ SELECT
   retry_count
 FROM transfer_queue
 WHERE status = 'queued'
+  AND (? IS NULL OR job_type = ?)
 ORDER BY created_at ASC
 LIMIT 1;
   )sql";
@@ -285,6 +287,12 @@ AND status = 'queued';
     }
 
     StmtUniquePtr selectStmt(rawSelectStmt);
+    bindOptionalText(db_, selectStmt.get(), 1,
+                     jobType.empty() ? std::nullopt
+                                     : std::optional<std::string>(jobType));
+    bindOptionalText(db_, selectStmt.get(), 2,
+                     jobType.empty() ? std::nullopt
+                                     : std::optional<std::string>(jobType));
     const int selectRc = sqlite3_step(selectStmt.get());
     if (selectRc == SQLITE_DONE) {
       execOrThrow(db_, "COMMIT;");
@@ -324,6 +332,10 @@ AND status = 'queued';
     sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     throw;
   }
+}
+
+std::optional<TransferJob> QueueRepo::claimNextQueued() {
+  return claimNextQueuedByType("");
 }
 
 void QueueRepo::markDone(const std::string &jobId) {

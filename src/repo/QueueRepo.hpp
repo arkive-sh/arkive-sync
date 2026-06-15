@@ -45,6 +45,7 @@ public:
   QueueStats stats();
 
   std::optional<TransferJob> claimNextQueued();
+  std::optional<TransferJob> claimNextQueuedByType(const std::string &jobType);
 
   void markDone(const std::string &jobId);
 
