@@ -18,7 +18,7 @@ void QueueBuilder::build(const std::string &syncRootId) {
   }
 
   for (const auto &entry : entryRepo_.listPendingUploadFilesBySyncRootId(syncRootId)) {
-    if (queueRepo_.hasActiveUploadForEntry(entry.id) || !entry.size.has_value() ||
+    if (queueRepo_.hasActiveUploadFileForEntry(entry.id) || !entry.size.has_value() ||
         *entry.size < 0) {
       continue;
     }
@@ -40,7 +40,7 @@ void QueueBuilder::build(const std::string &syncRootId) {
       remoteFolderId = parentEntry->remoteId;
     }
 
-    queueRepo_.enqueueUpload(entry.id, entry.relativePath, remoteFolderId,
-                             static_cast<uint64_t>(*entry.size));
+    queueRepo_.enqueueUploadFile(entry.id, entry.relativePath, remoteFolderId,
+                                 static_cast<uint64_t>(*entry.size));
   }
 }

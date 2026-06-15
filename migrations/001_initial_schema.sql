@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS account (
   email TEXT,
   vault_salt TEXT,
   encrypted_master_key TEXT,
+  vault_session_key_id TEXT,
+  vault_session_blob TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,6 +40,12 @@ CREATE TABLE IF NOT EXISTS entries (
   local_mtime TEXT,
   content_hash TEXT,
   remote_updated_at TEXT,
+  remote_file_id TEXT,
+  remote_folder_id TEXT,
+  remote_parent_folder_id TEXT,
+  remote_deleted_at TEXT,
+  remote_purged_at TEXT,
+  last_remote_seen_at TEXT,
   sync_state TEXT NOT NULL,
   last_seen_scan_job_id TEXT,
   last_synced_at TEXT,
@@ -47,7 +55,7 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE TABLE IF NOT EXISTS transfer_queue (
   id TEXT PRIMARY KEY,
   entry_id TEXT,
-  direction TEXT NOT NULL,
+  job_type TEXT NOT NULL,
   status TEXT NOT NULL,
   local_path TEXT NOT NULL,
   remote_id TEXT,
@@ -76,9 +84,49 @@ CREATE TABLE IF NOT EXISTS dirty_paths (
   relative_path TEXT,
   event_type TEXT NOT NULL,
   status TEXT NOT NULL,
+  error_message TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS upload_resume_sessions (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT,
+  local_path TEXT NOT NULL UNIQUE,
+  local_size INTEGER NOT NULL,
+  local_mtime TEXT,
+  local_hash TEXT,
+  folder_id TEXT,
+  vault_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  upload_session_id TEXT NOT NULL UNIQUE,
+  provider_upload_id TEXT NOT NULL,
+  file_chunk_size INTEGER NOT NULL,
+  total_chunks INTEGER NOT NULL,
+  upload_part_size INTEGER NOT NULL,
+  upload_part_count INTEGER NOT NULL,
+  encrypted_file_key_blob TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_resume_entry_id
+ON upload_resume_sessions(entry_id);
+
+CREATE TABLE IF NOT EXISTS upload_resume_parts (
+  upload_session_id TEXT NOT NULL,
+  part_number INTEGER NOT NULL,
+  etag TEXT NOT NULL,
+  upload_hash TEXT NOT NULL,
+  chunk_manifest_json TEXT NOT NULL,
+  combined_chunk_hashes TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (upload_session_id, part_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_resume_parts_session
+ON upload_resume_parts(upload_session_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_sync_root_local_path
 ON entries(sync_root_id, local_path);
@@ -108,7 +156,20 @@ ON entries(remote_id);
 CREATE INDEX IF NOT EXISTS idx_entries_sync_state
 ON entries(sync_state);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_transfer_active_upload
-ON transfer_queue(entry_id, direction)
-WHERE direction = 'upload'
-AND status IN ('queued', 'running');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_roots_local_path
+ON sync_roots(local_path);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transfer_active_job
+ON transfer_queue(entry_id, job_type)
+WHERE status IN ('queued', 'running');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dirty_paths_pending_path
+ON dirty_paths(sync_root_id, relative_path)
+WHERE status = 'pending'
+  AND relative_path IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dirty_paths_pending_full_rescan
+ON dirty_paths(sync_root_id)
+WHERE status = 'pending'
+  AND relative_path IS NULL
+  AND event_type = 'full_rescan';

@@ -5,6 +5,7 @@
 #include "fs/FileWatcher.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/QueueBuilder.hpp"

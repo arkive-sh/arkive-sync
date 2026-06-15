@@ -10,7 +10,7 @@ TransferJob readTransferJob(sqlite3_stmt *stmt) {
   const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
   const char *entryId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-  const char *direction =
+  const char *jobType =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
   const char *status =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
@@ -21,7 +21,7 @@ TransferJob readTransferJob(sqlite3_stmt *stmt) {
   const char *remoteFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
 
-  if (id == nullptr || entryId == nullptr || direction == nullptr ||
+  if (id == nullptr || entryId == nullptr || jobType == nullptr ||
       status == nullptr || localPath == nullptr) {
     throw std::invalid_argument("transfer_queue row contained NULL value");
   }
@@ -29,7 +29,7 @@ TransferJob readTransferJob(sqlite3_stmt *stmt) {
   return TransferJob{
       .id = id,
       .entryId = entryId,
-      .direction = direction,
+      .jobType = jobType,
       .status = status,
       .localPath = localPath,
       .remoteId = remoteId != nullptr ? std::optional<std::string>(remoteId)
@@ -60,18 +60,19 @@ QueueRepo::QueueRepo(sqlite3 *db) : db_(db) {
   }
 }
 
-bool QueueRepo::hasActiveUploadForEntry(const std::string &entryId) {
-  static constexpr const char *hasActiveUploadSql = R"sql(
+bool QueueRepo::hasActiveJobForEntry(const std::string &entryId,
+                                     const std::string &jobType) {
+  static constexpr const char *hasActiveJobSql = R"sql(
 SELECT 1
 FROM transfer_queue
 WHERE entry_id = ?
-  AND direction = 'upload'
+  AND job_type = ?
   AND status IN ('queued', 'running')
 LIMIT 1;
   )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, hasActiveUploadSql, -1, &rawStmt, nullptr) !=
+  if (sqlite3_prepare_v2(db_, hasActiveJobSql, -1, &rawStmt, nullptr) !=
       SQLITE_OK) {
     throw std::runtime_error(std::string("Prepare failed: ") +
                              sqlite3_errmsg(db_));
@@ -79,6 +80,7 @@ LIMIT 1;
 
   StmtUniquePtr stmt(rawStmt);
   bindText(db_, stmt.get(), 1, entryId);
+  bindText(db_, stmt.get(), 2, jobType);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc == SQLITE_DONE) {
@@ -92,15 +94,22 @@ LIMIT 1;
   return true;
 }
 
-void QueueRepo::enqueueUpload(const std::string &entryId,
-                              const std::string &localPath,
-                              const std::optional<std::string> &remoteFolderId,
-                              uint64_t bytesTotal) {
-  static constexpr const char *enqueueUploadSql = R"sql(
+bool QueueRepo::hasActiveCreateFolderForEntry(const std::string &entryId) {
+  return hasActiveJobForEntry(entryId, "create_folder");
+}
+
+bool QueueRepo::hasActiveUploadFileForEntry(const std::string &entryId) {
+  return hasActiveJobForEntry(entryId, "upload_file");
+}
+
+void QueueRepo::enqueueCreateFolder(
+    const std::string &entryId, const std::string &localPath,
+    const std::optional<std::string> &remoteFolderId) {
+  static constexpr const char *enqueueCreateFolderSql = R"sql(
 INSERT OR IGNORE INTO transfer_queue (
   id,
   entry_id,
-  direction,
+  job_type,
   status,
   local_path,
   remote_id,
@@ -114,7 +123,62 @@ INSERT OR IGNORE INTO transfer_queue (
 ) VALUES (
   ?,
   ?,
-  'upload',
+  'create_folder',
+  'queued',
+  ?,
+  NULL,
+  ?,
+  0,
+  0,
+  NULL,
+  0,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+);
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, enqueueCreateFolderSql, -1, &rawStmt, nullptr) !=
+      SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, generateQueueId());
+  bindText(db_, stmt.get(), 2, entryId);
+  bindText(db_, stmt.get(), 3, localPath);
+  bindOptionalText(db_, stmt.get(), 4, remoteFolderId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void QueueRepo::enqueueUploadFile(
+    const std::string &entryId, const std::string &localPath,
+    const std::optional<std::string> &remoteFolderId, uint64_t bytesTotal) {
+  static constexpr const char *enqueueUploadFileSql = R"sql(
+INSERT OR IGNORE INTO transfer_queue (
+  id,
+  entry_id,
+  job_type,
+  status,
+  local_path,
+  remote_id,
+  folder_id,
+  bytes_total,
+  bytes_done,
+  error_message,
+  retry_count,
+  created_at,
+  updated_at
+) VALUES (
+  ?,
+  ?,
+  'upload_file',
   'queued',
   ?,
   NULL,
@@ -129,7 +193,7 @@ INSERT OR IGNORE INTO transfer_queue (
   )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, enqueueUploadSql, -1, &rawStmt, nullptr) !=
+  if (sqlite3_prepare_v2(db_, enqueueUploadFileSql, -1, &rawStmt, nullptr) !=
       SQLITE_OK) {
     throw std::runtime_error(std::string("Prepare failed: ") +
                              sqlite3_errmsg(db_));
@@ -182,12 +246,12 @@ FROM transfer_queue;
   };
 }
 
-std::optional<TransferJob> QueueRepo::claimNextQueuedUpload() {
-  static constexpr const char *claimNextQueuedUploadSql = R"sql(
+std::optional<TransferJob> QueueRepo::claimNextQueued() {
+  static constexpr const char *claimNextQueuedSql = R"sql(
 SELECT
   id,
   entry_id,
-  direction,
+  job_type,
   status,
   local_path,
   remote_id,
@@ -196,8 +260,7 @@ SELECT
   bytes_done,
   retry_count
 FROM transfer_queue
-WHERE direction = 'upload'
-  AND status = 'queued'
+WHERE status = 'queued'
 ORDER BY created_at ASC
 LIMIT 1;
   )sql";
@@ -215,7 +278,7 @@ AND status = 'queued';
 
   try {
     sqlite3_stmt *rawSelectStmt = nullptr;
-    if (sqlite3_prepare_v2(db_, claimNextQueuedUploadSql, -1, &rawSelectStmt,
+    if (sqlite3_prepare_v2(db_, claimNextQueuedSql, -1, &rawSelectStmt,
                            nullptr) != SQLITE_OK) {
       throw std::runtime_error(std::string("Prepare failed: ") +
                                sqlite3_errmsg(db_));

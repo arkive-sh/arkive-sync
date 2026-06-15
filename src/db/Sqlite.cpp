@@ -18,16 +18,8 @@ struct MigrationStep {
   const char *filename;
 };
 
-constexpr std::array<MigrationStep, 9> kMigrations{{
+constexpr std::array<MigrationStep, 1> kMigrations{{
     {1, "001_initial_schema.sql"},
-    {2, "002_account_vault_session.sql"},
-    {3, "003_entries_local_path_hash.sql"},
-    {4, "004_sync_roots_local_path_hash.sql"},
-    {5, "005_account_vault_session_blob.sql"},
-    {6, "006_upload_resume.sql"},
-    {7, "007_entries_remote_metadata.sql"},
-    {8, "008_dirty_paths_pending_dedupe.sql"},
-    {9, "009_dirty_paths_error_message.sql"},
 }};
 
 std::filesystem::path migrationsDir() {

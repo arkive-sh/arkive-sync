@@ -46,18 +46,18 @@ TEST_CASE("QueueRepo enqueues upload once") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  repo.enqueueUpload("entry-1", "", std::nullopt, 123);
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
 
   REQUIRE(countRows(db.get(), "SELECT COUNT(*) FROM transfer_queue;") == 1);
-  REQUIRE(repo.hasActiveUploadForEntry("entry-1"));
+  REQUIRE(repo.hasActiveUploadFileForEntry("entry-1"));
 }
 
 TEST_CASE("QueueRepo prevents duplicate active upload") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  repo.enqueueUpload("entry-1", "", std::nullopt, 123);
-  repo.enqueueUpload("entry-1", "", std::nullopt, 123);
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
 
   REQUIRE(countRows(db.get(), "SELECT COUNT(*) FROM transfer_queue;") == 1);
 }
@@ -66,13 +66,14 @@ TEST_CASE("QueueRepo claims queued upload and marks it running") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  repo.enqueueUpload("entry-1", "", std::optional<std::string>("folder-1"),
-                     123);
+  repo.enqueueUploadFile("entry-1", "", std::optional<std::string>("folder-1"),
+                         123);
 
-  const std::optional<TransferJob> claimed = repo.claimNextQueuedUpload();
+  const std::optional<TransferJob> claimed = repo.claimNextQueued();
 
   REQUIRE(claimed.has_value());
   REQUIRE(claimed->entryId == "entry-1");
+  REQUIRE(claimed->jobType == "upload_file");
   REQUIRE(claimed->status == "running");
   REQUIRE(claimed->remoteFolderId == std::optional<std::string>("folder-1"));
   REQUIRE(readStatus(db.get(), claimed->id) == "running");
@@ -82,8 +83,8 @@ TEST_CASE("QueueRepo retries failed uploads") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  repo.enqueueUpload("entry-1", "", std::nullopt, 123);
-  const std::optional<TransferJob> claimed = repo.claimNextQueuedUpload();
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
+  const std::optional<TransferJob> claimed = repo.claimNextQueued();
   REQUIRE(claimed.has_value());
 
   repo.markFailed(claimed->id, "boom");
@@ -97,8 +98,8 @@ TEST_CASE("QueueRepo clears done uploads") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  repo.enqueueUpload("entry-1", "", std::nullopt, 123);
-  const std::optional<TransferJob> claimed = repo.claimNextQueuedUpload();
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
+  const std::optional<TransferJob> claimed = repo.claimNextQueued();
   REQUIRE(claimed.has_value());
   repo.markDone(claimed->id);
 
@@ -116,7 +117,23 @@ TEST_CASE("QueueRepo returns no job when queue is empty") {
   TestDb db;
   QueueRepo repo(db.get());
 
-  const auto claimed = repo.claimNextQueuedUpload();
+  const auto claimed = repo.claimNextQueued();
 
   REQUIRE_FALSE(claimed.has_value());
+}
+
+TEST_CASE("QueueRepo enqueues create folder once") {
+  TestDb db;
+  QueueRepo repo(db.get());
+
+  repo.enqueueCreateFolder("entry-1", "docs", std::optional<std::string>("root-folder"));
+  repo.enqueueCreateFolder("entry-1", "docs", std::optional<std::string>("root-folder"));
+
+  REQUIRE(countRows(db.get(), "SELECT COUNT(*) FROM transfer_queue;") == 1);
+  REQUIRE(repo.hasActiveCreateFolderForEntry("entry-1"));
+
+  const auto claimed = repo.claimNextQueued();
+  REQUIRE(claimed.has_value());
+  REQUIRE(claimed->jobType == "create_folder");
+  REQUIRE(claimed->remoteFolderId == std::optional<std::string>("root-folder"));
 }

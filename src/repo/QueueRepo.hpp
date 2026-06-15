@@ -15,7 +15,7 @@ struct QueueStats {
 struct TransferJob {
   std::string id;
   std::string entryId;
-  std::string direction;
+  std::string jobType;
   std::string status;
   std::string localPath;
   std::optional<std::string> remoteId;
@@ -29,15 +29,22 @@ class QueueRepo {
 public:
   explicit QueueRepo(sqlite3 *db);
 
-  bool hasActiveUploadForEntry(const std::string &entryId);
+  bool hasActiveJobForEntry(const std::string &entryId,
+                            const std::string &jobType);
+  bool hasActiveCreateFolderForEntry(const std::string &entryId);
+  bool hasActiveUploadFileForEntry(const std::string &entryId);
 
-  void enqueueUpload(const std::string &entryId, const std::string &localPath,
-                     const std::optional<std::string> &remoteFolderId,
-                     uint64_t bytesTotal);
+  void enqueueCreateFolder(const std::string &entryId,
+                           const std::string &localPath,
+                           const std::optional<std::string> &remoteFolderId);
+  void enqueueUploadFile(const std::string &entryId,
+                         const std::string &localPath,
+                         const std::optional<std::string> &remoteFolderId,
+                         uint64_t bytesTotal);
 
   QueueStats stats();
 
-  std::optional<TransferJob> claimNextQueuedUpload();
+  std::optional<TransferJob> claimNextQueued();
 
   void markDone(const std::string &jobId);
 

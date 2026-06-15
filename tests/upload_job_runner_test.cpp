@@ -142,7 +142,7 @@ TEST_CASE("UploadJobRunner success uploads file, marks entry synced, saves remot
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
-      .direction = "upload",
+      .jobType = "upload_file",
       .status = "running",
       .localPath = entry.localPath,
       .remoteId = std::nullopt,
@@ -211,7 +211,7 @@ TEST_CASE("UploadJobRunner uploader failure throws; entry stays pending_upload")
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
-      .direction = "upload",
+      .jobType = "upload_file",
       .status = "running",
       .localPath = entry.localPath,
       .remoteId = std::nullopt,
@@ -272,7 +272,7 @@ TEST_CASE("UploadJobRunner missing local file throws") {
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
-      .direction = "upload",
+      .jobType = "upload_file",
       .status = "running",
       .localPath = entry.localPath,
       .remoteId = std::nullopt,
@@ -331,7 +331,7 @@ TEST_CASE("UploadJobRunner size mismatch before upload throws stale error") {
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
-      .direction = "upload",
+      .jobType = "upload_file",
       .status = "running",
       .localPath = entry.localPath,
       .remoteId = std::nullopt,
@@ -398,7 +398,7 @@ TEST_CASE("UploadJobRunner mtime mismatch before upload throws stale error") {
   const TransferJob job{
       .id = "job-1",
       .entryId = entry.id,
-      .direction = "upload",
+      .jobType = "upload_file",
       .status = "running",
       .localPath = entry.localPath,
       .remoteId = std::nullopt,
