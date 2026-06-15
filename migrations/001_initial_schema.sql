@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS account (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   base_url TEXT NOT NULL DEFAULT 'http://localhost:8080',
+  user_id TEXT,
   email TEXT,
   vault_salt TEXT,
   encrypted_master_key TEXT,

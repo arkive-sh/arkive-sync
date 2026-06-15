@@ -6,6 +6,7 @@
 
 struct AccountRecord {
   std::string baseUrl;
+  std::optional<std::string> userId;
   std::optional<std::string> email;
   std::optional<std::string> vaultSalt;
   std::optional<std::string> encryptedMasterKey;

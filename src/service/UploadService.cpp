@@ -1,6 +1,7 @@
 #include "service/UploadService.hpp"
 
 #include "api/HttpError.hpp"
+#include "fs/helpers/PathHelpers.hpp"
 #include "helpers/Base64.hpp"
 #include "upload/UploadPlanner.hpp"
 #include "upload/UploadPolicy.hpp"
@@ -18,10 +19,6 @@ std::string toMtimeString(const std::filesystem::file_time_type &time) {
                       time.time_since_epoch())
                       .count();
   return std::to_string(static_cast<long long>(ms));
-}
-
-std::string normalizedPath(const std::filesystem::path &path) {
-  return std::filesystem::absolute(path).lexically_normal().string();
 }
 
 std::optional<std::string>
@@ -170,7 +167,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
     throw std::invalid_argument("uploadFile requires a valid local file size");
   }
 
-  const std::string localPath = normalizedPath(path);
+  const std::string localPath = normalizeFsPath(path);
   const uint64_t originalSize = static_cast<uint64_t>(*entry.size);
   const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
   const std::optional<std::string> localMtime = currentMtimeString(path);

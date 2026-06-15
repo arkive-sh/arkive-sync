@@ -93,6 +93,7 @@ int App::run(int argc, char *argv[]) {
     const std::string newBaseUrl = argv[2];
     AccountRecord account{
         .baseUrl = newBaseUrl,
+        .userId = std::nullopt,
         .email = std::nullopt,
         .vaultSalt = std::nullopt,
         .encryptedMasterKey = std::nullopt,
@@ -103,6 +104,7 @@ int App::run(int argc, char *argv[]) {
     if (const auto existingAccount = userRepo_.getAccount();
         existingAccount.has_value()) {
       if (existingAccount->baseUrl == newBaseUrl) {
+        account.userId = existingAccount->userId;
         account.email = existingAccount->email;
         account.vaultSalt = existingAccount->vaultSalt;
         account.encryptedMasterKey = existingAccount->encryptedMasterKey;

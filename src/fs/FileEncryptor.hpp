@@ -33,8 +33,7 @@ public:
   std::vector<uint8_t> hashBytes(const std::vector<uint8_t> &bytes);
   std::vector<UploadCompleteSearchToken>
   createSearchTokenEntries(const std::string &vaultId,
-                           const std::string &name,
-                           const std::string &mime);
+                           const std::string &text);
   void zeroize(std::vector<uint8_t> &bytes);
 
 private:

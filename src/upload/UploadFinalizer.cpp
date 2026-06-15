@@ -93,7 +93,7 @@ UploadArtifacts UploadFinalizer::completeUpload(
             .encryptedManifest = encodeBase64(artifacts.encryptedManifest),
             .encryptedHash = encodeBase64(artifacts.encryptedHash),
             .searchTokens = fileEncryptor_.createSearchTokenEntries(
-                started.vaultId, details.name, details.mime),
+                started.vaultId, details.name),
             .hasThumbnail = false,
             .thumbnailMime = "",
             .thumbnailWidth = 0,

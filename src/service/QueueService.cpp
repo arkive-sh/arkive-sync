@@ -20,6 +20,10 @@ QueueService::QueueService(EntryRepo &entryRepo, QueueRepo &queueRepo,
       uploadJobRunner_(uploadJobRunner) {}
 
 void QueueService::build(const std::string &syncRootId) {
+  if (folderCreateWorker_ != nullptr) {
+    folderCreateWorker_->ensureRootFolder(syncRootId);
+  }
+
   const auto syncRoot = syncRepo_.findSyncRootById(syncRootId);
   if (!syncRoot.has_value()) {
     return;

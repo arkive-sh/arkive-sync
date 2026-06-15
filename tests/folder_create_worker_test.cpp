@@ -49,6 +49,7 @@ void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
 
   userRepo.upsertAccount(AccountRecord{
       .baseUrl = "http://localhost:8080",
+      .userId = std::string("user-1"),
       .email = std::string("test@example.com"),
       .vaultSalt = encodeBase64(salt),
       .encryptedMasterKey = encodeBase64(encryptedMasterKey),
@@ -89,7 +90,7 @@ TEST_CASE("FolderCreateWorker creates remote folder and updates entry") {
   const auto entry = entryRepo.findEntryByPath("root-1", "docs");
   REQUIRE(entry.has_value());
 
-  FolderCreateWorker worker(syncRepo, entryRepo, fileEncryptor, api);
+  FolderCreateWorker worker(syncRepo, entryRepo, userRepo, fileEncryptor, api);
   worker.run(TransferJob{
       .id = "job-1",
       .entryId = entry->id,
@@ -124,4 +125,44 @@ TEST_CASE("FolderCreateWorker creates remote folder and updates entry") {
   REQUIRE(updated->parentFolderId ==
           std::optional<std::string>("root-folder-1"));
   REQUIRE(updated->syncState == EntrySyncState::Unchanged);
+}
+
+TEST_CASE("FolderCreateWorker creates remote sync root folder when missing") {
+  TestDatabase db;
+  RustCrypto crypto;
+  UserRepo userRepo(db.get());
+  VaultService vaultService(userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>());
+  seedUnlockedAccount(userRepo, vaultService, crypto);
+
+  SyncRepo syncRepo(db.get());
+  EntryRepo entryRepo(db.get());
+  FileEncryptor fileEncryptor(crypto, vaultService);
+  FakeArkiveApi api;
+
+  syncRepo.upsertSyncRoot({
+      .Id = "root-1",
+      .localPath = "/tmp/daemon-test",
+      .folderId = "",
+      .enabled = true,
+  });
+
+  FolderCreateWorker worker(syncRepo, entryRepo, userRepo, fileEncryptor, api);
+  REQUIRE(worker.ensureRootFolder("root-1"));
+
+  REQUIRE(api.requests.size() == 1);
+  REQUIRE_FALSE(api.requests[0].parentFolderId.has_value());
+
+  const std::vector<uint8_t> decryptedMetadata = crypto.decryptChunk(
+      vaultService.masterKey(),
+      ArkiveAad::toBytes(ArkiveAad::kFolderMetadata),
+      decodeBase64(api.requests[0].encryptedMetadata));
+  const auto metadataJson =
+      nlohmann::json::parse(std::string(decryptedMetadata.begin(),
+                                        decryptedMetadata.end()));
+  REQUIRE(metadataJson.at("name").get<std::string>() == "daemon-test");
+
+  const auto updatedRoot = syncRepo.findSyncRootById("root-1");
+  REQUIRE(updatedRoot.has_value());
+  REQUIRE(updatedRoot->folderId == "remote-folder-1");
 }

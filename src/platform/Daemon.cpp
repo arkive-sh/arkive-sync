@@ -57,7 +57,7 @@ std::unique_ptr<Daemon> Daemon::create() {
                                                 cookieJarPath().string());
     api = std::make_unique<ArkiveApi>(*client);
     folderCreateWorker = std::make_unique<FolderCreateWorker>(
-        *syncRepo, *entryRepo, *fileEncryptor, *api);
+        *syncRepo, *entryRepo, *userRepo, *fileEncryptor, *api);
     uploadService = std::make_unique<UploadService>(*api, *fileEncryptor,
                                                     *uploadResumeRepo);
     uploadJobRunner = std::make_unique<UploadJobRunner>(

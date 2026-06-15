@@ -90,49 +90,16 @@ struct SearchTerm {
   int weight;
 };
 
-std::vector<SearchTerm> termsForFile(const std::string &name,
-                                     const std::string &mime) {
-  const std::string normalizedName = normalizeText(name);
-  const std::string normalizedMime = normalizeText(mime);
-
-  std::string ext;
-  const std::size_t dot = normalizedName.find_last_of('.');
-  if (dot != std::string::npos && dot + 1 < normalizedName.size()) {
-    ext = normalizedName.substr(dot + 1);
-  }
-
-  std::string wordsSource = normalizedName;
-  std::replace(wordsSource.begin(), wordsSource.end(), '.', ' ');
+std::vector<SearchTerm> termsForText(const std::string &text) {
+  const std::string normalized = normalizeText(text);
   std::vector<SearchTerm> terms;
-
-  std::size_t start = 0;
-  while (start < wordsSource.size()) {
-    const std::size_t end = wordsSource.find(' ', start);
-    const std::string word =
-        wordsSource.substr(start, end == std::string::npos ? end : end - start);
-    if (!word.empty()) {
-      terms.push_back({.term = word, .field = "name", .weight = 10});
-      if (word.size() >= 3) {
-        for (std::size_t i = 3; i <= std::min<std::size_t>(word.size(), 32);
-             ++i) {
-          terms.push_back(
-              {.term = word.substr(0, i), .field = "prefix", .weight = 1});
-        }
-      }
-    }
-    if (end == std::string::npos) {
-      break;
-    }
-    start = end + 1;
+  if (normalized.size() < 3) {
+    return terms;
   }
 
-  if (!ext.empty()) {
-    terms.push_back({.term = ext, .field = "ext", .weight = 4});
+  for (std::size_t i = 0; i + 3 <= normalized.size(); ++i) {
+    terms.push_back({.term = normalized.substr(i, 3), .field = "name", .weight = 10});
   }
-  if (!normalizedMime.empty()) {
-    terms.push_back({.term = normalizedMime, .field = "mime", .weight = 2});
-  }
-
   return terms;
 }
 
@@ -276,9 +243,8 @@ std::vector<uint8_t> FileEncryptor::hashBytes(const std::vector<uint8_t> &bytes)
 
 std::vector<UploadCompleteSearchToken>
 FileEncryptor::createSearchTokenEntries(const std::string &vaultId,
-                                        const std::string &name,
-                                        const std::string &mime) {
-  const std::vector<SearchTerm> terms = termsForFile(name, mime);
+                                        const std::string &text) {
+  const std::vector<SearchTerm> terms = termsForText(text);
   if (terms.empty()) {
     return {};
   }

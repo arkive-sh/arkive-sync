@@ -14,6 +14,7 @@ std::optional<AccountRecord> UserRepo::getAccount() const {
   static constexpr const char *getAccountSql = R"sql(
 SELECT
 base_url,
+user_id,
 email,
 vault_salt,
 encrypted_master_key,
@@ -43,16 +44,18 @@ WHERE id = 1;
 
   const char *baseUrl =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 0));
-  const char *email =
+  const char *userId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 1));
-  const char *vaultSalt =
+  const char *email =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 2));
-  const char *encryptedMasterKey =
+  const char *vaultSalt =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 3));
-  const char *vaultSessionKeyId =
+  const char *encryptedMasterKey =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 4));
-  const char *vaultSessionBlob =
+  const char *vaultSessionKeyId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 5));
+  const char *vaultSessionBlob =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 6));
 
   if (baseUrl == nullptr) {
     throw std::invalid_argument("account.base_url was NULL");
@@ -60,6 +63,8 @@ WHERE id = 1;
 
   return AccountRecord{
       .baseUrl = baseUrl,
+      .userId = userId != nullptr ? std::optional<std::string>(userId)
+                                  : std::nullopt,
       .email =
           email != nullptr ? std::optional<std::string>(email) : std::nullopt,
       .vaultSalt = vaultSalt != nullptr ? std::optional<std::string>(vaultSalt)
@@ -83,6 +88,7 @@ void UserRepo::upsertAccount(const AccountRecord &account) const {
 INSERT INTO account (
   id,
   base_url,
+  user_id,
   email,
   vault_salt,
   encrypted_master_key,
@@ -98,11 +104,13 @@ INSERT INTO account (
   ?,
   ?,
   ?,
+  ?,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
 )
 ON CONFLICT(id) DO UPDATE SET
   base_url = excluded.base_url,
+  user_id = excluded.user_id,
   email = excluded.email,
   vault_salt = excluded.vault_salt,
   encrypted_master_key = excluded.encrypted_master_key,
@@ -121,11 +129,12 @@ ON CONFLICT(id) DO UPDATE SET
   StmtUniquePtr stmt(raw_stmt);
 
   bindText(db_, stmt.get(), 1, account.baseUrl);
-  bindOptionalText(db_, stmt.get(), 2, account.email);
-  bindOptionalText(db_, stmt.get(), 3, account.vaultSalt);
-  bindOptionalText(db_, stmt.get(), 4, account.encryptedMasterKey);
-  bindOptionalText(db_, stmt.get(), 5, account.vaultSessionKeyId);
-  bindOptionalText(db_, stmt.get(), 6, account.vaultSessionBlob);
+  bindOptionalText(db_, stmt.get(), 2, account.userId);
+  bindOptionalText(db_, stmt.get(), 3, account.email);
+  bindOptionalText(db_, stmt.get(), 4, account.vaultSalt);
+  bindOptionalText(db_, stmt.get(), 5, account.encryptedMasterKey);
+  bindOptionalText(db_, stmt.get(), 6, account.vaultSessionKeyId);
+  bindOptionalText(db_, stmt.get(), 7, account.vaultSessionBlob);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -193,6 +202,7 @@ void UserRepo::clearAccount() const {
   static constexpr const char *clearAccountSql = R"sql(
 UPDATE account
 SET
+  user_id = NULL,
   email = NULL,
   vault_salt = NULL,
   encrypted_master_key = NULL,

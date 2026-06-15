@@ -8,6 +8,15 @@ bool isUnauthorized(const HttpError &error) {
   return error.statusCode == 401 || error.statusCode == 403;
 }
 
+void applyIdentity(AccountRecord &account, const nlohmann::json &me) {
+  const std::string userId = me.value("id", "");
+  if (userId.empty()) {
+    throw std::runtime_error("Could not load user id from /api/me");
+  }
+
+  account.userId = userId;
+}
+
 } // namespace
 
 void AuthService::ensureValidSession() {
@@ -53,9 +62,11 @@ bool AuthService::login(const std::string &email, const std::string &password) {
   }
 
   const LoginResponse response = api_.login(email, password);
+  const nlohmann::json me = api_.me();
 
-  userRepo_.upsertAccount(AccountRecord{
+  AccountRecord updated{
       .baseUrl = account->baseUrl,
+      .userId = account->userId,
       .email = email,
       .vaultSalt = response.salt.empty()
                        ? std::nullopt
@@ -66,7 +77,9 @@ bool AuthService::login(const std::string &email, const std::string &password) {
               : std::optional<std::string>(response.encryptedMasterKey),
       .vaultSessionKeyId = account->vaultSessionKeyId,
       .vaultSessionBlob = account->vaultSessionBlob,
-  });
+  };
+  applyIdentity(updated, me);
+  userRepo_.upsertAccount(updated);
 
   return true;
 }
@@ -82,8 +95,10 @@ void AuthService::refreshVaultMaterial(const std::string &password) {
   }
 
   const LoginResponse response = api_.unlockVault(password);
-  userRepo_.upsertAccount(AccountRecord{
+  const nlohmann::json me = api_.me();
+  AccountRecord updated{
       .baseUrl = account->baseUrl,
+      .userId = account->userId,
       .email = account->email,
       .vaultSalt = response.salt.empty()
                        ? std::nullopt
@@ -94,7 +109,9 @@ void AuthService::refreshVaultMaterial(const std::string &password) {
               : std::optional<std::string>(response.encryptedMasterKey),
       .vaultSessionKeyId = account->vaultSessionKeyId,
       .vaultSessionBlob = account->vaultSessionBlob,
-  });
+  };
+  applyIdentity(updated, me);
+  userRepo_.upsertAccount(updated);
 }
 
 bool AuthService::logout() {
