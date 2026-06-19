@@ -144,7 +144,7 @@ SELECT
   parent_folder_id,
   local_size,
   local_mtime,
-  content_hash,
+  local_content_hash,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -188,7 +188,7 @@ SELECT
   parent_folder_id,
   local_size,
   local_mtime,
-  content_hash,
+  local_content_hash,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -233,7 +233,7 @@ SELECT
   parent_folder_id,
   local_size,
   local_mtime,
-  content_hash,
+  local_content_hash,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -282,7 +282,7 @@ SELECT
   parent_folder_id,
   local_size,
   local_mtime,
-  content_hash,
+  local_content_hash,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -427,7 +427,7 @@ INSERT INTO entries (
   is_directory,
   local_size,
   local_mtime,
-  content_hash,
+  local_content_hash,
   sync_state,
   last_seen_scan_job_id,
   updated_at
@@ -448,7 +448,7 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   is_directory = 0,
   local_size = excluded.local_size,
   local_mtime = excluded.local_mtime,
-  content_hash = excluded.content_hash,
+  local_content_hash = excluded.local_content_hash,
   sync_state = excluded.sync_state,
   last_seen_scan_job_id = excluded.last_seen_scan_job_id,
   updated_at = CURRENT_TIMESTAMP;
