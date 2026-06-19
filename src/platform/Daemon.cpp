@@ -20,6 +20,7 @@
 #include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
 #include "fs/FileEncryptor.hpp"
+#include "sync/RemoteScanner.hpp"
 #include "sync/RootScanner.hpp"
 
 #if defined(__linux__)
@@ -50,6 +51,7 @@ std::unique_ptr<Daemon> Daemon::create() {
   std::unique_ptr<FolderCreateWorker> folderCreateWorker;
   std::unique_ptr<UploadService> uploadService;
   std::unique_ptr<UploadJobRunner> uploadJobRunner;
+  std::unique_ptr<RemoteScanner> remoteScanner;
 
   if (const auto account = userRepo->getAccount();
       account.has_value() && !account->baseUrl.empty()) {
@@ -62,6 +64,8 @@ std::unique_ptr<Daemon> Daemon::create() {
                                                     *uploadResumeRepo);
     uploadJobRunner = std::make_unique<UploadJobRunner>(
         *syncRepo, *entryRepo, *uploadService);
+    remoteScanner =
+        std::make_unique<RemoteScanner>(*syncRepo, *entryRepo, *api);
   }
   auto queueService = std::make_unique<QueueService>(
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
@@ -75,6 +79,7 @@ std::unique_ptr<Daemon> Daemon::create() {
       std::move(vaultService), std::move(fileEncryptor), std::move(client),
       std::move(api), std::move(folderCreateWorker), std::move(uploadService),
       std::move(uploadJobRunner), std::move(syncService),
+      std::move(remoteScanner),
       std::move(rootScanner), std::move(watcher));
 #elif defined(__APPLE__)
   throw std::runtime_error("Daemon is not implemented on macOS yet");

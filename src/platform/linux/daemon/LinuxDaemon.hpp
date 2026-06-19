@@ -24,6 +24,7 @@ class UploadService;
 class UploadJobRunner;
 class SyncService;
 class RootScanner;
+class RemoteScanner;
 
 class LinuxDaemon final : public Daemon {
 public:
@@ -44,6 +45,7 @@ public:
               std::unique_ptr<UploadService> uploadService,
               std::unique_ptr<UploadJobRunner> uploadJobRunner,
               std::unique_ptr<SyncService> syncService,
+              std::unique_ptr<RemoteScanner> remoteScanner,
               std::unique_ptr<RootScanner> rootScanner,
               std::unique_ptr<IFileWatcher> watcher);
   ~LinuxDaemon() override;
@@ -69,6 +71,7 @@ private:
   std::unique_ptr<UploadService> uploadService_;
   std::unique_ptr<UploadJobRunner> uploadJobRunner_;
   std::unique_ptr<SyncService> syncService_;
+  std::unique_ptr<RemoteScanner> remoteScanner_;
   std::unique_ptr<RootScanner> rootScanner_;
   std::unique_ptr<IFileWatcher> watcher_;
 };

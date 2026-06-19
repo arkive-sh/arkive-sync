@@ -118,6 +118,7 @@ add_executable(arkive-sync
     src/service/FolderCreateWorker.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
+    src/sync/RemoteScanner.cpp
     src/sync/RootScanner.cpp
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
@@ -180,6 +181,7 @@ add_executable(arkive-sync-tests
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
+    src/sync/RemoteScanner.cpp
     tests/inotify_watcher_test.cpp
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp

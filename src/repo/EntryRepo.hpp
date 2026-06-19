@@ -44,6 +44,19 @@ struct FileEntryUpsert {
   std::string lastSeenScanId;
 };
 
+struct RemoteEntryUpsert {
+  std::string syncRootId;
+  std::string remoteId;
+  std::string remoteType;
+  std::optional<std::string> remoteFileId;
+  std::optional<std::string> remoteFolderId;
+  std::optional<std::string> remoteParentFolderId;
+  std::optional<std::string> encryptedName;
+  std::optional<std::string> encryptedMetadata;
+  std::optional<std::string> remoteDeletedAt;
+  std::string remoteUpdatedAt;
+};
+
 class EntryRepo {
 public:
   explicit EntryRepo(sqlite3 *db);
@@ -57,6 +70,7 @@ public:
   listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
+  void upsertRemoteEntry(const RemoteEntryUpsert &entry);
   void markEntryUploaded(const std::string &entryId, const std::string &remoteId,
                          const std::optional<std::string> &remoteParentFolderId);
   void markFolderCreated(const std::string &entryId,

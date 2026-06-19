@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS entries (
   local_size INTEGER,
   local_mtime TEXT,
   content_hash TEXT,
+  encrypted_name TEXT,
+  encrypted_metadata TEXT,
   remote_updated_at TEXT,
   remote_file_id TEXT,
   remote_folder_id TEXT,

@@ -74,18 +74,21 @@ CreateFolderResponse decodeCreateFolderResponse(const nlohmann::json &json) {
 }
 
 SyncEntryResponse decodeSyncEntryResponse(const nlohmann::json &json) {
+  const std::string type = json.value("type", "");
+  const std::string remoteId = json.value("id", "");
   return SyncEntryResponse{
-      .type = json.value("type", ""),
-      .id = json.value("id", ""),
-      .folderId = optionalString(json, "folder_id"),
-      .parentFolderId = optionalString(json, "parent_folder_id"),
-      .encryptedMetadata = optionalString(json, "encrypted_metadata"),
-      .encryptedFileKey = optionalString(json, "encrypted_file_key"),
-      .encryptedManifest = optionalString(json, "encrypted_manifest"),
+      .remoteId = remoteId,
+      .type = type,
+      .remoteFileId =
+          type == "file" ? std::optional<std::string>(remoteId) : std::nullopt,
+      .remoteFolderId = type == "folder"
+                            ? std::optional<std::string>(remoteId)
+                            : optionalString(json, "folder_id"),
+      .remoteParentFolderId = optionalString(json, "parent_folder_id"),
       .encryptedName = optionalString(json, "encrypted_name"),
-      .updatedAt = json.value("updated_at", ""),
+      .encryptedMetadata = optionalString(json, "encrypted_metadata"),
       .deletedAt = optionalString(json, "deleted_at"),
-      .purgedAt = optionalString(json, "purged_at"),
+      .updatedAt = json.value("updated_at", ""),
   };
 }
 
@@ -248,6 +251,15 @@ void ArkiveApi::uploadComplete(const std::string &uploadSessionId,
           {"thumbnailWidth", request.thumbnailWidth},
           {"thumbnailHeight", request.thumbnailHeight},
       });
+}
+
+ListSyncEntriesResponse
+ArkiveApi::listSyncEntries(const std::optional<std::string> &folderId,
+                           bool includeDeleted) {
+  return listSyncEntries(ListSyncEntriesRequest{
+      .folderId = folderId,
+      .includeDeleted = includeDeleted,
+  });
 }
 
 ListSyncEntriesResponse

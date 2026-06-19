@@ -19,13 +19,16 @@
 #include "service/UploadJobRunner.hpp"
 #include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
+#include "sync/RemoteScanner.hpp"
 #include "sync/RootScanner.hpp"
 
+#include <chrono>
 #include <cerrno>
 #include <csignal>
 #include <spdlog/spdlog.h>
 #include <sys/epoll.h>
 #include <system_error>
+#include <unordered_map>
 #include <unistd.h>
 
 namespace {
@@ -96,6 +99,7 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<UploadService> uploadService,
                          std::unique_ptr<UploadJobRunner> uploadJobRunner,
                          std::unique_ptr<SyncService> syncService,
+                         std::unique_ptr<RemoteScanner> remoteScanner,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
     : db_(std::move(db)), crypto_(std::move(crypto)),
@@ -111,8 +115,9 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       folderCreateWorker_(std::move(folderCreateWorker)),
       uploadService_(std::move(uploadService)),
       uploadJobRunner_(std::move(uploadJobRunner)),
-      syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
-      watcher_(std::move(watcher)) {}
+      syncService_(std::move(syncService)),
+      remoteScanner_(std::move(remoteScanner)),
+      rootScanner_(std::move(rootScanner)), watcher_(std::move(watcher)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
@@ -120,6 +125,8 @@ int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
   const auto roots = syncService_->getSyncRoots();
+  std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+      lastRemoteScanAt;
 
   for (const auto &root : roots) {
     if (!root.enabled) {
@@ -170,9 +177,19 @@ int LinuxDaemon::run() {
   };
 
   while (!gStopRequested) {
+    const auto now = std::chrono::steady_clock::now();
     for (const auto &root : roots) {
       if (!root.enabled) {
         continue;
+      }
+
+      if (remoteScanner_ != nullptr) {
+        const auto it = lastRemoteScanAt.find(root.Id);
+        if (it == lastRemoteScanAt.end() ||
+            now - it->second >= std::chrono::seconds(30)) {
+          remoteScanner_->scanRoot(root.Id);
+          lastRemoteScanAt[root.Id] = now;
+        }
       }
 
       if (scanRepo_->hasRunningScanJob(root.Id)) {

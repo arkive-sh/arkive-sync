@@ -96,17 +96,15 @@ struct ListSyncEntriesRequest {
 };
 
 struct SyncEntryResponse {
+  std::string remoteId;
   std::string type;
-  std::string id;
-  std::optional<std::string> folderId;
-  std::optional<std::string> parentFolderId;
-  std::optional<std::string> encryptedMetadata;
-  std::optional<std::string> encryptedFileKey;
-  std::optional<std::string> encryptedManifest;
+  std::optional<std::string> remoteFileId;
+  std::optional<std::string> remoteFolderId;
+  std::optional<std::string> remoteParentFolderId;
   std::optional<std::string> encryptedName;
-  std::string updatedAt;
+  std::optional<std::string> encryptedMetadata;
   std::optional<std::string> deletedAt;
-  std::optional<std::string> purgedAt;
+  std::string updatedAt;
 };
 
 struct ListSyncEntriesResponse {
@@ -141,6 +139,9 @@ public:
                           const UploadPartRequest &request);
   virtual void uploadComplete(const std::string &uploadSessionId,
                               const UploadCompleteRequest &request);
+  virtual ListSyncEntriesResponse
+  listSyncEntries(const std::optional<std::string> &folderId,
+                  bool includeDeleted);
   virtual ListSyncEntriesResponse
   listSyncEntries(const ListSyncEntriesRequest &request);
 
