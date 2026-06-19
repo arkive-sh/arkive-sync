@@ -15,20 +15,18 @@
 #include "api/ArkiveHttpClient.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
+#include "service/RemoteSyncService.hpp"
 #include "service/SyncService.hpp"
 #include "service/UploadJobRunner.hpp"
 #include "service/UploadService.hpp"
 #include "service/VaultService.hpp"
-#include "sync/RemoteScanner.hpp"
 #include "sync/RootScanner.hpp"
 
-#include <chrono>
 #include <cerrno>
 #include <csignal>
 #include <spdlog/spdlog.h>
 #include <sys/epoll.h>
 #include <system_error>
-#include <unordered_map>
 #include <unistd.h>
 
 namespace {
@@ -89,6 +87,7 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<EntryRepo> entryRepo,
                          std::unique_ptr<QueueRepo> queueRepo,
                          std::unique_ptr<QueueService> queueService,
+                         std::unique_ptr<RemoteSyncService> remoteSyncService,
                          std::unique_ptr<UserRepo> userRepo,
                          std::unique_ptr<UploadResumeRepo> uploadResumeRepo,
                          std::unique_ptr<VaultService> vaultService,
@@ -99,7 +98,6 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<UploadService> uploadService,
                          std::unique_ptr<UploadJobRunner> uploadJobRunner,
                          std::unique_ptr<SyncService> syncService,
-                         std::unique_ptr<RemoteScanner> remoteScanner,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
     : db_(std::move(db)), crypto_(std::move(crypto)),
@@ -107,6 +105,7 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       dirtyPathRepo_(std::move(dirtyPathRepo)),
       entryRepo_(std::move(entryRepo)), queueRepo_(std::move(queueRepo)),
       queueService_(std::move(queueService)),
+      remoteSyncService_(std::move(remoteSyncService)),
       userRepo_(std::move(userRepo)),
       uploadResumeRepo_(std::move(uploadResumeRepo)),
       vaultService_(std::move(vaultService)),
@@ -115,9 +114,8 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       folderCreateWorker_(std::move(folderCreateWorker)),
       uploadService_(std::move(uploadService)),
       uploadJobRunner_(std::move(uploadJobRunner)),
-      syncService_(std::move(syncService)),
-      remoteScanner_(std::move(remoteScanner)),
-      rootScanner_(std::move(rootScanner)), watcher_(std::move(watcher)) {}
+      syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
+      watcher_(std::move(watcher)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
@@ -125,8 +123,6 @@ int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
   const auto roots = syncService_->getSyncRoots();
-  std::unordered_map<std::string, std::chrono::steady_clock::time_point>
-      lastRemoteScanAt;
 
   for (const auto &root : roots) {
     if (!root.enabled) {
@@ -177,19 +173,12 @@ int LinuxDaemon::run() {
   };
 
   while (!gStopRequested) {
-    const auto now = std::chrono::steady_clock::now();
+    if (remoteSyncService_ != nullptr) {
+      remoteSyncService_->runTick(roots);
+    }
     for (const auto &root : roots) {
       if (!root.enabled) {
         continue;
-      }
-
-      if (remoteScanner_ != nullptr) {
-        const auto it = lastRemoteScanAt.find(root.Id);
-        if (it == lastRemoteScanAt.end() ||
-            now - it->second >= std::chrono::seconds(30)) {
-          remoteScanner_->scanRoot(root.Id);
-          lastRemoteScanAt[root.Id] = now;
-        }
       }
 
       if (scanRepo_->hasRunningScanJob(root.Id)) {

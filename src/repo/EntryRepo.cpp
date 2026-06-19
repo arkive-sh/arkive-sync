@@ -67,22 +67,24 @@ Entry readEntry(sqlite3_stmt *stmt) {
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
   const char *remoteFileId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-  const char *syncRootId =
+  const char *remoteDeletedAt =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
-  const char *relativePath =
+  const char *syncRootId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-  const char *parentFolderId =
+  const char *relativePath =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
-  const char *localSize =
+  const char *parentFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-  const unsigned char *localMtime = sqlite3_column_text(stmt, 7);
+  const char *localSize =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
+  const unsigned char *localMtime = sqlite3_column_text(stmt, 8);
   const char *contentHash =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
-  const char *syncState =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-  const char *lastSeenScanJobId =
+  const char *syncState =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
-  const int isDirectory = sqlite3_column_int(stmt, 11);
+  const char *lastSeenScanJobId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+  const int isDirectory = sqlite3_column_int(stmt, 12);
 
   if (id == nullptr || syncRootId == nullptr || relativePath == nullptr ||
       syncState == nullptr) {
@@ -98,6 +100,9 @@ Entry readEntry(sqlite3_stmt *stmt) {
       .remoteFileId = remoteFileId != nullptr
                           ? std::optional<std::string>(remoteFileId)
                           : std::nullopt,
+      .remoteDeletedAt = remoteDeletedAt != nullptr
+                             ? std::optional<std::string>(remoteDeletedAt)
+                             : std::nullopt,
       .syncRootId = syncRootId,
       .relativePath = relativePath,
       .isDirectory = isDirectory != 0,
@@ -133,6 +138,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  remote_deleted_at,
   sync_root_id,
   local_path,
   parent_folder_id,
@@ -176,6 +182,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  remote_deleted_at,
   sync_root_id,
   local_path,
   parent_folder_id,
@@ -220,6 +227,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  remote_deleted_at,
   sync_root_id,
   local_path,
   parent_folder_id,
@@ -268,6 +276,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  remote_deleted_at,
   sync_root_id,
   local_path,
   parent_folder_id,
@@ -304,6 +313,54 @@ ORDER BY local_path ASC;
                                sqlite3_errmsg(db_));
     }
     entries.push_back(readEntry(stmt.get()));
+  }
+
+  return entries;
+}
+
+std::vector<RemoteDeletedEntry>
+EntryRepo::listRemoteDeletedEntriesBySyncRootId(const std::string &syncRootId) {
+  static constexpr const char *sql = R"sql(
+SELECT
+  local_path,
+  is_directory
+FROM entries
+WHERE sync_root_id = ?
+  AND remote_deleted_at IS NOT NULL
+  AND local_path NOT LIKE '.__remote__/%'
+ORDER BY is_directory DESC, local_path DESC;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  std::vector<RemoteDeletedEntry> entries;
+  while (true) {
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    if (rc != SQLITE_ROW) {
+      throw std::runtime_error(std::string("Step failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+
+    const char *relativePath =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 0));
+    if (relativePath == nullptr) {
+      throw std::runtime_error("entries.local_path was NULL");
+    }
+
+    entries.push_back(RemoteDeletedEntry{
+        .relativePath = relativePath,
+        .isDirectory = sqlite3_column_int(stmt.get(), 1) != 0,
+    });
   }
 
   return entries;

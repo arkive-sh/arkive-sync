@@ -16,6 +16,7 @@ struct Entry {
   std::string id;
   std::optional<std::string> remoteId;
   std::optional<std::string> remoteFileId;
+  std::optional<std::string> remoteDeletedAt;
   std::string syncRootId;
   std::string relativePath;
   bool isDirectory{false};
@@ -57,6 +58,11 @@ struct RemoteEntryUpsert {
   std::string remoteUpdatedAt;
 };
 
+struct RemoteDeletedEntry {
+  std::string relativePath;
+  bool isDirectory{false};
+};
+
 class EntryRepo {
 public:
   explicit EntryRepo(sqlite3 *db);
@@ -68,6 +74,8 @@ public:
   listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId);
   std::vector<Entry>
   listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
+  std::vector<RemoteDeletedEntry>
+  listRemoteDeletedEntriesBySyncRootId(const std::string &syncRootId);
   void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
   void upsertFileEntry(const FileEntryUpsert &entry);
   void upsertRemoteEntry(const RemoteEntryUpsert &entry);
