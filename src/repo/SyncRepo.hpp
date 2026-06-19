@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sync/SyncMode.hpp"
+
 #include <optional>
 #include <sqlite3.h>
 #include <string>
@@ -10,6 +12,7 @@ struct SyncRoot {
   std::string localPath;
   std::string folderId;
   int enabled;
+  SyncMode mode{SyncMode::TwoWay};
   std::string createdAt;
 };
 

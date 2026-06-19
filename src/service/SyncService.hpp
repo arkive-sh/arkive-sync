@@ -13,7 +13,8 @@ public:
 
   SyncRoot addSyncRoot(const std::filesystem::path &localPath,
                        std::optional<std::string> folderId = std::nullopt,
-                       bool enabled = true);
+                       bool enabled = true,
+                       SyncMode mode = SyncMode::TwoWay);
   std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
   std::vector<SyncRoot> getSyncRoots();
 

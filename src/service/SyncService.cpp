@@ -12,7 +12,7 @@ std::string SyncService::makeRootId(const std::string &pathHash) const {
 
 SyncRoot SyncService::addSyncRoot(const std::filesystem::path &localPath,
                                   std::optional<std::string> folderId,
-                                  bool enabled) {
+                                  bool enabled, SyncMode mode) {
   const std::string normalizedPath = normalizeFsPath(localPath);
 
   if (!std::filesystem::is_directory(normalizedPath)) {
@@ -26,6 +26,7 @@ SyncRoot SyncService::addSyncRoot(const std::filesystem::path &localPath,
       .localPath = normalizedPath,
       .folderId = folderId.value_or(""),
       .enabled = enabled ? 1 : 0,
+      .mode = mode,
       .createdAt = "",
   };
 

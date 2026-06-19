@@ -12,11 +12,20 @@ SyncRoot readSyncRoot(sqlite3_stmt *stmt) {
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
   const char *folderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-  const char *createdAt =
+  const char *syncMode =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+  const char *createdAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
 
   if (id == nullptr || localPath == nullptr || createdAt == nullptr) {
     throw std::runtime_error("sync_roots row contained NULL value");
+  }
+
+  const auto parsedMode =
+      syncMode == nullptr ? std::optional<SyncMode>(SyncMode::TwoWay)
+                          : parseSyncModeDb(syncMode);
+  if (!parsedMode.has_value()) {
+    throw std::runtime_error("sync_roots.sync_mode contained invalid value");
   }
 
   return SyncRoot{
@@ -24,6 +33,7 @@ SyncRoot readSyncRoot(sqlite3_stmt *stmt) {
       .localPath = localPath,
       .folderId = folderId != nullptr ? folderId : "",
       .enabled = sqlite3_column_int(stmt, 3),
+      .mode = *parsedMode,
       .createdAt = createdAt,
   };
 }
@@ -43,6 +53,7 @@ std::vector<SyncRoot> SyncRepo::getSyncRoots() {
       local_path,
       folder_id,
       enabled,
+      sync_mode,
       created_at
     FROM sync_roots
     ORDER BY created_at ASC, local_path ASC;
@@ -79,12 +90,14 @@ void SyncRepo::upsertSyncRoot(const SyncRoot &input) {
       id,
       local_path,
       folder_id,
-      enabled
-    ) VALUES (?, ?, ?, ?)
+      enabled,
+      sync_mode
+    ) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       local_path = excluded.local_path,
       folder_id = excluded.folder_id,
-      enabled = excluded.enabled;
+      enabled = excluded.enabled,
+      sync_mode = excluded.sync_mode;
       )sql";
 
   sqlite3_stmt *rawStmt = nullptr;
@@ -98,6 +111,7 @@ void SyncRepo::upsertSyncRoot(const SyncRoot &input) {
   bindText(db_, stmt.get(), 2, input.localPath);
   bindText(db_, stmt.get(), 3, input.folderId);
   throwIfBindFailed(db_, sqlite3_bind_int(stmt.get(), 4, input.enabled));
+  bindText(db_, stmt.get(), 5, toSyncModeDb(input.mode));
 
   const int rc = sqlite3_step(stmt.get());
   if (rc != SQLITE_DONE) {
@@ -114,6 +128,7 @@ std::optional<SyncRoot> SyncRepo::findSyncRootById(
       local_path,
       folder_id,
       enabled,
+      sync_mode,
       created_at
     FROM sync_roots
     WHERE id = ?;
