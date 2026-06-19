@@ -18,6 +18,24 @@ TEST_CASE("SyncPolicy uploads local changes in upload only mode") {
           SyncDecision::Upload);
 }
 
+TEST_CASE("SyncPolicy uploads missing remote entries") {
+  const SyncEntryState state{
+      .localExists = true,
+      .remoteExists = false,
+      .localDeleted = false,
+      .remoteDeleted = false,
+      .localDirty = false,
+      .remoteDirty = false,
+      .isDirectory = false,
+      .hasConflict = false,
+  };
+
+  REQUIRE(SyncPolicy::decide(state, SyncMode::UploadOnly) ==
+          SyncDecision::Upload);
+  REQUIRE(SyncPolicy::decide(state, SyncMode::TwoWay) ==
+          SyncDecision::Upload);
+}
+
 TEST_CASE("SyncPolicy downloads remote changes in remote mirror mode") {
   const SyncEntryState state{
       .localExists = true,
@@ -31,6 +49,24 @@ TEST_CASE("SyncPolicy downloads remote changes in remote mirror mode") {
   };
 
   REQUIRE(SyncPolicy::decide(state, SyncMode::RemoteMirror) ==
+          SyncDecision::Download);
+}
+
+TEST_CASE("SyncPolicy downloads missing local entries in remote mirror mode") {
+  const SyncEntryState state{
+      .localExists = false,
+      .remoteExists = true,
+      .localDeleted = false,
+      .remoteDeleted = false,
+      .localDirty = false,
+      .remoteDirty = false,
+      .isDirectory = false,
+      .hasConflict = false,
+  };
+
+  REQUIRE(SyncPolicy::decide(state, SyncMode::RemoteMirror) ==
+          SyncDecision::Download);
+  REQUIRE(SyncPolicy::decide(state, SyncMode::TwoWay) ==
           SyncDecision::Download);
 }
 

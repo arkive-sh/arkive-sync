@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 struct SyncRoot;
 
 class EntryRepo;
@@ -11,5 +13,8 @@ public:
   void reconcileRoot(const SyncRoot &root);
 
 private:
+  void applyDeleteLocal(const SyncRoot &root, const std::filesystem::path &path,
+                        bool isDirectory);
+
   EntryRepo &entryRepo_;
 };

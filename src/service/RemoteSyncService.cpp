@@ -1,7 +1,6 @@
 #include "service/RemoteSyncService.hpp"
 
 #include "fs/helpers/PathHelpers.hpp"
-#include "repo/EntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "sync/RemoteScanner.hpp"
 
@@ -15,9 +14,9 @@ constexpr auto kRemoteScanInterval = std::chrono::seconds(30);
 
 } // namespace
 
-RemoteSyncService::RemoteSyncService(EntryRepo &entryRepo,
-                                     std::unique_ptr<RemoteScanner> remoteScanner)
-    : entryRepo_(entryRepo), remoteScanner_(std::move(remoteScanner)) {}
+RemoteSyncService::RemoteSyncService(
+    std::unique_ptr<RemoteScanner> remoteScanner)
+    : remoteScanner_(std::move(remoteScanner)) {}
 
 RemoteSyncService::~RemoteSyncService() = default;
 
@@ -40,7 +39,6 @@ void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
     }
 
     remoteScanner_->scanRoot(root.Id);
-    reconcileDeletedEntries(root);
     if (remoteScanner_->isRootDeleted(root.Id)) {
       std::error_code error;
       std::filesystem::remove_all(normalizeFsPath(root.localPath), error);
@@ -50,24 +48,5 @@ void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
       }
     }
     lastRemoteScanAt_[root.Id] = now;
-  }
-}
-
-void RemoteSyncService::reconcileDeletedEntries(const SyncRoot &root) {
-  for (const auto &entry : entryRepo_.listRemoteDeletedEntriesBySyncRootId(
-           root.Id)) {
-    const std::filesystem::path absolutePath =
-        std::filesystem::path(normalizeFsPath(root.localPath)) /
-        entry.relativePath;
-    std::error_code error;
-    if (entry.isDirectory) {
-      std::filesystem::remove_all(absolutePath, error);
-    } else {
-      std::filesystem::remove(absolutePath, error);
-    }
-    if (error) {
-      spdlog::error("Failed to delete remote-deleted path {} for root {}: {}",
-                    absolutePath.string(), root.Id, error.message());
-    }
   }
 }

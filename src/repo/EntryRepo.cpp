@@ -417,54 +417,6 @@ ORDER BY local_path ASC;
   return entries;
 }
 
-std::vector<RemoteDeletedEntry>
-EntryRepo::listRemoteDeletedEntriesBySyncRootId(const std::string &syncRootId) {
-  static constexpr const char *sql = R"sql(
-SELECT
-  local_path,
-  is_directory
-FROM entries
-WHERE sync_root_id = ?
-  AND remote_deleted_at IS NOT NULL
-  AND local_path NOT LIKE '.__remote__/%'
-ORDER BY is_directory DESC, local_path DESC;
-  )sql";
-
-  sqlite3_stmt *rawStmt = nullptr;
-  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
-    throw std::runtime_error(std::string("Prepare failed: ") +
-                             sqlite3_errmsg(db_));
-  }
-
-  StmtUniquePtr stmt(rawStmt);
-  bindText(db_, stmt.get(), 1, syncRootId);
-
-  std::vector<RemoteDeletedEntry> entries;
-  while (true) {
-    const int rc = sqlite3_step(stmt.get());
-    if (rc == SQLITE_DONE) {
-      break;
-    }
-    if (rc != SQLITE_ROW) {
-      throw std::runtime_error(std::string("Step failed: ") +
-                               sqlite3_errmsg(db_));
-    }
-
-    const char *relativePath =
-        reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), 0));
-    if (relativePath == nullptr) {
-      throw std::runtime_error("entries.local_path was NULL");
-    }
-
-    entries.push_back(RemoteDeletedEntry{
-        .relativePath = relativePath,
-        .isDirectory = sqlite3_column_int(stmt.get(), 1) != 0,
-    });
-  }
-
-  return entries;
-}
-
 void EntryRepo::upsertDirectoryEntry(const DirectoryEntryUpsert &entry) {
   static constexpr const char *sql = R"sql(
 INSERT INTO entries (

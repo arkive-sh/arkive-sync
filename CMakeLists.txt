@@ -192,6 +192,7 @@ add_executable(arkive-sync-tests
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
     tests/sync_policy_test.cpp
+    tests/sync_reconciler_test.cpp
     tests/upload_job_runner2_test.cpp
     tests/upload_planner_test.cpp
     tests/vault_service_test.cpp

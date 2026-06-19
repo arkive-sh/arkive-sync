@@ -74,7 +74,7 @@ std::unique_ptr<Daemon> Daemon::create() {
       uploadJobRunner.get());
   auto syncReconciler = std::make_unique<SyncReconciler>(*entryRepo);
   auto remoteSyncService =
-      std::make_unique<RemoteSyncService>(*entryRepo, std::move(remoteScanner));
+      std::make_unique<RemoteSyncService>(std::move(remoteScanner));
 
   return std::make_unique<LinuxDaemon>(
       std::move(db), std::move(crypto), std::move(syncRepo),

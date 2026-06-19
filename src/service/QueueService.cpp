@@ -5,11 +5,38 @@
 #include "repo/SyncRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/UploadJobRunner.hpp"
+#include "sync/SyncPolicy.hpp"
+#include "sync/SyncStateClassifier.hpp"
 
 #include <filesystem>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+
+namespace {
+
+std::optional<std::string>
+resolveRemoteFolderId(EntryRepo &entryRepo, const SyncRoot &syncRoot,
+                      const Entry &entry) {
+  const std::filesystem::path parentPath =
+      std::filesystem::path(entry.relativePath).parent_path();
+  if (parentPath.empty()) {
+    if (!syncRoot.folderId.empty()) {
+      return syncRoot.folderId;
+    }
+    return std::nullopt;
+  }
+
+  const auto parentEntry =
+      entryRepo.findEntryByPath(syncRoot.Id, parentPath.generic_string());
+  if (!parentEntry.has_value() || !parentEntry->remoteId.has_value()) {
+    return std::nullopt;
+  }
+
+  return parentEntry->remoteId;
+}
+
+} // namespace
 
 QueueService::QueueService(EntryRepo &entryRepo, QueueRepo &queueRepo,
                            SyncRepo &syncRepo,
@@ -29,55 +56,36 @@ void QueueService::build(const std::string &syncRootId) {
     return;
   }
 
-  for (const auto &entry :
-       entryRepo_.listPendingUploadDirectoriesBySyncRootId(syncRootId)) {
-    if (entry.remoteId.has_value() ||
-        queueRepo_.hasActiveCreateFolderForEntry(entry.id)) {
+  for (const auto &entry : entryRepo_.listEntriesBySyncRootId(syncRootId)) {
+    const SyncEntryState state = SyncStateClassifier::classify(entry);
+    if (SyncPolicy::decide(state, syncRoot->mode) != SyncDecision::Upload) {
       continue;
     }
 
-    std::optional<std::string> remoteFolderId;
-    const std::filesystem::path parentPath =
-        std::filesystem::path(entry.relativePath).parent_path();
-    if (parentPath.empty()) {
-      if (!syncRoot->folderId.empty()) {
-        remoteFolderId = syncRoot->folderId;
-      }
-    } else {
-      const auto parentEntry =
-          entryRepo_.findEntryByPath(syncRootId, parentPath.generic_string());
-      if (!parentEntry.has_value() || !parentEntry->remoteId.has_value()) {
+    const std::optional<std::string> remoteFolderId =
+        resolveRemoteFolderId(entryRepo_, *syncRoot, entry);
+    if (!remoteFolderId.has_value() && !syncRoot->folderId.empty() &&
+        std::filesystem::path(entry.relativePath).parent_path().empty()) {
+      // root-level children can still target the root folder id
+    } else if (!remoteFolderId.has_value() &&
+               !std::filesystem::path(entry.relativePath).parent_path().empty()) {
+      continue;
+    }
+
+    if (entry.isDirectory) {
+      if (entry.remoteId.has_value() ||
+          queueRepo_.hasActiveCreateFolderForEntry(entry.id)) {
         continue;
       }
 
-      remoteFolderId = parentEntry->remoteId;
+      queueRepo_.enqueueCreateFolder(entry.id, entry.relativePath,
+                                     remoteFolderId);
+      continue;
     }
 
-    queueRepo_.enqueueCreateFolder(entry.id, entry.relativePath, remoteFolderId);
-  }
-
-  for (const auto &entry :
-       entryRepo_.listPendingUploadFilesBySyncRootId(syncRootId)) {
     if (queueRepo_.hasActiveUploadFileForEntry(entry.id) ||
         !entry.size.has_value() || *entry.size < 0) {
       continue;
-    }
-
-    std::optional<std::string> remoteFolderId;
-    const std::filesystem::path parentPath =
-        std::filesystem::path(entry.relativePath).parent_path();
-    if (parentPath.empty()) {
-      if (!syncRoot->folderId.empty()) {
-        remoteFolderId = syncRoot->folderId;
-      }
-    } else {
-      const auto parentEntry =
-          entryRepo_.findEntryByPath(syncRootId, parentPath.generic_string());
-      if (!parentEntry.has_value() || !parentEntry->remoteId.has_value()) {
-        continue;
-      }
-
-      remoteFolderId = parentEntry->remoteId;
     }
 
     queueRepo_.enqueueUploadFile(entry.id, entry.relativePath, remoteFolderId,

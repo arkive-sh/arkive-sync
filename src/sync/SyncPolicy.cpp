@@ -12,6 +12,9 @@ SyncDecision decideUploadOnly(const SyncEntryState &state) {
   if (state.localDeleted && state.remoteExists) {
     return SyncDecision::DeleteRemote;
   }
+  if (state.localExists && !state.remoteExists) {
+    return SyncDecision::Upload;
+  }
   if (state.localExists && state.localDirty) {
     return SyncDecision::Upload;
   }
@@ -27,6 +30,9 @@ SyncDecision decideRemoteMirror(const SyncEntryState &state) {
   }
   if (state.remoteDeleted && state.localExists) {
     return SyncDecision::DeleteLocal;
+  }
+  if (state.remoteExists && !state.localExists) {
+    return SyncDecision::Download;
   }
   if (state.remoteExists && state.remoteDirty) {
     return SyncDecision::Download;
@@ -48,6 +54,12 @@ SyncDecision decideTwoWay(const SyncEntryState &state) {
   }
   if (state.remoteDeleted && state.localExists) {
     return SyncDecision::DeleteLocal;
+  }
+  if (state.localExists && !state.remoteExists) {
+    return SyncDecision::Upload;
+  }
+  if (state.remoteExists && !state.localExists) {
+    return SyncDecision::Download;
   }
   if (state.localExists && state.localDirty) {
     return SyncDecision::Upload;
