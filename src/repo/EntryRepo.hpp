@@ -12,10 +12,22 @@ enum class EntrySyncState {
   Deleted,
 };
 
+struct SyncEntryState {
+  bool localExists{false};
+  bool remoteExists{false};
+  bool localDeleted{false};
+  bool remoteDeleted{false};
+  bool localDirty{false};
+  bool remoteDirty{false};
+  bool isDirectory{false};
+  bool hasConflict{false};
+};
+
 struct Entry {
   std::string id;
   std::optional<std::string> remoteId;
   std::optional<std::string> remoteFileId;
+  std::optional<std::string> localDeletedAt;
   std::optional<std::string> remoteDeletedAt;
   std::string syncRootId;
   std::string relativePath;
@@ -25,8 +37,29 @@ struct Entry {
   std::optional<int64_t> size;
   std::optional<std::filesystem::file_time_type> mtime;
   std::optional<std::string> contentHash;
+  std::optional<std::string> syncedContentHash;
+  std::optional<std::string> remoteUpdatedAt;
+  std::optional<std::string> syncedRemoteUpdatedAt;
+  std::optional<std::string> conflictState;
   EntrySyncState syncState;
   std::optional<std::string> lastSeenScanJobId;
+
+  SyncEntryState toSyncEntryState() const {
+    const bool localDeleted = localDeletedAt.has_value();
+    const bool remoteDeleted = remoteDeletedAt.has_value();
+
+    return SyncEntryState{
+        .localExists = !localDeleted,
+        .remoteExists = remoteId.has_value() && !remoteDeleted,
+        .localDeleted = localDeleted,
+        .remoteDeleted = remoteDeleted,
+        .localDirty = contentHash != syncedContentHash,
+        .remoteDirty = remoteUpdatedAt != syncedRemoteUpdatedAt,
+        .isDirectory = isDirectory,
+        .hasConflict =
+            conflictState.has_value() && *conflictState != "none",
+    };
+  }
 };
 
 struct DirectoryEntryUpsert {

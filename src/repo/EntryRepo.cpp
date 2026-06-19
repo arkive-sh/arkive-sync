@@ -67,24 +67,34 @@ Entry readEntry(sqlite3_stmt *stmt) {
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
   const char *remoteFileId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-  const char *remoteDeletedAt =
+  const char *localDeletedAt =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
-  const char *syncRootId =
+  const char *remoteDeletedAt =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
-  const char *relativePath =
+  const char *syncRootId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
-  const char *parentFolderId =
+  const char *relativePath =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-  const char *localSize =
+  const char *parentFolderId =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
-  const unsigned char *localMtime = sqlite3_column_text(stmt, 8);
+  const char *localSize =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
+  const unsigned char *localMtime = sqlite3_column_text(stmt, 9);
   const char *contentHash =
-      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-  const char *syncState =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
-  const char *lastSeenScanJobId =
+  const char *syncedContentHash =
       reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
-  const int isDirectory = sqlite3_column_int(stmt, 12);
+  const char *remoteUpdatedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 12));
+  const char *syncedRemoteUpdatedAt =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 13));
+  const char *conflictState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 14));
+  const char *syncState =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 15));
+  const char *lastSeenScanJobId =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt, 16));
+  const int isDirectory = sqlite3_column_int(stmt, 17);
 
   if (id == nullptr || syncRootId == nullptr || relativePath == nullptr ||
       syncState == nullptr) {
@@ -100,6 +110,9 @@ Entry readEntry(sqlite3_stmt *stmt) {
       .remoteFileId = remoteFileId != nullptr
                           ? std::optional<std::string>(remoteFileId)
                           : std::nullopt,
+      .localDeletedAt = localDeletedAt != nullptr
+                            ? std::optional<std::string>(localDeletedAt)
+                            : std::nullopt,
       .remoteDeletedAt = remoteDeletedAt != nullptr
                              ? std::optional<std::string>(remoteDeletedAt)
                              : std::nullopt,
@@ -117,6 +130,19 @@ Entry readEntry(sqlite3_stmt *stmt) {
       .contentHash = contentHash != nullptr
                          ? std::optional<std::string>(contentHash)
                          : std::nullopt,
+      .syncedContentHash = syncedContentHash != nullptr
+                               ? std::optional<std::string>(syncedContentHash)
+                               : std::nullopt,
+      .remoteUpdatedAt = remoteUpdatedAt != nullptr
+                             ? std::optional<std::string>(remoteUpdatedAt)
+                             : std::nullopt,
+      .syncedRemoteUpdatedAt = syncedRemoteUpdatedAt != nullptr
+                                   ? std::optional<std::string>(
+                                         syncedRemoteUpdatedAt)
+                                   : std::nullopt,
+      .conflictState = conflictState != nullptr
+                           ? std::optional<std::string>(conflictState)
+                           : std::nullopt,
       .syncState = parsedSyncState,
       .lastSeenScanJobId = lastSeenScanJobId != nullptr
                                ? std::optional<std::string>(lastSeenScanJobId)
@@ -138,6 +164,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  local_deleted_at,
   remote_deleted_at,
   sync_root_id,
   local_path,
@@ -145,6 +172,10 @@ SELECT
   local_size,
   local_mtime,
   local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -182,6 +213,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  local_deleted_at,
   remote_deleted_at,
   sync_root_id,
   local_path,
@@ -189,6 +221,10 @@ SELECT
   local_size,
   local_mtime,
   local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -227,6 +263,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  local_deleted_at,
   remote_deleted_at,
   sync_root_id,
   local_path,
@@ -234,6 +271,10 @@ SELECT
   local_size,
   local_mtime,
   local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
   sync_state,
   last_seen_scan_job_id,
   is_directory
@@ -276,6 +317,7 @@ SELECT
   id,
   remote_id,
   remote_file_id,
+  local_deleted_at,
   remote_deleted_at,
   sync_root_id,
   local_path,
@@ -283,6 +325,10 @@ SELECT
   local_size,
   local_mtime,
   local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
   sync_state,
   last_seen_scan_job_id,
   is_directory
