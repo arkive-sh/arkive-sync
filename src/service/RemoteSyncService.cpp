@@ -41,6 +41,14 @@ void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
 
     remoteScanner_->scanRoot(root.Id);
     reconcileDeletedEntries(root);
+    if (remoteScanner_->isRootDeleted(root.Id)) {
+      std::error_code error;
+      std::filesystem::remove_all(normalizeFsPath(root.localPath), error);
+      if (error) {
+        spdlog::error("Failed to delete remote-deleted sync root {}: {}",
+                      root.localPath, error.message());
+      }
+    }
     lastRemoteScanAt_[root.Id] = now;
   }
 }

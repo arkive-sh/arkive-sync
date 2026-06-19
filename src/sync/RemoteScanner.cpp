@@ -23,6 +23,28 @@ void RemoteScanner::scanRoot(const std::string &syncRootId) const {
   scanFolder(syncRootId, rootRemoteFolderId);
 }
 
+bool RemoteScanner::isRootDeleted(const std::string &syncRootId) const {
+  const auto syncRoot = syncRepo_.findSyncRootById(syncRootId);
+  if (!syncRoot.has_value()) {
+    throw std::runtime_error("Sync root is missing");
+  }
+
+  if (syncRoot->folderId.empty()) {
+    return false;
+  }
+
+  const ListSyncEntriesResponse response = fetchEntries(std::nullopt);
+  for (const auto &entry : response.entries) {
+    if (entry.remoteId == syncRoot->folderId ||
+        (entry.remoteFolderId.has_value() &&
+         *entry.remoteFolderId == syncRoot->folderId)) {
+      return entry.deletedAt.has_value();
+    }
+  }
+
+  return false;
+}
+
 ListSyncEntriesResponse
 RemoteScanner::fetchEntries(const std::optional<std::string> &folderId) const {
   return api_.listSyncEntries(folderId, true);
