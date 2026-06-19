@@ -43,23 +43,6 @@ struct Entry {
   std::optional<std::string> conflictState;
   EntrySyncState syncState;
   std::optional<std::string> lastSeenScanJobId;
-
-  SyncEntryState toSyncEntryState() const {
-    const bool localDeleted = localDeletedAt.has_value();
-    const bool remoteDeleted = remoteDeletedAt.has_value();
-
-    return SyncEntryState{
-        .localExists = !localDeleted,
-        .remoteExists = remoteId.has_value() && !remoteDeleted,
-        .localDeleted = localDeleted,
-        .remoteDeleted = remoteDeleted,
-        .localDirty = contentHash != syncedContentHash,
-        .remoteDirty = remoteUpdatedAt != syncedRemoteUpdatedAt,
-        .isDirectory = isDirectory,
-        .hasConflict =
-            conflictState.has_value() && *conflictState != "none",
-    };
-  }
 };
 
 struct DirectoryEntryUpsert {
