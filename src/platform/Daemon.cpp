@@ -72,7 +72,7 @@ std::unique_ptr<Daemon> Daemon::create() {
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
       uploadJobRunner.get());
   auto remoteSyncService =
-      std::make_unique<RemoteSyncService>(*entryRepo, remoteScanner.get());
+      std::make_unique<RemoteSyncService>(*entryRepo, std::move(remoteScanner));
 
   return std::make_unique<LinuxDaemon>(
       std::move(db), std::move(crypto), std::move(syncRepo),

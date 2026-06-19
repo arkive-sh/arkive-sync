@@ -16,8 +16,10 @@ constexpr auto kRemoteScanInterval = std::chrono::seconds(30);
 } // namespace
 
 RemoteSyncService::RemoteSyncService(EntryRepo &entryRepo,
-                                     RemoteScanner *remoteScanner)
-    : entryRepo_(entryRepo), remoteScanner_(remoteScanner) {}
+                                     std::unique_ptr<RemoteScanner> remoteScanner)
+    : entryRepo_(entryRepo), remoteScanner_(std::move(remoteScanner)) {}
+
+RemoteSyncService::~RemoteSyncService() = default;
 
 void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
   if (remoteScanner_ == nullptr) {

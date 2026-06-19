@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -12,7 +13,9 @@ class RemoteScanner;
 
 class RemoteSyncService {
 public:
-  RemoteSyncService(EntryRepo &entryRepo, RemoteScanner *remoteScanner);
+  RemoteSyncService(EntryRepo &entryRepo,
+                    std::unique_ptr<RemoteScanner> remoteScanner);
+  ~RemoteSyncService();
 
   void runTick(const std::vector<SyncRoot> &roots);
 
@@ -20,7 +23,7 @@ private:
   void reconcileDeletedEntries(const SyncRoot &root);
 
   EntryRepo &entryRepo_;
-  RemoteScanner *remoteScanner_;
+  std::unique_ptr<RemoteScanner> remoteScanner_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       lastRemoteScanAt_;
 };
