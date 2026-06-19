@@ -121,6 +121,7 @@ add_executable(arkive-sync
     src/service/VaultService.cpp
     src/sync/RemoteScanner.cpp
     src/sync/RootScanner.cpp
+    src/sync/SyncPolicy.cpp
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
@@ -188,6 +189,7 @@ add_executable(arkive-sync-tests
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp
+    tests/sync_policy_test.cpp
     tests/upload_job_runner2_test.cpp
     tests/upload_planner_test.cpp
     tests/vault_service_test.cpp
@@ -213,6 +215,7 @@ add_executable(arkive-sync-tests
     src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/sync/RootScanner.cpp
+    src/sync/SyncPolicy.cpp
     src/upload/MultipartUploader.cpp
     src/upload/UploadPlanner.cpp
     src/upload/UploadPolicy.cpp
