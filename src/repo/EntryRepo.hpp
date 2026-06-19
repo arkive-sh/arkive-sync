@@ -86,6 +86,7 @@ public:
   std::optional<Entry> getEntryById(const std::string &entryId);
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
+  std::vector<Entry> listEntriesBySyncRootId(const std::string &syncRootId);
   std::vector<Entry>
   listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId);
   std::vector<Entry>

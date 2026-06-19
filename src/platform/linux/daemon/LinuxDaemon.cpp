@@ -16,6 +16,7 @@
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
+#include "service/SyncReconciler.hpp"
 #include "service/SyncService.hpp"
 #include "service/UploadJobRunner.hpp"
 #include "service/UploadService.hpp"
@@ -98,6 +99,7 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<UploadService> uploadService,
                          std::unique_ptr<UploadJobRunner> uploadJobRunner,
                          std::unique_ptr<SyncService> syncService,
+                         std::unique_ptr<SyncReconciler> syncReconciler,
                          std::unique_ptr<RootScanner> rootScanner,
                          std::unique_ptr<IFileWatcher> watcher)
     : db_(std::move(db)), crypto_(std::move(crypto)),
@@ -114,7 +116,9 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       folderCreateWorker_(std::move(folderCreateWorker)),
       uploadService_(std::move(uploadService)),
       uploadJobRunner_(std::move(uploadJobRunner)),
-      syncService_(std::move(syncService)), rootScanner_(std::move(rootScanner)),
+      syncService_(std::move(syncService)),
+      syncReconciler_(std::move(syncReconciler)),
+      rootScanner_(std::move(rootScanner)),
       watcher_(std::move(watcher)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
@@ -140,6 +144,9 @@ int LinuxDaemon::run() {
     }
 
     queueService_->build(root.Id);
+    if (syncReconciler_ != nullptr) {
+      syncReconciler_->reconcileRoot(root);
+    }
   }
 
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
@@ -186,6 +193,9 @@ int LinuxDaemon::run() {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
         queueService_->build(root.Id);
+        if (syncReconciler_ != nullptr) {
+          syncReconciler_->reconcileRoot(root);
+        }
         continue;
       }
 
@@ -216,6 +226,9 @@ int LinuxDaemon::run() {
               break;
             }
             queueService_->build(root.Id);
+            if (syncReconciler_ != nullptr) {
+              syncReconciler_->reconcileRoot(root);
+            }
             dirtyPathRepo_->markDone(dirtyPath->id);
             break;
           case DirtyPathEventType::FullRescan:

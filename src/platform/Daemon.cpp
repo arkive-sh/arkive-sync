@@ -16,6 +16,7 @@
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
+#include "service/SyncReconciler.hpp"
 #include "service/SyncService.hpp"
 #include "service/UploadJobRunner.hpp"
 #include "service/UploadService.hpp"
@@ -71,6 +72,7 @@ std::unique_ptr<Daemon> Daemon::create() {
   auto queueService = std::make_unique<QueueService>(
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
       uploadJobRunner.get());
+  auto syncReconciler = std::make_unique<SyncReconciler>(*entryRepo);
   auto remoteSyncService =
       std::make_unique<RemoteSyncService>(*entryRepo, std::move(remoteScanner));
 
@@ -82,7 +84,8 @@ std::unique_ptr<Daemon> Daemon::create() {
       std::move(userRepo), std::move(uploadResumeRepo),
       std::move(vaultService), std::move(fileEncryptor), std::move(client),
       std::move(api), std::move(folderCreateWorker), std::move(uploadService),
-      std::move(uploadJobRunner), std::move(syncService), std::move(rootScanner),
+      std::move(uploadJobRunner), std::move(syncService),
+      std::move(syncReconciler), std::move(rootScanner),
       std::move(watcher));
 #elif defined(__APPLE__)
   throw std::runtime_error("Daemon is not implemented on macOS yet");

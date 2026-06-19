@@ -60,6 +60,25 @@ SyncDecision decideTwoWay(const SyncEntryState &state) {
 
 } // namespace
 
+const char *toSyncDecisionName(SyncDecision decision) {
+  switch (decision) {
+  case SyncDecision::Noop:
+    return "noop";
+  case SyncDecision::Upload:
+    return "upload";
+  case SyncDecision::Download:
+    return "download";
+  case SyncDecision::DeleteLocal:
+    return "delete_local";
+  case SyncDecision::DeleteRemote:
+    return "delete_remote";
+  case SyncDecision::Conflict:
+    return "conflict";
+  }
+
+  return "noop";
+}
+
 SyncDecision SyncPolicy::decide(const SyncEntryState &state, SyncMode mode) {
   switch (mode) {
   case SyncMode::UploadOnly:

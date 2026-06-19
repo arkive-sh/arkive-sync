@@ -24,6 +24,7 @@ class UploadResumeRepo;
 class UploadService;
 class UploadJobRunner;
 class SyncService;
+class SyncReconciler;
 class RootScanner;
 
 class LinuxDaemon final : public Daemon {
@@ -46,6 +47,7 @@ public:
               std::unique_ptr<UploadService> uploadService,
               std::unique_ptr<UploadJobRunner> uploadJobRunner,
               std::unique_ptr<SyncService> syncService,
+              std::unique_ptr<SyncReconciler> syncReconciler,
               std::unique_ptr<RootScanner> rootScanner,
               std::unique_ptr<IFileWatcher> watcher);
   ~LinuxDaemon() override;
@@ -72,6 +74,7 @@ private:
   std::unique_ptr<UploadService> uploadService_;
   std::unique_ptr<UploadJobRunner> uploadJobRunner_;
   std::unique_ptr<SyncService> syncService_;
+  std::unique_ptr<SyncReconciler> syncReconciler_;
   std::unique_ptr<RootScanner> rootScanner_;
   std::unique_ptr<IFileWatcher> watcher_;
 };

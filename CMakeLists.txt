@@ -117,6 +117,7 @@ add_executable(arkive-sync
     src/service/QueueService.cpp
     src/service/RemoteSyncService.cpp
     src/service/FolderCreateWorker.cpp
+    src/service/SyncReconciler.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/sync/RemoteScanner.cpp
@@ -213,6 +214,7 @@ add_executable(arkive-sync-tests
     src/service/FolderCreateWorker.cpp
     src/service/UploadJobRunner.cpp
     src/service/QueueService.cpp
+    src/service/SyncReconciler.cpp
     src/service/SyncService.cpp
     src/service/VaultService.cpp
     src/sync/RootScanner.cpp

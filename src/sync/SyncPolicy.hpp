@@ -12,6 +12,8 @@ enum class SyncDecision {
   Conflict,
 };
 
+const char *toSyncDecisionName(SyncDecision decision);
+
 class SyncPolicy {
 public:
   static SyncDecision decide(const SyncEntryState &state, SyncMode mode);
