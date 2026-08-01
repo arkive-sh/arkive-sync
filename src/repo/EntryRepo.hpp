@@ -64,6 +64,7 @@ struct FileEntryUpsert {
 struct RemoteEntryUpsert {
   std::string syncRootId;
   std::string remoteId;
+  std::string localPath;
   std::string remoteType;
   std::optional<std::string> remoteFileId;
   std::optional<std::string> remoteFolderId;
@@ -79,6 +80,8 @@ public:
   explicit EntryRepo(sqlite3 *db);
 
   std::optional<Entry> getEntryById(const std::string &entryId);
+  std::optional<Entry> findEntryByRemoteId(const std::string &syncRootId,
+                                           const std::string &remoteId);
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
   std::vector<Entry> listEntriesBySyncRootId(const std::string &syncRootId);

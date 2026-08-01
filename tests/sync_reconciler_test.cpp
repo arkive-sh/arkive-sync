@@ -44,6 +44,7 @@ TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
   entryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",
+      .localPath = "movie.txt",
       .remoteType = "file",
       .remoteFileId = std::optional<std::string>("remote-file-1"),
       .remoteFolderId = std::nullopt,

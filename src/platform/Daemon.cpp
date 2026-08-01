@@ -67,7 +67,8 @@ std::unique_ptr<Daemon> Daemon::create() {
     uploadJobRunner = std::make_unique<UploadJobRunner>(
         *syncRepo, *entryRepo, *uploadService);
     remoteScanner =
-        std::make_unique<RemoteScanner>(*syncRepo, *entryRepo, *api);
+        std::make_unique<RemoteScanner>(*syncRepo, *entryRepo, *api, *crypto,
+                                        *vaultService);
   }
   auto queueService = std::make_unique<QueueService>(
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),

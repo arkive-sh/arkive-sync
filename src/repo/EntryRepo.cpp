@@ -57,10 +57,6 @@ parseMtime(const unsigned char *raw) {
   return std::filesystem::file_time_type(std::chrono::milliseconds(ms));
 }
 
-std::string syntheticRemotePath(const std::string &remoteId) {
-  return ".__remote__/" + remoteId;
-}
-
 Entry readEntry(sqlite3_stmt *stmt) {
   const char *id = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
   const char *remoteId =
@@ -192,6 +188,57 @@ LIMIT 1;
 
   StmtUniquePtr stmt(rawStmt);
   bindText(db_, stmt.get(), 1, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc == SQLITE_DONE) {
+    return std::nullopt;
+  }
+  if (rc != SQLITE_ROW) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  return readEntry(stmt.get());
+}
+
+std::optional<Entry>
+EntryRepo::findEntryByRemoteId(const std::string &syncRootId,
+                               const std::string &remoteId) {
+  static constexpr const char *sql = R"sql(
+SELECT
+  id,
+  remote_id,
+  remote_file_id,
+  local_deleted_at,
+  remote_deleted_at,
+  sync_root_id,
+  local_path,
+  parent_folder_id,
+  local_size,
+  local_mtime,
+  local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
+  sync_state,
+  last_seen_scan_job_id,
+  is_directory
+FROM entries
+WHERE sync_root_id = ?
+  AND remote_id = ?
+LIMIT 1;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+  bindText(db_, stmt.get(), 2, remoteId);
 
   const int rc = sqlite3_step(stmt.get());
   if (rc == SQLITE_DONE) {
@@ -532,6 +579,7 @@ void EntryRepo::upsertRemoteEntry(const RemoteEntryUpsert &entry) {
   static constexpr const char *updateSql = R"sql(
 UPDATE entries
 SET
+  local_path = ?,
   remote_type = ?,
   is_directory = ?,
   encrypted_name = ?,
@@ -558,21 +606,22 @@ WHERE sync_root_id = ?
 
   {
     StmtUniquePtr stmt(rawUpdateStmt);
-    bindText(db_, stmt.get(), 1, entry.remoteType);
+    bindText(db_, stmt.get(), 1, entry.localPath);
+    bindText(db_, stmt.get(), 2, entry.remoteType);
     throwIfBindFailed(db_, sqlite3_bind_int(
-                               stmt.get(), 2,
+                               stmt.get(), 3,
                                entry.remoteType == "folder" ? 1 : 0));
-    bindOptionalText(db_, stmt.get(), 3, entry.encryptedName);
-    bindOptionalText(db_, stmt.get(), 4, entry.encryptedMetadata);
-    bindText(db_, stmt.get(), 5, entry.remoteUpdatedAt);
-    bindOptionalText(db_, stmt.get(), 6, entry.remoteFileId);
-    bindOptionalText(db_, stmt.get(), 7, entry.remoteFolderId);
-    bindOptionalText(db_, stmt.get(), 8, entry.remoteParentFolderId);
-    bindOptionalText(db_, stmt.get(), 9, entry.remoteDeletedAt);
-    bindText(db_, stmt.get(), 10,
+    bindOptionalText(db_, stmt.get(), 4, entry.encryptedName);
+    bindOptionalText(db_, stmt.get(), 5, entry.encryptedMetadata);
+    bindText(db_, stmt.get(), 6, entry.remoteUpdatedAt);
+    bindOptionalText(db_, stmt.get(), 7, entry.remoteFileId);
+    bindOptionalText(db_, stmt.get(), 8, entry.remoteFolderId);
+    bindOptionalText(db_, stmt.get(), 9, entry.remoteParentFolderId);
+    bindOptionalText(db_, stmt.get(), 10, entry.remoteDeletedAt);
+    bindText(db_, stmt.get(), 11,
              entry.remoteDeletedAt.has_value() ? "deleted" : "unchanged");
-    bindText(db_, stmt.get(), 11, entry.syncRootId);
-    bindText(db_, stmt.get(), 12, entry.remoteId);
+    bindText(db_, stmt.get(), 12, entry.syncRootId);
+    bindText(db_, stmt.get(), 13, entry.remoteId);
 
     const int rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -651,7 +700,7 @@ ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   bindText(db_, stmt.get(), 2, entry.remoteId);
   bindText(db_, stmt.get(), 3, entry.syncRootId);
   bindText(db_, stmt.get(), 4, entry.remoteType);
-  bindText(db_, stmt.get(), 5, syntheticRemotePath(entry.remoteId));
+  bindText(db_, stmt.get(), 5, entry.localPath);
   throwIfBindFailed(db_, sqlite3_bind_int(
                              stmt.get(), 6,
                              entry.remoteType == "folder" ? 1 : 0));
