@@ -120,13 +120,7 @@ FileEncryptor::wrapFileKey(const std::vector<uint8_t> &fileKey,
     throw std::invalid_argument("fileKey cannot be empty");
   }
 
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error(
-        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
-  }
+  vaultService_.ensureUnlocked();
 
   const std::vector<uint8_t> aad =
       ArkiveAad::toBytes(ArkiveAad::makeFileKey(vaultId, fileId));
@@ -153,13 +147,7 @@ FileEncryptor::encryptMetadata(const std::string &metadataJson,
 
 std::vector<uint8_t>
 FileEncryptor::encryptFolderName(const std::string &metadataJson) {
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error(
-        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
-  }
+  vaultService_.ensureUnlocked();
 
   const std::vector<uint8_t> metadataBytes(metadataJson.begin(),
                                            metadataJson.end());
@@ -170,13 +158,7 @@ FileEncryptor::encryptFolderName(const std::string &metadataJson) {
 
 std::vector<uint8_t>
 FileEncryptor::encryptFolderMetadata(const std::string &metadataJson) {
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error(
-        "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
-  }
+  vaultService_.ensureUnlocked();
 
   const std::vector<uint8_t> metadataBytes(metadataJson.begin(),
                                            metadataJson.end());
@@ -203,12 +185,7 @@ FileEncryptor::encryptResumeFileKey(const std::vector<uint8_t> &fileKey,
     throw std::invalid_argument("fileKey cannot be empty");
   }
 
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error("Vault is locked");
-  }
+  vaultService_.ensureUnlocked();
 
   return crypto_.encryptChunk(vaultService_.masterKey(),
                               ArkiveAad::toBytes(
@@ -224,12 +201,7 @@ FileEncryptor::decryptResumeFileKey(
     throw std::invalid_argument("encryptedFileKeyBlob cannot be empty");
   }
 
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error("Vault is locked");
-  }
+  vaultService_.ensureUnlocked();
 
   return crypto_.decryptChunk(vaultService_.masterKey(),
                               ArkiveAad::toBytes(
@@ -254,12 +226,8 @@ FileEncryptor::createSearchTokenEntries(const std::string &vaultId,
   std::unordered_set<std::string> seen;
 
   try {
-    if (!vaultService_.isUnlocked()) {
-      vaultService_.restoreSession();
-    }
-    if (vaultService_.isUnlocked()) {
-      searchKey = crypto_.deriveSearchKey(vaultService_.masterKey());
-    }
+    vaultService_.ensureUnlocked();
+    searchKey = crypto_.deriveSearchKey(vaultService_.masterKey());
 
     for (const auto &term : terms) {
       const std::string dedupeKey = term.field + ":" + term.term;
@@ -269,14 +237,9 @@ FileEncryptor::createSearchTokenEntries(const std::string &vaultId,
 
       const std::string payload = vaultId + ":" + term.term;
       std::vector<uint8_t> digest;
-      if (!searchKey.empty()) {
-        digest = crypto_.hmacSha256(searchKey,
-                                    std::vector<uint8_t>(payload.begin(),
-                                                         payload.end()));
-      } else {
-        throw std::runtime_error(
-            "Vault is locked. Run `arkive-sync login` to unlock or restore the vault session.");
-      }
+      digest = crypto_.hmacSha256(searchKey,
+                                  std::vector<uint8_t>(payload.begin(),
+                                                       payload.end()));
 
       entries.push_back({
           .token = encodeBase64URL(digest),

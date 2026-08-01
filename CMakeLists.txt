@@ -95,6 +95,8 @@ add_executable(arkive-sync
     src/api/ArkiveHttpClient.cpp
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
+    src/download/DownloadManifest.cpp
+    src/download/DownloadRecordDecryptor.cpp
     src/helpers/Base64.cpp
     src/helpers/GenUUID.cpp
     src/helpers/Helpers.cpp
@@ -181,6 +183,8 @@ add_executable(arkive-sync-tests
     src/api/ArkiveHttpClient.cpp
     src/api/HttpError.cpp
     src/db/Sqlite.cpp
+    src/download/DownloadManifest.cpp
+    src/download/DownloadRecordDecryptor.cpp
     src/fs/UploadFileChunkReader.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
@@ -188,6 +192,7 @@ add_executable(arkive-sync-tests
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
     tests/arkive_api_test.cpp
+    tests/download_manifest_test.cpp
     tests/inotify_watcher_test.cpp
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp

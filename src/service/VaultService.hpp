@@ -19,6 +19,7 @@ public:
 
   void unlock(const std::string &password);
   bool restoreSession();
+  void ensureUnlocked();
   void clearPersistedSession();
   void lock();
   bool isUnlocked() const noexcept;

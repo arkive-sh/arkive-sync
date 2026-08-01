@@ -123,6 +123,15 @@ bool VaultService::restoreSession() {
   }
 }
 
+void VaultService::ensureUnlocked() {
+  if (!isUnlocked()) {
+    restoreSession();
+  }
+  if (!isUnlocked()) {
+    throw std::runtime_error("Vault is locked");
+  }
+}
+
 void VaultService::clearPersistedSession() {
   const auto account = userRepo_.getAccount();
   if (!account.has_value() || !account->vaultSessionKeyId.has_value() ||

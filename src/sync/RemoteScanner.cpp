@@ -63,12 +63,7 @@ std::optional<std::string> RemoteScanner::decryptEntryName(
     return std::nullopt;
   }
 
-  if (!vaultService_.isUnlocked()) {
-    vaultService_.restoreSession();
-  }
-  if (!vaultService_.isUnlocked()) {
-    throw std::runtime_error("Vault is locked");
-  }
+  vaultService_.ensureUnlocked();
 
   std::vector<uint8_t> encryptedBytes = decodeBase64(*encryptedName);
   const std::vector<uint8_t> plaintext = crypto_.decryptChunk(
