@@ -87,8 +87,26 @@ SyncEntryResponse decodeSyncEntryResponse(const nlohmann::json &json) {
       .remoteParentFolderId = optionalString(json, "parent_folder_id"),
       .encryptedName = optionalString(json, "encrypted_name"),
       .encryptedMetadata = optionalString(json, "encrypted_metadata"),
+      .encryptedFileKey = optionalString(json, "encrypted_file_key"),
+      .encryptedManifest = optionalString(json, "encrypted_manifest"),
       .deletedAt = optionalString(json, "deleted_at"),
       .updatedAt = json.value("updated_at", ""),
+  };
+}
+
+FileRecordResponse decodeFileRecordResponse(const nlohmann::json &json) {
+  return FileRecordResponse{
+      .fileId = json.value("fileId", ""),
+      .vaultId = json.value("vaultId", ""),
+      .encryptionVersion = json.value("encryptionVersion", int16_t{0}),
+      .chunkSize = json.value("chunkSize", int64_t{0}),
+      .totalChunks = json.value("totalChunks", 0),
+      .plaintextSize = json.value("plaintextSize", int64_t{0}),
+      .encryptedHash = json.value("encryptedHash", ""),
+      .encryptedMetadata = json.value("encryptedMetadata", ""),
+      .encryptedFileKey = json.value("encryptedFileKey", ""),
+      .encryptedManifest = json.value("encryptedManifest", ""),
+      .sourceUrl = json.value("sourceUrl", ""),
   };
 }
 
@@ -266,4 +284,9 @@ ListSyncEntriesResponse
 ArkiveApi::listSyncEntries(const ListSyncEntriesRequest &request) {
   return decodeListSyncEntriesResponse(
       client_.getJson(buildListSyncEntriesPath(request)));
+}
+
+FileRecordResponse ArkiveApi::getFileRecord(const std::string &fileId) {
+  return decodeFileRecordResponse(
+      client_.getJson("/api/files/" + fileId + "/record"));
 }

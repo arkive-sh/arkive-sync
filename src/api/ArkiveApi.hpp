@@ -103,6 +103,8 @@ struct SyncEntryResponse {
   std::optional<std::string> remoteParentFolderId;
   std::optional<std::string> encryptedName;
   std::optional<std::string> encryptedMetadata;
+  std::optional<std::string> encryptedFileKey;
+  std::optional<std::string> encryptedManifest;
   std::optional<std::string> deletedAt;
   std::string updatedAt;
 };
@@ -111,6 +113,20 @@ struct ListSyncEntriesResponse {
   std::vector<SyncEntryResponse> entries;
   std::optional<std::string> nextCursor;
   bool hasMore{false};
+};
+
+struct FileRecordResponse {
+  std::string fileId;
+  std::string vaultId;
+  int16_t encryptionVersion{0};
+  int64_t chunkSize{0};
+  int totalChunks{0};
+  int64_t plaintextSize{0};
+  std::string encryptedHash;
+  std::string encryptedMetadata;
+  std::string encryptedFileKey;
+  std::string encryptedManifest;
+  std::string sourceUrl;
 };
 
 class ArkiveApi {
@@ -144,6 +160,7 @@ public:
                   bool includeDeleted);
   virtual ListSyncEntriesResponse
   listSyncEntries(const ListSyncEntriesRequest &request);
+  virtual FileRecordResponse getFileRecord(const std::string &fileId);
 
 private:
   ArkiveHttpClient &client_;

@@ -187,6 +187,7 @@ add_executable(arkive-sync-tests
     src/platform/AppDataPaths.cpp
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
+    tests/arkive_api_test.cpp
     tests/inotify_watcher_test.cpp
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp

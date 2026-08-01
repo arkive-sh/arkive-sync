@@ -62,6 +62,18 @@ static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
   return size * nmemb;
 }
 
+struct SinkContext {
+  const ArkiveHttpClient::ByteSink *sink;
+};
+
+static size_t sinkCallback(char *ptr, size_t size, size_t nmemb,
+                           void *userdata) {
+  auto *ctx = static_cast<SinkContext *>(userdata);
+  const size_t total = size * nmemb;
+  (*ctx->sink)(reinterpret_cast<const uint8_t *>(ptr), total);
+  return total;
+}
+
 static size_t headerCallback(char *buffer, size_t size, size_t nitems,
                              void *userdata) {
   const size_t total = size * nitems;
@@ -263,4 +275,43 @@ std::string ArkiveHttpClient::putBytes(const std::string &pathOrUrl,
   }
 
   return etag;
+}
+
+void ArkiveHttpClient::getRangeToSink(const std::string &pathOrUrl,
+                                      uint64_t offset, uint64_t length,
+                                      const ByteSink &sink) {
+  if (length == 0) {
+    return;
+  }
+
+  CurlPtr curl = makeCurlHandle();
+  std::string response;
+  const std::string requestUrl = url(pathOrUrl);
+  const std::string range =
+      std::to_string(offset) + "-" + std::to_string(offset + length - 1);
+  SinkContext ctx{&sink};
+
+  curl_easy_setopt(curl.get(), CURLOPT_URL, requestUrl.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_HTTPGET, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_RANGE, range.c_str());
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, sinkCallback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &ctx);
+
+  if (requestUrl.rfind(baseUrl_, 0) == 0) {
+    curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
+    curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
+  }
+
+  CURLcode code = curl_easy_perform(curl.get());
+
+  long status = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+
+  if (code != CURLE_OK) {
+    throw std::runtime_error(curl_easy_strerror(code));
+  }
+
+  if (status != 206) {
+    throw HttpError(static_cast<int>(status), response);
+  }
 }
