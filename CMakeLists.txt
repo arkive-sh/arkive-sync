@@ -97,6 +97,7 @@ add_executable(arkive-sync
     src/db/SqliteHelpers.cpp
     src/download/DownloadManifest.cpp
     src/download/DownloadRecordDecryptor.cpp
+    src/download/DownloadService.cpp
     src/helpers/Base64.cpp
     src/helpers/GenUUID.cpp
     src/helpers/Helpers.cpp
@@ -104,6 +105,7 @@ add_executable(arkive-sync
     src/helpers/Mime.cpp
     src/fs/helpers/PathHelpers.cpp
     src/platform/AppDataPaths.cpp
+    src/platform/AtomicFileWriterFactory.cpp
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/DirtyPathRepo.cpp
@@ -155,6 +157,7 @@ elseif(UNIX)
     target_compile_options(arkive-sync PRIVATE ${LIBSECRET_CFLAGS_OTHER})
     target_sources(arkive-sync PRIVATE
         src/platform/linux/daemon/LinuxDaemon.cpp
+        src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
         src/platform/linux/SecureStorage.cpp
     )
 endif()
@@ -185,14 +188,18 @@ add_executable(arkive-sync-tests
     src/db/Sqlite.cpp
     src/download/DownloadManifest.cpp
     src/download/DownloadRecordDecryptor.cpp
+    src/download/DownloadService.cpp
     src/fs/UploadFileChunkReader.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/platform/AppDataPaths.cpp
+    src/platform/AtomicFileWriterFactory.cpp
+    src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
     tests/arkive_api_test.cpp
     tests/download_manifest_test.cpp
+    tests/download_service_test.cpp
     tests/inotify_watcher_test.cpp
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp

@@ -17,10 +17,11 @@ DownloadRecordDecryptor::decrypt(const FileRecordResponse &record) const {
       decodeBase64(record.encryptedFileKey), vaultService_.masterKey(),
       ArkiveAad::toBytes(ArkiveAad::makeFileKey(record.vaultId, record.fileId)));
 
-  const auto metadataBytes = crypto_.decryptFileMetadata(
-      decodeBase64(record.encryptedMetadata), fileKey,
+  const auto metadataBytes = crypto_.decryptChunk(
+      fileKey,
       ArkiveAad::toBytes(
-          ArkiveAad::makeFileMetadata(record.vaultId, record.fileId)));
+          ArkiveAad::makeFileMetadata(record.vaultId, record.fileId)),
+      decodeBase64(record.encryptedMetadata));
   const auto manifestBytes = crypto_.decryptChunk(
       fileKey,
       ArkiveAad::toBytes(
