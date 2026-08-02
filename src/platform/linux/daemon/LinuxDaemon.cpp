@@ -35,6 +35,7 @@
 #include <system_error>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -42,7 +43,13 @@ constexpr int kMaxDirtyPathsPerRootPerTick = 100;
 
 volatile std::sig_atomic_t gStopRequested = 0;
 
-void handleStopSignal(int) { gStopRequested = 1; }
+void handleStopSignal(int signal) {
+  if (gStopRequested != 0) {
+    _exit(128 + signal);
+  }
+
+  gStopRequested = 1;
+}
 
 class ScopedFd {
 public:
@@ -101,7 +108,27 @@ LinuxDaemon::~LinuxDaemon() = default;
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
-  const auto roots = services_.syncService->getSyncRoots();
+  services_.queueRepo->retryRunning();
+  auto roots = services_.syncService->getSyncRoots();
+
+  const auto remoteBoundRoots = [](
+      const std::vector<SyncRoot> &syncRoots) {
+    std::vector<SyncRoot> bound;
+    for (const auto &root : syncRoots) {
+      if (!root.folderId.empty()) {
+        bound.push_back(root);
+      }
+    }
+    return bound;
+  };
+
+  if (services_.remoteSyncService != nullptr) {
+    const auto boundRoots = remoteBoundRoots(roots);
+    if (!boundRoots.empty()) {
+      services_.remoteSyncService->runTick(boundRoots);
+    }
+    roots = services_.syncService->getSyncRoots();
+  }
 
   for (const auto &root : roots) {
     if (!root.enabled) {
@@ -129,6 +156,8 @@ int LinuxDaemon::run() {
       services_.syncReconciler->reconcileRoot(root);
     }
   }
+
+  roots = services_.syncService->getSyncRoots();
 
   const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
   if (epollFd.get() < 0) {
@@ -163,7 +192,8 @@ int LinuxDaemon::run() {
 
   while (!gStopRequested) {
     if (services_.remoteSyncService != nullptr) {
-      const bool remoteScanned = services_.remoteSyncService->runTick(roots);
+      const bool remoteScanned =
+          services_.remoteSyncService->runTick(remoteBoundRoots(roots));
       if (remoteScanned && services_.syncReconciler != nullptr) {
         for (const auto &root : roots) {
           if (root.enabled) {

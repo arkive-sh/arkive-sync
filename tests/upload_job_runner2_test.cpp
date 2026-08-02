@@ -25,6 +25,7 @@ class FakeUploadService final : public IUploadService {
 public:
   UploadFileResponse uploadFile(const std::filesystem::path &path,
                                 const Entry &entry) override {
+    uploadCount++;
     lastPath = path;
     lastParentFolderId = entry.parentFolderId;
     return UploadFileResponse{
@@ -37,6 +38,7 @@ public:
 
   std::optional<std::filesystem::path> lastPath;
   std::optional<std::string> lastParentFolderId;
+  int uploadCount{0};
 };
 
 void seedUnlockedAccount(UserRepo &userRepo, VaultService &vaultService,
@@ -134,5 +136,22 @@ TEST_CASE("UploadJobRunner resolves parent folder remote id and saves remote_fil
   REQUIRE(updated->remoteFileId == std::optional<std::string>("remote-file-1"));
   REQUIRE(updated->parentFolderId ==
           std::optional<std::string>("remote-folder-2"));
+  REQUIRE(updated->syncedContentHash ==
+          std::optional<std::string>("scan-hash-1"));
   REQUIRE(updated->syncState == EntrySyncState::Unchanged);
+
+  runner.run(TransferJob{
+      .id = "job-2",
+      .entryId = fileEntry->id,
+      .jobType = "upload_file",
+      .status = "running",
+      .localPath = "docs/movie.txt",
+      .remoteId = std::nullopt,
+      .remoteFolderId = std::optional<std::string>("remote-folder-2"),
+      .bytesTotal = static_cast<uint64_t>(*fileEntry->size),
+      .bytesDone = 0,
+      .retryCount = 0,
+  });
+
+  REQUIRE(uploadService.uploadCount == 1);
 }

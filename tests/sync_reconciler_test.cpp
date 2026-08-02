@@ -291,7 +291,7 @@ TEST_CASE("SyncReconciler does not download remote-deleted conflict copy") {
       .relativePath = "movie.txt",
       .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
       .mtime = std::filesystem::last_write_time(filePath),
-      .contentHash = "local-new",
+      .contentHash = "local-old",
       .syncState = EntrySyncState::PendingUpload,
       .lastSeenScanId = "scan-1",
   });
@@ -299,6 +299,17 @@ TEST_CASE("SyncReconciler does not download remote-deleted conflict copy") {
   const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
   REQUIRE(entry.has_value());
   remoteEntryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
+
+  localEntryRepo.upsertFileEntry({
+      .syncRootId = "root-1",
+      .relativePath = "movie.txt",
+      .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
+      .mtime = std::filesystem::last_write_time(filePath),
+      .contentHash = "local-new",
+      .syncState = EntrySyncState::PendingUpload,
+      .lastSeenScanId = "scan-2",
+  });
+
   remoteEntryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",

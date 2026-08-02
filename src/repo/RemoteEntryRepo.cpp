@@ -179,6 +179,11 @@ SET
   remote_file_id = ?,
   remote_parent_folder_id = ?,
   parent_folder_id = ?,
+  synced_content_hash = local_content_hash,
+  remote_deleted_at = NULL,
+  local_deleted_at = NULL,
+  conflict_state = 'none',
+  conflict_reason = NULL,
   sync_state = 'unchanged',
   last_synced_at = CURRENT_TIMESTAMP,
   updated_at = CURRENT_TIMESTAMP

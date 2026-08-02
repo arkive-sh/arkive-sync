@@ -468,6 +468,21 @@ WHERE status = 'failed';
   execOrThrow(db_, retryFailedSql);
 }
 
+void QueueRepo::retryRunning() {
+  static constexpr const char *retryRunningSql = R"sql(
+UPDATE transfer_queue
+SET
+  status = 'queued',
+  bytes_done = 0,
+  error_message = NULL,
+  retry_count = retry_count + 1,
+  updated_at = CURRENT_TIMESTAMP
+WHERE status = 'running';
+  )sql";
+
+  execOrThrow(db_, retryRunningSql);
+}
+
 void QueueRepo::clearDone() {
   static constexpr const char *clearDoneSql = R"sql(
 DELETE FROM transfer_queue

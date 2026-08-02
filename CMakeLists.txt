@@ -204,6 +204,7 @@ add_executable(arkive-sync-tests
     tests/download_manifest_test.cpp
     tests/download_service_test.cpp
     tests/inotify_watcher_test.cpp
+    tests/local_entry_repo_test.cpp
     tests/folder_create_worker_test.cpp
     tests/queue_repo_test.cpp
     tests/secure_storage_stub.cpp

@@ -55,6 +55,7 @@ public:
   void incrementProgress(const std::string &jobId, uint64_t bytesDone);
 
   void retryFailed();
+  void retryRunning();
 
   void clearDone();
 

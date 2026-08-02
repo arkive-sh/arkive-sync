@@ -59,8 +59,47 @@ INSERT INTO entries (
 )
 ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   is_directory = 1,
+  remote_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_id
+  END,
+  parent_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.parent_folder_id
+  END,
+  remote_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_folder_id
+  END,
+  remote_parent_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_parent_folder_id
+  END,
+  remote_deleted_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_deleted_at
+  END,
+  remote_updated_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_updated_at
+  END,
+  synced_remote_updated_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.synced_remote_updated_at
+  END,
+  local_deleted_at = NULL,
+  conflict_state = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN 'none'
+    ELSE entries.conflict_state
+  END,
+  conflict_reason = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.conflict_reason
+  END,
   sync_state = CASE
-    WHEN entries.remote_id IS NULL OR entries.sync_state = 'deleted'
+    WHEN entries.local_deleted_at IS NOT NULL
+      OR entries.remote_id IS NULL
+      OR entries.sync_state = 'deleted'
       THEN 'pending_upload'
     ELSE 'unchanged'
   END,
@@ -116,10 +155,58 @@ INSERT INTO entries (
 )
 ON CONFLICT(sync_root_id, local_path) DO UPDATE SET
   is_directory = 0,
+  remote_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_id
+  END,
+  remote_file_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_file_id
+  END,
+  parent_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.parent_folder_id
+  END,
+  remote_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_folder_id
+  END,
+  remote_parent_folder_id = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_parent_folder_id
+  END,
+  remote_deleted_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_deleted_at
+  END,
+  remote_updated_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.remote_updated_at
+  END,
+  synced_remote_updated_at = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.synced_remote_updated_at
+  END,
+  synced_content_hash = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.synced_content_hash
+  END,
+  local_deleted_at = NULL,
   local_size = excluded.local_size,
   local_mtime = excluded.local_mtime,
   local_content_hash = excluded.local_content_hash,
-  sync_state = excluded.sync_state,
+  conflict_state = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN 'none'
+    ELSE entries.conflict_state
+  END,
+  conflict_reason = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN NULL
+    ELSE entries.conflict_reason
+  END,
+  sync_state = CASE
+    WHEN entries.local_deleted_at IS NOT NULL THEN 'pending_upload'
+    ELSE excluded.sync_state
+  END,
   last_seen_scan_job_id = excluded.last_seen_scan_job_id,
   updated_at = CURRENT_TIMESTAMP;
   )sql";

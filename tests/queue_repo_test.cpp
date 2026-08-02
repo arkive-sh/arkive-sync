@@ -94,6 +94,20 @@ TEST_CASE("QueueRepo retries failed uploads") {
   REQUIRE(readRetryCount(db.get(), claimed->id) == 1);
 }
 
+TEST_CASE("QueueRepo retries interrupted running uploads") {
+  TestDb db;
+  QueueRepo repo(db.get());
+
+  repo.enqueueUploadFile("entry-1", "", std::nullopt, 123);
+  const std::optional<TransferJob> claimed = repo.claimNextQueued();
+  REQUIRE(claimed.has_value());
+
+  repo.retryRunning();
+
+  REQUIRE(readStatus(db.get(), claimed->id) == "queued");
+  REQUIRE(readRetryCount(db.get(), claimed->id) == 1);
+}
+
 TEST_CASE("QueueRepo clears done uploads") {
   TestDb db;
   QueueRepo repo(db.get());

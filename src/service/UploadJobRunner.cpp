@@ -2,6 +2,8 @@
 
 #include "repo/SyncRepo.hpp"
 #include "service/UploadService.hpp"
+#include "sync/SyncPolicy.hpp"
+#include "sync/SyncStateClassifier.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -58,6 +60,11 @@ void UploadJobRunner::run(const TransferJob &job) {
   const auto syncRoot = syncRepo_.findSyncRootById(entry->syncRootId);
   if (!syncRoot.has_value()) {
     throw std::runtime_error("Queued upload sync root is missing");
+  }
+
+  if (SyncPolicy::decide(SyncStateClassifier::classify(*entry),
+                         syncRoot->mode) != SyncDecision::Upload) {
+    return;
   }
 
   const std::filesystem::path absolutePath =
