@@ -12,9 +12,10 @@ public:
   DownloadService(ArkiveApi &api, ArkiveHttpClient &httpClient,
                   RustCrypto &crypto,
                   DownloadRecordDecryptor &recordDecryptor);
+  virtual ~DownloadService() = default;
 
-  void downloadFile(const std::string &fileId,
-                    const std::filesystem::path &targetPath) const;
+  virtual void downloadFile(const std::string &fileId,
+                            const std::filesystem::path &targetPath) const;
 
 private:
   ArkiveApi &api_;

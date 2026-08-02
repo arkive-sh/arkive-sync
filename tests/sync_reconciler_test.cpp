@@ -1,14 +1,38 @@
 #include "db/SqliteHelpers.hpp"
+#include "download/DownloadService.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/SyncReconciler.hpp"
 
 #include "support/TestDatabase.hpp"
+#include "support/FakeSecureStorage.hpp"
 #include "support/TestFs.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+
+namespace {
+
+class FakeDownloadService final : public DownloadService {
+public:
+  FakeDownloadService(ArkiveApi &api, ArkiveHttpClient &http,
+                      RustCrypto &crypto,
+                      DownloadRecordDecryptor &decryptor)
+      : DownloadService(api, http, crypto, decryptor) {}
+
+  void downloadFile(const std::string &fileId,
+                    const std::filesystem::path &targetPath) const override {
+    lastFileId = fileId;
+    lastTargetPath = targetPath;
+    writeFile(targetPath, "remote");
+  }
+
+  mutable std::optional<std::string> lastFileId;
+  mutable std::optional<std::filesystem::path> lastTargetPath;
+};
+
+} // namespace
 
 TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
   TestDatabase db;
@@ -72,4 +96,58 @@ TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
   reconciler.reconcileRoot(*root);
 
   REQUIRE_FALSE(std::filesystem::exists(filePath));
+}
+
+TEST_CASE("SyncReconciler downloads remote files") {
+  TestDatabase db;
+  TempDir tempDir;
+  ArkiveHttpClient http{"http://example.invalid", ""};
+  ArkiveApi api{http};
+  RustCrypto crypto;
+  UserRepo userRepo{db.get()};
+  VaultService vaultService{userRepo, crypto,
+                            std::make_unique<FakeSecureStorage>()};
+  DownloadRecordDecryptor decryptor{crypto, vaultService};
+  SyncRepo syncRepo(db.get());
+  EntryRepo entryRepo(db.get());
+  FakeDownloadService downloadService(api, http, crypto, decryptor);
+  SyncReconciler reconciler(entryRepo, &downloadService, &crypto);
+
+  syncRepo.upsertSyncRoot({
+      .Id = "root-1",
+      .localPath = tempDir.path().string(),
+      .folderId = "root-folder-1",
+      .enabled = 1,
+      .mode = SyncMode::RemoteMirror,
+  });
+
+  entryRepo.upsertRemoteEntry({
+      .syncRootId = "root-1",
+      .remoteId = "remote-file-1",
+      .localPath = "movie.txt",
+      .remoteType = "file",
+      .remoteFileId = std::optional<std::string>("remote-file-1"),
+      .remoteFolderId = std::nullopt,
+      .remoteParentFolderId = std::nullopt,
+      .encryptedName = std::nullopt,
+      .encryptedMetadata = std::nullopt,
+      .remoteDeletedAt = std::nullopt,
+      .remoteUpdatedAt = "2026-06-19T00:00:00Z",
+  });
+
+  const auto root = syncRepo.findSyncRootById("root-1");
+  REQUIRE(root.has_value());
+
+  reconciler.reconcileRoot(*root);
+
+  REQUIRE(downloadService.lastFileId ==
+          std::optional<std::string>("remote-file-1"));
+  REQUIRE(downloadService.lastTargetPath ==
+          std::optional<std::filesystem::path>(tempDir.path() / "movie.txt"));
+  REQUIRE(std::filesystem::exists(tempDir.path() / "movie.txt"));
+
+  const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
+  REQUIRE(entry.has_value());
+  REQUIRE(entry->syncedRemoteUpdatedAt == entry->remoteUpdatedAt);
+  REQUIRE(entry->syncedContentHash == entry->contentHash);
 }

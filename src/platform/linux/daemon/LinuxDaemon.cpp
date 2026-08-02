@@ -13,6 +13,8 @@
 #include "repo/UserRepo.hpp"
 #include "api/ArkiveApi.hpp"
 #include "api/ArkiveHttpClient.hpp"
+#include "download/DownloadRecordDecryptor.hpp"
+#include "download/DownloadService.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
@@ -98,6 +100,9 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<FolderCreateWorker> folderCreateWorker,
                          std::unique_ptr<UploadService> uploadService,
                          std::unique_ptr<UploadJobRunner> uploadJobRunner,
+                         std::unique_ptr<DownloadRecordDecryptor>
+                             downloadRecordDecryptor,
+                         std::unique_ptr<DownloadService> downloadService,
                          std::unique_ptr<SyncService> syncService,
                          std::unique_ptr<SyncReconciler> syncReconciler,
                          std::unique_ptr<RootScanner> rootScanner,
@@ -116,6 +121,8 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       folderCreateWorker_(std::move(folderCreateWorker)),
       uploadService_(std::move(uploadService)),
       uploadJobRunner_(std::move(uploadJobRunner)),
+      downloadRecordDecryptor_(std::move(downloadRecordDecryptor)),
+      downloadService_(std::move(downloadService)),
       syncService_(std::move(syncService)),
       syncReconciler_(std::move(syncReconciler)),
       rootScanner_(std::move(rootScanner)),
@@ -181,7 +188,14 @@ int LinuxDaemon::run() {
 
   while (!gStopRequested) {
     if (remoteSyncService_ != nullptr) {
-      remoteSyncService_->runTick(roots);
+      const bool remoteScanned = remoteSyncService_->runTick(roots);
+      if (remoteScanned && syncReconciler_ != nullptr) {
+        for (const auto &root : roots) {
+          if (root.enabled) {
+            syncReconciler_->reconcileRoot(root);
+          }
+        }
+      }
     }
     for (const auto &root : roots) {
       if (!root.enabled) {

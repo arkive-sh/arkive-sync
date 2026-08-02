@@ -16,7 +16,7 @@ public:
   explicit RemoteSyncService(std::unique_ptr<RemoteScanner> remoteScanner);
   ~RemoteSyncService();
 
-  void runTick(const std::vector<SyncRoot> &roots);
+  bool runTick(const std::vector<SyncRoot> &roots);
 
 private:
   std::unique_ptr<RemoteScanner> remoteScanner_;

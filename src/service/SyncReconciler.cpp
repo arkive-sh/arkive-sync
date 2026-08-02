@@ -1,5 +1,7 @@
 #include "service/SyncReconciler.hpp"
 
+#include "download/DownloadService.hpp"
+#include "fs/FileHasher.hpp"
 #include "fs/helpers/PathHelpers.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
@@ -9,7 +11,18 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
-SyncReconciler::SyncReconciler(EntryRepo &entryRepo) : entryRepo_(entryRepo) {}
+SyncReconciler::SyncReconciler(EntryRepo &entryRepo)
+    : SyncReconciler(entryRepo, nullptr) {}
+
+SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
+                               DownloadService *downloadService)
+    : SyncReconciler(entryRepo, downloadService, nullptr) {}
+
+SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
+                               DownloadService *downloadService,
+                               RustCrypto *crypto)
+    : entryRepo_(entryRepo), downloadService_(downloadService),
+      crypto_(crypto) {}
 
 void SyncReconciler::applyDeleteLocal(const SyncRoot &root,
                                       const std::filesystem::path &path,
@@ -37,6 +50,44 @@ void SyncReconciler::reconcileRoot(const SyncRoot &root) {
 
     if (decision == SyncDecision::DeleteLocal) {
       applyDeleteLocal(root, absolutePath, entry.isDirectory);
+    } else if (decision == SyncDecision::Download && entry.isDirectory) {
+      spdlog::info("Skipping folder download for root {} path {}", root.Id,
+                   entry.relativePath);
+    } else if (decision == SyncDecision::Download && downloadService_ == nullptr) {
+      spdlog::error("Cannot download remote file for root {} path {}: "
+                    "download service is unavailable",
+                    root.Id, entry.relativePath);
+    } else if (decision == SyncDecision::Download && !entry.remoteFileId.has_value()) {
+      spdlog::error("Cannot download remote file for root {} path {}: "
+                    "remote_file_id is missing",
+                    root.Id, entry.relativePath);
+    } else if (decision == SyncDecision::Download) {
+      try {
+        downloadService_->downloadFile(*entry.remoteFileId, absolutePath);
+        if (crypto_ != nullptr) {
+          std::error_code ec;
+          const auto size = std::filesystem::file_size(absolutePath, ec);
+          if (ec || size > static_cast<uintmax_t>(std::numeric_limits<int64_t>::max())) {
+            throw std::runtime_error("downloaded file size unavailable");
+          }
+
+          const auto mtime = std::filesystem::last_write_time(absolutePath, ec);
+          if (ec) {
+            throw std::runtime_error("downloaded file mtime unavailable");
+          }
+
+          const std::string hash = FileHasher(absolutePath, *crypto_).hashFile();
+          entryRepo_.markEntryDownloaded(entry.id, static_cast<int64_t>(size),
+                                         mtime, hash);
+        } else {
+          entryRepo_.markEntryDownloaded(entry.id);
+        }
+        spdlog::info("Downloaded remote file for root {} path {}", root.Id,
+                     entry.relativePath);
+      } catch (const std::exception &error) {
+        spdlog::error("Failed to download remote file for root {} path {}: {}",
+                      root.Id, entry.relativePath, error.what());
+      }
     }
 
     spdlog::info(

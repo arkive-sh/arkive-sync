@@ -26,6 +26,8 @@ class UploadJobRunner;
 class SyncService;
 class SyncReconciler;
 class RootScanner;
+class DownloadRecordDecryptor;
+class DownloadService;
 
 class LinuxDaemon final : public Daemon {
 public:
@@ -46,6 +48,8 @@ public:
               std::unique_ptr<FolderCreateWorker> folderCreateWorker,
               std::unique_ptr<UploadService> uploadService,
               std::unique_ptr<UploadJobRunner> uploadJobRunner,
+              std::unique_ptr<DownloadRecordDecryptor> downloadRecordDecryptor,
+              std::unique_ptr<DownloadService> downloadService,
               std::unique_ptr<SyncService> syncService,
               std::unique_ptr<SyncReconciler> syncReconciler,
               std::unique_ptr<RootScanner> rootScanner,
@@ -73,6 +77,8 @@ private:
   std::unique_ptr<FolderCreateWorker> folderCreateWorker_;
   std::unique_ptr<UploadService> uploadService_;
   std::unique_ptr<UploadJobRunner> uploadJobRunner_;
+  std::unique_ptr<DownloadRecordDecryptor> downloadRecordDecryptor_;
+  std::unique_ptr<DownloadService> downloadService_;
   std::unique_ptr<SyncService> syncService_;
   std::unique_ptr<SyncReconciler> syncReconciler_;
   std::unique_ptr<RootScanner> rootScanner_;

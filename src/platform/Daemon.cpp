@@ -4,6 +4,8 @@
 #include "api/ArkiveHttpClient.hpp"
 #include "crypto/RustCrypto.hpp"
 #include "db/Sqlite.hpp"
+#include "download/DownloadRecordDecryptor.hpp"
+#include "download/DownloadService.hpp"
 #include "fs/FileWatcher.hpp"
 #include "platform/AppDataPaths.hpp"
 #include "repo/DirtyPathRepo.hpp"
@@ -54,6 +56,8 @@ std::unique_ptr<Daemon> Daemon::create() {
   std::unique_ptr<UploadService> uploadService;
   std::unique_ptr<UploadJobRunner> uploadJobRunner;
   std::unique_ptr<RemoteScanner> remoteScanner;
+  std::unique_ptr<DownloadRecordDecryptor> downloadRecordDecryptor;
+  std::unique_ptr<DownloadService> downloadService;
 
   if (const auto account = userRepo->getAccount();
       account.has_value() && !account->baseUrl.empty()) {
@@ -68,12 +72,17 @@ std::unique_ptr<Daemon> Daemon::create() {
         *syncRepo, *entryRepo, *uploadService);
     remoteScanner =
         std::make_unique<RemoteScanner>(*syncRepo, *entryRepo, *api, *crypto,
-                                        *vaultService);
+                                        *vaultService, *userRepo);
+    downloadRecordDecryptor =
+        std::make_unique<DownloadRecordDecryptor>(*crypto, *vaultService);
+    downloadService = std::make_unique<DownloadService>(
+        *api, *client, *crypto, *downloadRecordDecryptor);
   }
   auto queueService = std::make_unique<QueueService>(
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
       uploadJobRunner.get());
-  auto syncReconciler = std::make_unique<SyncReconciler>(*entryRepo);
+  auto syncReconciler = std::make_unique<SyncReconciler>(
+      *entryRepo, downloadService.get(), crypto.get());
   auto remoteSyncService =
       std::make_unique<RemoteSyncService>(std::move(remoteScanner));
 
@@ -85,7 +94,8 @@ std::unique_ptr<Daemon> Daemon::create() {
       std::move(userRepo), std::move(uploadResumeRepo),
       std::move(vaultService), std::move(fileEncryptor), std::move(client),
       std::move(api), std::move(folderCreateWorker), std::move(uploadService),
-      std::move(uploadJobRunner), std::move(syncService),
+      std::move(uploadJobRunner), std::move(downloadRecordDecryptor),
+      std::move(downloadService), std::move(syncService),
       std::move(syncReconciler), std::move(rootScanner),
       std::move(watcher));
 #elif defined(__APPLE__)

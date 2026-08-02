@@ -757,6 +757,70 @@ WHERE id = ?;
   }
 }
 
+void EntryRepo::markEntryDownloaded(const std::string &entryId) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  synced_remote_updated_at = remote_updated_at,
+  sync_state = 'unchanged',
+  last_synced_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
+void EntryRepo::markEntryDownloaded(const std::string &entryId, int64_t size,
+                                    std::filesystem::file_time_type mtime,
+                                    const std::string &contentHash) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  local_size = ?,
+  local_mtime = ?,
+  local_content_hash = ?,
+  synced_content_hash = ?,
+  synced_remote_updated_at = remote_updated_at,
+  sync_state = 'unchanged',
+  last_synced_at = CURRENT_TIMESTAMP,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  throwIfBindFailed(db_, sqlite3_bind_int64(stmt.get(), 1, size));
+  bindText(db_, stmt.get(), 2, toMtimeString(mtime));
+  bindText(db_, stmt.get(), 3, contentHash);
+  bindText(db_, stmt.get(), 4, contentHash);
+  bindText(db_, stmt.get(), 5, entryId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}
+
 void EntryRepo::markFolderCreated(
     const std::string &entryId, const std::string &remoteFolderId,
     const std::optional<std::string> &remoteParentFolderId) {

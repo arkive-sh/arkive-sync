@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 #include <filesystem>
 #include <stdexcept>
+#include <string>
 
 namespace {
 
@@ -98,6 +99,11 @@ DirtyPath readDirtyPath(sqlite3_stmt *stmt) {
   };
 }
 
+bool isArkiveTempPath(const std::filesystem::path &path) {
+  const std::string name = path.filename().string();
+  return name.ends_with(".tmp") && name.find(".arkive-") != std::string::npos;
+}
+
 } // namespace
 
 DirtyPathRepo::DirtyPathRepo(sqlite3 *db) : db_(db) {
@@ -123,6 +129,13 @@ void DirtyPathRepo::record(const FileEvent &event) {
   const auto root = SyncRepo(db_).findSyncRootById(event.rootId);
   if (!root.has_value()) {
     spdlog::warn("Ignoring file event for unknown root {}", event.rootId);
+    return;
+  }
+
+  if (isArkiveTempPath(event.path) ||
+      (event.oldPath.has_value() && isArkiveTempPath(*event.oldPath))) {
+    spdlog::info("Ignoring arkive temp file event type={} path={}",
+                 eventTypeName(event.type), event.path.string());
     return;
   }
 

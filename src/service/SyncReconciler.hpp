@@ -4,11 +4,16 @@
 
 struct SyncRoot;
 
+class DownloadService;
 class EntryRepo;
+class RustCrypto;
 
 class SyncReconciler {
 public:
   explicit SyncReconciler(EntryRepo &entryRepo);
+  SyncReconciler(EntryRepo &entryRepo, DownloadService *downloadService);
+  SyncReconciler(EntryRepo &entryRepo, DownloadService *downloadService,
+                 RustCrypto *crypto);
 
   void reconcileRoot(const SyncRoot &root);
 
@@ -17,4 +22,6 @@ private:
                         bool isDirectory);
 
   EntryRepo &entryRepo_;
+  DownloadService *downloadService_{nullptr};
+  RustCrypto *crypto_{nullptr};
 };

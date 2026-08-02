@@ -20,12 +20,13 @@ RemoteSyncService::RemoteSyncService(
 
 RemoteSyncService::~RemoteSyncService() = default;
 
-void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
+bool RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
   if (remoteScanner_ == nullptr) {
-    return;
+    return false;
   }
 
   const auto now = std::chrono::steady_clock::now();
+  bool scanned = false;
 
   for (const auto &root : roots) {
     if (!root.enabled) {
@@ -39,6 +40,7 @@ void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
     }
 
     remoteScanner_->scanRoot(root.Id);
+    scanned = true;
     if (remoteScanner_->isRootDeleted(root.Id)) {
       std::error_code error;
       std::filesystem::remove_all(normalizeFsPath(root.localPath), error);
@@ -49,4 +51,6 @@ void RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
     }
     lastRemoteScanAt_[root.Id] = now;
   }
+
+  return scanned;
 }

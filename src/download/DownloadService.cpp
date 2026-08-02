@@ -3,6 +3,7 @@
 #include "crypto/Aad.hpp"
 #include "platform/AtomicFileWriterFactory.hpp"
 
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 
 DownloadService::DownloadService(ArkiveApi &api, ArkiveHttpClient &httpClient,
@@ -18,6 +19,9 @@ void DownloadService::downloadFile(
 
   auto writer = createAtomicFileWriter(targetPath);
   writer->preallocate(decrypted.manifest.size);
+  spdlog::info("Starting download file={} path={} size={} chunks={}",
+               record.fileId, targetPath.string(), decrypted.manifest.size,
+               decrypted.manifest.chunks.size());
 
   try {
     for (const auto &chunk : decrypted.manifest.chunks) {
@@ -36,6 +40,11 @@ void DownloadService::downloadFile(
               record.chunkSize, record.totalChunks)),
           encrypted);
       writer->writeAt(chunk.plainStart, plaintext);
+      spdlog::info("Downloading file={} path={} chunk={}/{} bytes={}/{}",
+                   record.fileId, targetPath.string(), chunk.index + 1,
+                   decrypted.manifest.chunks.size(),
+                   chunk.plainStart + plaintext.size(),
+                   decrypted.manifest.size);
     }
     writer->commit();
   } catch (...) {

@@ -5,9 +5,11 @@
 #include <string>
 
 struct ListSyncEntriesResponse;
+struct SyncEntryResponse;
 
 class ArkiveApi;
 class EntryRepo;
+class UserRepo;
 class SyncRepo;
 class RustCrypto;
 class VaultService;
@@ -15,7 +17,8 @@ class VaultService;
 class RemoteScanner {
 public:
   RemoteScanner(SyncRepo &syncRepo, EntryRepo &entryRepo, ArkiveApi &api,
-                RustCrypto &crypto, VaultService &vaultService);
+                RustCrypto &crypto, VaultService &vaultService,
+                UserRepo &userRepo);
 
   void scanRoot(const std::string &syncRootId) const;
   bool isRootDeleted(const std::string &syncRootId) const;
@@ -23,8 +26,7 @@ public:
   fetchEntries(const std::optional<std::string> &folderId) const;
 
 private:
-  std::optional<std::string>
-  decryptEntryName(const std::optional<std::string> &encryptedName) const;
+  std::optional<std::string> decryptEntryName(const SyncEntryResponse &entry) const;
   void scanFolder(const std::string &syncRootId,
                   const std::optional<std::string> &remoteFolderId,
                   const std::filesystem::path &localParentPath) const;
@@ -34,4 +36,5 @@ private:
   ArkiveApi &api_;
   RustCrypto &crypto_;
   VaultService &vaultService_;
+  UserRepo &userRepo_;
 };
