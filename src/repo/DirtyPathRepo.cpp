@@ -134,8 +134,8 @@ void DirtyPathRepo::record(const FileEvent &event) {
 
   if (isArkiveTempPath(event.path) ||
       (event.oldPath.has_value() && isArkiveTempPath(*event.oldPath))) {
-    spdlog::info("Ignoring arkive temp file event type={} path={}",
-                 eventTypeName(event.type), event.path.string());
+    spdlog::debug("Ignoring arkive temp file event type={} path={}",
+                  eventTypeName(event.type), event.path.string());
     return;
   }
 

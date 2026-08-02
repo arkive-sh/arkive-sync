@@ -127,8 +127,8 @@ void RemoteScanner::scanFolder(
       continue;
     }
 
-    spdlog::info("Remote scan entry root={} remote_id={} type={} path={}",
-                 syncRootId, entry.remoteId, entry.type, localPath);
+    spdlog::debug("Remote scan entry root={} remote_id={} type={} path={}",
+                  syncRootId, entry.remoteId, entry.type, localPath);
 
     entryRepo_.upsertRemoteEntry({
         .syncRootId = syncRootId,

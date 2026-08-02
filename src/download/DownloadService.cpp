@@ -3,6 +3,7 @@
 #include "crypto/Aad.hpp"
 #include "platform/AtomicFileWriterFactory.hpp"
 
+#include <cstdint>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 
@@ -24,6 +25,9 @@ void DownloadService::downloadFile(
                decrypted.manifest.chunks.size());
 
   try {
+    std::uint64_t lastLoggedBytes = 0;
+    constexpr std::uint64_t kProgressLogInterval = 256ULL * 1024ULL * 1024ULL;
+
     for (const auto &chunk : decrypted.manifest.chunks) {
       std::vector<uint8_t> encrypted;
       encrypted.reserve(chunk.cipherSize);
@@ -40,11 +44,15 @@ void DownloadService::downloadFile(
               record.chunkSize, record.totalChunks)),
           encrypted);
       writer->writeAt(chunk.plainStart, plaintext);
-      spdlog::info("Downloading file={} path={} chunk={}/{} bytes={}/{}",
-                   record.fileId, targetPath.string(), chunk.index + 1,
-                   decrypted.manifest.chunks.size(),
-                   chunk.plainStart + plaintext.size(),
-                   decrypted.manifest.size);
+      const std::uint64_t downloadedBytes = chunk.plainStart + plaintext.size();
+      if (downloadedBytes == decrypted.manifest.size ||
+          downloadedBytes - lastLoggedBytes >= kProgressLogInterval) {
+        spdlog::info("Downloading file={} path={} chunk={}/{} bytes={}/{}",
+                     record.fileId, targetPath.string(), chunk.index + 1,
+                     decrypted.manifest.chunks.size(), downloadedBytes,
+                     decrypted.manifest.size);
+        lastLoggedBytes = downloadedBytes;
+      }
     }
     writer->commit();
   } catch (...) {

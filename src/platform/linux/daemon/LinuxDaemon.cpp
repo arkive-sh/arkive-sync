@@ -174,12 +174,12 @@ int LinuxDaemon::run() {
   const auto processWatcherEvents = [&]() {
     for (const auto &fileEvent : watcher_->poll()) {
       if (fileEvent.oldPath.has_value()) {
-        spdlog::info("watch event type={} path={} old_path={}",
-                     eventTypeName(fileEvent.type), fileEvent.path.string(),
-                     fileEvent.oldPath->string());
+        spdlog::debug("watch event type={} path={} old_path={}",
+                      eventTypeName(fileEvent.type), fileEvent.path.string(),
+                      fileEvent.oldPath->string());
       } else {
-        spdlog::info("watch event type={} path={}",
-                     eventTypeName(fileEvent.type), fileEvent.path.string());
+        spdlog::debug("watch event type={} path={}",
+                      eventTypeName(fileEvent.type), fileEvent.path.string());
       }
 
       dirtyPathRepo_->record(fileEvent);
@@ -222,8 +222,8 @@ int LinuxDaemon::run() {
         }
 
         processedDirtyPaths++;
-        spdlog::info("Claimed dirty path {} for root {}", dirtyPath->id,
-                     root.Id);
+        spdlog::debug("Claimed dirty path {} for root {}", dirtyPath->id,
+                      root.Id);
 
         try {
           bool ok = false;
