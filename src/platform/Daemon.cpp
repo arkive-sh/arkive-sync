@@ -34,81 +34,84 @@
 #include "platform/linux/daemon/LinuxDaemon.hpp"
 #endif
 
+#if defined(__linux__)
+namespace {
+
+LinuxDaemonServices createLinuxDaemonServices() {
+  LinuxDaemonServices services;
+
+  services.db = std::make_unique<Database>();
+  services.crypto = std::make_unique<RustCrypto>();
+  services.syncRepo = std::make_unique<SyncRepo>(services.db->getDb());
+  services.scanRepo = std::make_unique<ScanRepo>(services.db->getDb());
+  services.dirtyPathRepo =
+      std::make_unique<DirtyPathRepo>(services.db->getDb());
+  services.entryRepo = std::make_unique<EntryRepo>(services.db->getDb());
+  services.localEntryRepo =
+      std::make_unique<LocalEntryRepo>(services.db->getDb());
+  services.remoteEntryRepo =
+      std::make_unique<RemoteEntryRepo>(services.db->getDb());
+  services.conflictRepo = std::make_unique<ConflictRepo>(services.db->getDb());
+  services.queueRepo = std::make_unique<QueueRepo>(services.db->getDb());
+  services.userRepo = std::make_unique<UserRepo>(services.db->getDb());
+  services.uploadResumeRepo =
+      std::make_unique<UploadResumeRepo>(services.db->getDb());
+  services.syncService =
+      std::make_unique<SyncService>(*services.syncRepo, *services.crypto);
+  services.vaultService =
+      std::make_unique<VaultService>(*services.userRepo, *services.crypto);
+  services.fileEncryptor =
+      std::make_unique<FileEncryptor>(*services.crypto, *services.vaultService);
+  services.rootScanner = std::make_unique<RootScanner>(
+      services.db->getDb(), *services.crypto, *services.syncService,
+      *services.scanRepo, *services.dirtyPathRepo, *services.entryRepo,
+      *services.localEntryRepo);
+  services.watcher = IFileWatcher::create();
+  std::unique_ptr<RemoteScanner> remoteScanner;
+
+  if (const auto account = services.userRepo->getAccount();
+      account.has_value() && !account->baseUrl.empty()) {
+    services.client = std::make_unique<ArkiveHttpClient>(
+        account->baseUrl, cookieJarPath().string());
+    services.api = std::make_unique<ArkiveApi>(*services.client);
+    services.folderCreateWorker = std::make_unique<FolderCreateWorker>(
+        *services.syncRepo, *services.entryRepo, *services.remoteEntryRepo,
+        *services.userRepo, *services.fileEncryptor, *services.api);
+    services.uploadService = std::make_unique<UploadService>(
+        *services.api, *services.fileEncryptor, *services.uploadResumeRepo);
+    services.uploadJobRunner = std::make_unique<UploadJobRunner>(
+        *services.syncRepo, *services.entryRepo, *services.remoteEntryRepo,
+        *services.uploadService);
+    remoteScanner = std::make_unique<RemoteScanner>(
+        *services.syncRepo, *services.entryRepo, *services.remoteEntryRepo,
+        *services.api, *services.crypto, *services.vaultService,
+        *services.userRepo);
+    services.downloadRecordDecryptor =
+        std::make_unique<DownloadRecordDecryptor>(*services.crypto,
+                                                  *services.vaultService);
+    services.downloadService = std::make_unique<DownloadService>(
+        *services.api, *services.client, *services.crypto,
+        *services.downloadRecordDecryptor);
+  }
+
+  services.queueService = std::make_unique<QueueService>(
+      *services.entryRepo, *services.queueRepo, *services.syncRepo,
+      services.folderCreateWorker.get(), services.uploadJobRunner.get());
+  services.syncReconciler = std::make_unique<SyncReconciler>(
+      *services.entryRepo, *services.conflictRepo, *services.remoteEntryRepo,
+      services.downloadService.get(), services.crypto.get());
+  services.remoteSyncService = std::make_unique<RemoteSyncService>(
+      std::move(remoteScanner), *services.remoteEntryRepo, *services.syncRepo);
+
+  return services;
+}
+
+} // namespace
+#endif
+
 std::unique_ptr<Daemon> Daemon::create() {
 #if defined(__linux__)
-  auto db = std::make_unique<Database>();
-  auto crypto = std::make_unique<RustCrypto>();
-  auto syncRepo = std::make_unique<SyncRepo>(db->getDb());
-  auto scanRepo = std::make_unique<ScanRepo>(db->getDb());
-  auto dirtyPathRepo = std::make_unique<DirtyPathRepo>(db->getDb());
-  auto entryRepo = std::make_unique<EntryRepo>(db->getDb());
-  auto localEntryRepo = std::make_unique<LocalEntryRepo>(db->getDb());
-  auto remoteEntryRepo = std::make_unique<RemoteEntryRepo>(db->getDb());
-  auto conflictRepo = std::make_unique<ConflictRepo>(db->getDb());
-  auto queueRepo = std::make_unique<QueueRepo>(db->getDb());
-  auto userRepo = std::make_unique<UserRepo>(db->getDb());
-  auto uploadResumeRepo = std::make_unique<UploadResumeRepo>(db->getDb());
-  auto syncService = std::make_unique<SyncService>(*syncRepo, *crypto);
-  auto vaultService = std::make_unique<VaultService>(*userRepo, *crypto);
-  auto fileEncryptor =
-      std::make_unique<FileEncryptor>(*crypto, *vaultService);
-  auto rootScanner = std::make_unique<RootScanner>(
-      db->getDb(), *crypto, *syncService, *scanRepo, *dirtyPathRepo,
-      *entryRepo, *localEntryRepo);
-  auto watcher = IFileWatcher::create();
-  std::unique_ptr<ArkiveHttpClient> client;
-  std::unique_ptr<ArkiveApi> api;
-  std::unique_ptr<FolderCreateWorker> folderCreateWorker;
-  std::unique_ptr<UploadService> uploadService;
-  std::unique_ptr<UploadJobRunner> uploadJobRunner;
-  std::unique_ptr<RemoteScanner> remoteScanner;
-  std::unique_ptr<DownloadRecordDecryptor> downloadRecordDecryptor;
-  std::unique_ptr<DownloadService> downloadService;
-
-  if (const auto account = userRepo->getAccount();
-      account.has_value() && !account->baseUrl.empty()) {
-    client = std::make_unique<ArkiveHttpClient>(account->baseUrl,
-                                                cookieJarPath().string());
-    api = std::make_unique<ArkiveApi>(*client);
-    folderCreateWorker = std::make_unique<FolderCreateWorker>(
-        *syncRepo, *entryRepo, *remoteEntryRepo, *userRepo, *fileEncryptor,
-        *api);
-    uploadService = std::make_unique<UploadService>(*api, *fileEncryptor,
-                                                    *uploadResumeRepo);
-    uploadJobRunner = std::make_unique<UploadJobRunner>(
-        *syncRepo, *entryRepo, *remoteEntryRepo, *uploadService);
-    remoteScanner =
-        std::make_unique<RemoteScanner>(*syncRepo, *entryRepo,
-                                        *remoteEntryRepo, *api, *crypto,
-                                        *vaultService, *userRepo);
-    downloadRecordDecryptor =
-        std::make_unique<DownloadRecordDecryptor>(*crypto, *vaultService);
-    downloadService = std::make_unique<DownloadService>(
-        *api, *client, *crypto, *downloadRecordDecryptor);
-  }
-  auto queueService = std::make_unique<QueueService>(
-      *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
-      uploadJobRunner.get());
-  auto syncReconciler = std::make_unique<SyncReconciler>(
-      *entryRepo, *conflictRepo, *remoteEntryRepo, downloadService.get(),
-      crypto.get());
-  auto remoteSyncService =
-      std::make_unique<RemoteSyncService>(std::move(remoteScanner),
-                                          *remoteEntryRepo, *syncRepo);
-
-  return std::make_unique<LinuxDaemon>(
-      std::move(db), std::move(crypto), std::move(syncRepo),
-      std::move(scanRepo), std::move(dirtyPathRepo), std::move(entryRepo),
-      std::move(localEntryRepo), std::move(remoteEntryRepo),
-      std::move(conflictRepo), std::move(queueRepo),
-      std::move(queueService), std::move(remoteSyncService),
-      std::move(userRepo), std::move(uploadResumeRepo),
-      std::move(vaultService), std::move(fileEncryptor), std::move(client),
-      std::move(api), std::move(folderCreateWorker), std::move(uploadService),
-      std::move(uploadJobRunner), std::move(downloadRecordDecryptor),
-      std::move(downloadService), std::move(syncService),
-      std::move(syncReconciler), std::move(rootScanner),
-      std::move(watcher));
+  return std::make_unique<LinuxDaemon>(createLinuxDaemonServices());
 #elif defined(__APPLE__)
   throw std::runtime_error("Daemon is not implemented on macOS yet");
 #elif defined(_WIN32)

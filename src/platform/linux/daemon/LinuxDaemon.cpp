@@ -34,6 +34,7 @@
 #include <sys/epoll.h>
 #include <system_error>
 #include <unistd.h>
+#include <utility>
 
 namespace {
 
@@ -85,65 +86,22 @@ private:
 
 } // namespace
 
-LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
-                         std::unique_ptr<RustCrypto> crypto,
-                         std::unique_ptr<SyncRepo> syncRepo,
-                         std::unique_ptr<ScanRepo> scanRepo,
-                         std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
-                         std::unique_ptr<EntryRepo> entryRepo,
-                         std::unique_ptr<LocalEntryRepo> localEntryRepo,
-                         std::unique_ptr<RemoteEntryRepo> remoteEntryRepo,
-                         std::unique_ptr<ConflictRepo> conflictRepo,
-                         std::unique_ptr<QueueRepo> queueRepo,
-                         std::unique_ptr<QueueService> queueService,
-                         std::unique_ptr<RemoteSyncService> remoteSyncService,
-                         std::unique_ptr<UserRepo> userRepo,
-                         std::unique_ptr<UploadResumeRepo> uploadResumeRepo,
-                         std::unique_ptr<VaultService> vaultService,
-                         std::unique_ptr<FileEncryptor> fileEncryptor,
-                         std::unique_ptr<ArkiveHttpClient> client,
-                         std::unique_ptr<ArkiveApi> api,
-                         std::unique_ptr<FolderCreateWorker> folderCreateWorker,
-                         std::unique_ptr<UploadService> uploadService,
-                         std::unique_ptr<UploadJobRunner> uploadJobRunner,
-                         std::unique_ptr<DownloadRecordDecryptor>
-                             downloadRecordDecryptor,
-                         std::unique_ptr<DownloadService> downloadService,
-                         std::unique_ptr<SyncService> syncService,
-                         std::unique_ptr<SyncReconciler> syncReconciler,
-                         std::unique_ptr<RootScanner> rootScanner,
-                         std::unique_ptr<IFileWatcher> watcher)
-    : db_(std::move(db)), crypto_(std::move(crypto)),
-      syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
-      dirtyPathRepo_(std::move(dirtyPathRepo)),
-      entryRepo_(std::move(entryRepo)),
-      localEntryRepo_(std::move(localEntryRepo)),
-      remoteEntryRepo_(std::move(remoteEntryRepo)),
-      conflictRepo_(std::move(conflictRepo)),
-      queueRepo_(std::move(queueRepo)),
-      queueService_(std::move(queueService)),
-      remoteSyncService_(std::move(remoteSyncService)),
-      userRepo_(std::move(userRepo)),
-      uploadResumeRepo_(std::move(uploadResumeRepo)),
-      vaultService_(std::move(vaultService)),
-      fileEncryptor_(std::move(fileEncryptor)), client_(std::move(client)),
-      api_(std::move(api)),
-      folderCreateWorker_(std::move(folderCreateWorker)),
-      uploadService_(std::move(uploadService)),
-      uploadJobRunner_(std::move(uploadJobRunner)),
-      downloadRecordDecryptor_(std::move(downloadRecordDecryptor)),
-      downloadService_(std::move(downloadService)),
-      syncService_(std::move(syncService)),
-      syncReconciler_(std::move(syncReconciler)),
-      rootScanner_(std::move(rootScanner)),
-      watcher_(std::move(watcher)) {}
+LinuxDaemonServices::LinuxDaemonServices() = default;
+LinuxDaemonServices::~LinuxDaemonServices() = default;
+LinuxDaemonServices::LinuxDaemonServices(LinuxDaemonServices &&) noexcept =
+    default;
+LinuxDaemonServices &
+LinuxDaemonServices::operator=(LinuxDaemonServices &&) noexcept = default;
+
+LinuxDaemon::LinuxDaemon(LinuxDaemonServices services)
+    : services_(std::move(services)) {}
 
 LinuxDaemon::~LinuxDaemon() = default;
 
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
-  const auto roots = syncService_->getSyncRoots();
+  const auto roots = services_.syncService->getSyncRoots();
 
   for (const auto &root : roots) {
     if (!root.enabled) {
@@ -156,19 +114,19 @@ int LinuxDaemon::run() {
       continue;
     }
 
-    watcher_->addRoot(WatchRoot{
+    services_.watcher->addRoot(WatchRoot{
         .rootId = root.Id,
         .path = root.localPath,
     });
 
-    if (!rootScanner_->scanRoot(root.Id)) {
+    if (!services_.rootScanner->scanRoot(root.Id)) {
       spdlog::error("Failed to start scan for sync root {}", root.Id);
       continue;
     }
 
-    queueService_->build(root.Id);
-    if (syncReconciler_ != nullptr) {
-      syncReconciler_->reconcileRoot(root);
+    services_.queueService->build(root.Id);
+    if (services_.syncReconciler != nullptr) {
+      services_.syncReconciler->reconcileRoot(root);
     }
   }
 
@@ -180,15 +138,16 @@ int LinuxDaemon::run() {
 
   epoll_event event{};
   event.events = EPOLLIN;
-  event.data.fd = watcher_->fd();
+  event.data.fd = services_.watcher->fd();
 
-  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, watcher_->fd(), &event) < 0) {
+  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, services_.watcher->fd(),
+                &event) < 0) {
     throw std::system_error(errno, std::generic_category(),
                             "epoll_ctl add watcher failed");
   }
 
   const auto processWatcherEvents = [&]() {
-    for (const auto &fileEvent : watcher_->poll()) {
+    for (const auto &fileEvent : services_.watcher->poll()) {
       if (fileEvent.oldPath.has_value()) {
         spdlog::debug("watch event type={} path={} old_path={}",
                       eventTypeName(fileEvent.type), fileEvent.path.string(),
@@ -198,17 +157,17 @@ int LinuxDaemon::run() {
                       eventTypeName(fileEvent.type), fileEvent.path.string());
       }
 
-      dirtyPathRepo_->record(fileEvent);
+      services_.dirtyPathRepo->record(fileEvent);
     }
   };
 
   while (!gStopRequested) {
-    if (remoteSyncService_ != nullptr) {
-      const bool remoteScanned = remoteSyncService_->runTick(roots);
-      if (remoteScanned && syncReconciler_ != nullptr) {
+    if (services_.remoteSyncService != nullptr) {
+      const bool remoteScanned = services_.remoteSyncService->runTick(roots);
+      if (remoteScanned && services_.syncReconciler != nullptr) {
         for (const auto &root : roots) {
           if (root.enabled) {
-            syncReconciler_->reconcileRoot(root);
+            services_.syncReconciler->reconcileRoot(root);
           }
         }
       }
@@ -218,13 +177,13 @@ int LinuxDaemon::run() {
         continue;
       }
 
-      if (scanRepo_->hasRunningScanJob(root.Id)) {
-        if (!rootScanner_->scanRoot(root.Id)) {
+      if (services_.scanRepo->hasRunningScanJob(root.Id)) {
+        if (!services_.rootScanner->scanRoot(root.Id)) {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
-        queueService_->build(root.Id);
-        if (syncReconciler_ != nullptr) {
-          syncReconciler_->reconcileRoot(root);
+        services_.queueService->build(root.Id);
+        if (services_.syncReconciler != nullptr) {
+          services_.syncReconciler->reconcileRoot(root);
         }
         continue;
       }
@@ -232,7 +191,8 @@ int LinuxDaemon::run() {
       int processedDirtyPaths = 0;
 
       while (processedDirtyPaths < kMaxDirtyPathsPerRootPerTick) {
-        const auto dirtyPath = dirtyPathRepo_->claimNextPending(root.Id);
+        const auto dirtyPath =
+            services_.dirtyPathRepo->claimNextPending(root.Id);
         if (!dirtyPath.has_value()) {
           break;
         }
@@ -248,30 +208,32 @@ int LinuxDaemon::run() {
           case DirtyPathEventType::Scan:
           case DirtyPathEventType::Delete:
             ok = dirtyPath->relativePath.has_value() &&
-                 rootScanner_->scanPath(root.Id, *dirtyPath->relativePath);
+                 services_.rootScanner->scanPath(root.Id,
+                                                 *dirtyPath->relativePath);
             if (!ok) {
-              dirtyPathRepo_->markFailed(dirtyPath->id, "scanPath failed");
+              services_.dirtyPathRepo->markFailed(dirtyPath->id,
+                                                  "scanPath failed");
               spdlog::error("Failed to scan dirty path {} for root {}",
                             dirtyPath->id, root.Id);
               break;
             }
-            queueService_->build(root.Id);
-            if (syncReconciler_ != nullptr) {
-              syncReconciler_->reconcileRoot(root);
+            services_.queueService->build(root.Id);
+            if (services_.syncReconciler != nullptr) {
+              services_.syncReconciler->reconcileRoot(root);
             }
-            dirtyPathRepo_->markDone(dirtyPath->id);
+            services_.dirtyPathRepo->markDone(dirtyPath->id);
             break;
           case DirtyPathEventType::FullRescan:
-            scanRepo_->ensureRunningScanJob(root.Id);
-            dirtyPathRepo_->markDone(dirtyPath->id);
+            services_.scanRepo->ensureRunningScanJob(root.Id);
+            services_.dirtyPathRepo->markDone(dirtyPath->id);
             break;
           }
         } catch (const std::exception &error) {
-          dirtyPathRepo_->markFailed(dirtyPath->id, error.what());
+          services_.dirtyPathRepo->markFailed(dirtyPath->id, error.what());
           spdlog::error("Dirty path {} failed for root {}: {}", dirtyPath->id,
                         root.Id, error.what());
         } catch (...) {
-          dirtyPathRepo_->markFailed(dirtyPath->id,
+          services_.dirtyPathRepo->markFailed(dirtyPath->id,
                                      "Unknown dirty path processing error");
           spdlog::error("Dirty path {} failed for root {} with unknown error",
                         dirtyPath->id, root.Id);
@@ -279,7 +241,7 @@ int LinuxDaemon::run() {
       }
     }
 
-    queueService_->runTick();
+    services_.queueService->runTick();
 
     epoll_event readyEvents[8]{};
     const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, 1000);
@@ -301,7 +263,7 @@ int LinuxDaemon::run() {
     }
 
     for (int i = 0; i < readyCount; ++i) {
-      if (readyEvents[i].data.fd != watcher_->fd()) {
+      if (readyEvents[i].data.fd != services_.watcher->fd()) {
         continue;
       }
 
@@ -309,7 +271,7 @@ int LinuxDaemon::run() {
     }
   }
 
-  watcher_->stop();
+  services_.watcher->stop();
   spdlog::info("Daemon stopped");
   return 0;
 }
