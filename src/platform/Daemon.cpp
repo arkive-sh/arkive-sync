@@ -8,6 +8,7 @@
 #include "download/DownloadService.hpp"
 #include "fs/FileWatcher.hpp"
 #include "platform/AppDataPaths.hpp"
+#include "repo/ConflictRepo.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
@@ -39,6 +40,7 @@ std::unique_ptr<Daemon> Daemon::create() {
   auto scanRepo = std::make_unique<ScanRepo>(db->getDb());
   auto dirtyPathRepo = std::make_unique<DirtyPathRepo>(db->getDb());
   auto entryRepo = std::make_unique<EntryRepo>(db->getDb());
+  auto conflictRepo = std::make_unique<ConflictRepo>(db->getDb());
   auto queueRepo = std::make_unique<QueueRepo>(db->getDb());
   auto userRepo = std::make_unique<UserRepo>(db->getDb());
   auto uploadResumeRepo = std::make_unique<UploadResumeRepo>(db->getDb());
@@ -82,14 +84,15 @@ std::unique_ptr<Daemon> Daemon::create() {
       *entryRepo, *queueRepo, *syncRepo, folderCreateWorker.get(),
       uploadJobRunner.get());
   auto syncReconciler = std::make_unique<SyncReconciler>(
-      *entryRepo, downloadService.get(), crypto.get());
+      *entryRepo, *conflictRepo, downloadService.get(), crypto.get());
   auto remoteSyncService =
-      std::make_unique<RemoteSyncService>(std::move(remoteScanner));
+      std::make_unique<RemoteSyncService>(std::move(remoteScanner), *entryRepo,
+                                          *syncRepo);
 
   return std::make_unique<LinuxDaemon>(
       std::move(db), std::move(crypto), std::move(syncRepo),
       std::move(scanRepo), std::move(dirtyPathRepo), std::move(entryRepo),
-      std::move(queueRepo), std::move(queueService),
+      std::move(conflictRepo), std::move(queueRepo), std::move(queueService),
       std::move(remoteSyncService),
       std::move(userRepo), std::move(uploadResumeRepo),
       std::move(vaultService), std::move(fileEncryptor), std::move(client),

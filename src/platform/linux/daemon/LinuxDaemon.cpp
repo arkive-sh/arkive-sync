@@ -15,6 +15,7 @@
 #include "api/ArkiveHttpClient.hpp"
 #include "download/DownloadRecordDecryptor.hpp"
 #include "download/DownloadService.hpp"
+#include "repo/ConflictRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
@@ -88,6 +89,7 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<ScanRepo> scanRepo,
                          std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
                          std::unique_ptr<EntryRepo> entryRepo,
+                         std::unique_ptr<ConflictRepo> conflictRepo,
                          std::unique_ptr<QueueRepo> queueRepo,
                          std::unique_ptr<QueueService> queueService,
                          std::unique_ptr<RemoteSyncService> remoteSyncService,
@@ -110,7 +112,9 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
     : db_(std::move(db)), crypto_(std::move(crypto)),
       syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
       dirtyPathRepo_(std::move(dirtyPathRepo)),
-      entryRepo_(std::move(entryRepo)), queueRepo_(std::move(queueRepo)),
+      entryRepo_(std::move(entryRepo)),
+      conflictRepo_(std::move(conflictRepo)),
+      queueRepo_(std::move(queueRepo)),
       queueService_(std::move(queueService)),
       remoteSyncService_(std::move(remoteSyncService)),
       userRepo_(std::move(userRepo)),
@@ -137,6 +141,12 @@ int LinuxDaemon::run() {
 
   for (const auto &root : roots) {
     if (!root.enabled) {
+      continue;
+    }
+
+    if (!std::filesystem::exists(root.localPath)) {
+      spdlog::info("Skipping local startup scan for missing sync root {} path {}",
+                   root.Id, root.localPath);
       continue;
     }
 

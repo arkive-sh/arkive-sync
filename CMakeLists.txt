@@ -108,6 +108,7 @@ add_executable(arkive-sync
     src/platform/AtomicFileWriterFactory.cpp
     src/platform/Daemon.cpp
     src/platform/SecureStorage.cpp
+    src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
     src/repo/QueueRepo.cpp
@@ -218,6 +219,7 @@ add_executable(arkive-sync-tests
     src/helpers/Mime.cpp
     src/fs/helpers/PathHelpers.cpp
     src/fs/FileHasher.cpp
+    src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
     src/repo/QueueRepo.cpp

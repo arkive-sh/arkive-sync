@@ -13,8 +13,10 @@ public:
         .remoteExists = entry.remoteId.has_value() && !remoteDeleted,
         .localDeleted = localDeleted,
         .remoteDeleted = remoteDeleted,
-        .localDirty = entry.contentHash != entry.syncedContentHash,
-        .remoteDirty = entry.remoteUpdatedAt != entry.syncedRemoteUpdatedAt,
+        .localDirty = !localDeleted &&
+                      entry.contentHash != entry.syncedContentHash,
+        .remoteDirty = !remoteDeleted &&
+                       entry.remoteUpdatedAt != entry.syncedRemoteUpdatedAt,
         .isDirectory = entry.isDirectory,
         .hasConflict = entry.conflictState.has_value() &&
                        *entry.conflictState != "none",

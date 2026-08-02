@@ -108,6 +108,7 @@ public:
   void markSubtreeEntriesNotSeenInScanDeleted(const std::string &syncRootId,
                                               const std::string &relativePath,
                                               const std::string &scanJobId);
+  void markRootRemoteDeleted(const std::string &syncRootId);
 
 private:
   sqlite3 *db_;

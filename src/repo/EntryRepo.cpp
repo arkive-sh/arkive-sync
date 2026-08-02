@@ -954,3 +954,33 @@ WHERE sync_root_id = ?
                              sqlite3_errmsg(db_));
   }
 }
+
+void EntryRepo::markRootRemoteDeleted(const std::string &syncRootId) {
+  static constexpr const char *sql = R"sql(
+UPDATE entries
+SET
+  sync_state = 'deleted',
+  local_deleted_at = COALESCE(local_deleted_at, CURRENT_TIMESTAMP),
+  remote_deleted_at = COALESCE(remote_deleted_at, CURRENT_TIMESTAMP),
+  synced_remote_updated_at = remote_updated_at,
+  conflict_state = 'none',
+  conflict_reason = NULL,
+  updated_at = CURRENT_TIMESTAMP
+WHERE sync_root_id = ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+
+  const int rc = sqlite3_step(stmt.get());
+  if (rc != SQLITE_DONE) {
+    throw std::runtime_error(std::string("Step failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+}

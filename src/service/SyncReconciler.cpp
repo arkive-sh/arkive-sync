@@ -3,27 +3,34 @@
 #include "download/DownloadService.hpp"
 #include "fs/FileHasher.hpp"
 #include "fs/helpers/PathHelpers.hpp"
+#include "repo/ConflictRepo.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "sync/SyncPolicy.hpp"
 #include "sync/SyncStateClassifier.hpp"
 
+#include <chrono>
+#include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <limits>
 #include <spdlog/spdlog.h>
+#include <sstream>
+#include <stdexcept>
 
 SyncReconciler::SyncReconciler(EntryRepo &entryRepo)
-    : SyncReconciler(entryRepo, nullptr) {}
+    : entryRepo_(entryRepo) {}
 
 SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
                                DownloadService *downloadService)
-    : SyncReconciler(entryRepo, downloadService, nullptr) {}
+    : entryRepo_(entryRepo), downloadService_(downloadService) {}
 
 SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
+                               ConflictRepo &conflictRepo,
                                DownloadService *downloadService,
                                RustCrypto *crypto)
-    : entryRepo_(entryRepo), downloadService_(downloadService),
-      crypto_(crypto) {}
+    : entryRepo_(entryRepo), conflictRepo_(&conflictRepo),
+      downloadService_(downloadService), crypto_(crypto) {}
 
 void SyncReconciler::applyDeleteLocal(const SyncRoot &root,
                                       const std::filesystem::path &path,
@@ -47,6 +54,74 @@ void SyncReconciler::applyDeleteLocal(const SyncRoot &root,
   }
 }
 
+std::filesystem::path
+SyncReconciler::conflictPathFor(const std::filesystem::path &path) const {
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t rawTime = std::chrono::system_clock::to_time_t(now);
+  std::tm time{};
+  localtime_r(&rawTime, &time);
+
+  std::ostringstream suffix;
+  suffix << " (remote conflict " << std::put_time(&time, "%Y%m%d-%H%M%S")
+         << ")";
+
+  const std::filesystem::path parent = path.parent_path();
+  const std::string stem = path.stem().string();
+  const std::string extension = path.extension().string();
+
+  for (int index = 1; index < 1000; ++index) {
+    std::string name = stem + suffix.str();
+    if (index > 1) {
+      name += "-" + std::to_string(index);
+    }
+    name += extension;
+
+    const auto candidate = parent / name;
+    if (!std::filesystem::exists(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw std::runtime_error("could not allocate conflict filename");
+}
+
+void SyncReconciler::applyConflict(const SyncRoot &root, const Entry &entry,
+                                   const std::filesystem::path &path) {
+  if (conflictRepo_ != nullptr) {
+    conflictRepo_->markConflict(entry.id, "local_remote_modified",
+                                "local and remote changed since last sync");
+  }
+
+  if (entry.isDirectory) {
+    spdlog::info("Conflict detected for folder root={} path={}", root.Id,
+                 entry.relativePath);
+    return;
+  }
+
+  if (entry.remoteDeletedAt.has_value()) {
+    spdlog::info("Conflict detected root={} path={} remote_deleted=true",
+                 root.Id, entry.relativePath);
+    return;
+  }
+
+  if (downloadService_ == nullptr || !entry.remoteFileId.has_value()) {
+    spdlog::error("Conflict detected for root {} path {}, but remote copy "
+                  "cannot be downloaded",
+                  root.Id, entry.relativePath);
+    return;
+  }
+
+  const auto conflictPath = conflictPathFor(path);
+  try {
+    downloadService_->downloadFile(*entry.remoteFileId, conflictPath);
+    spdlog::info("Conflict detected root={} path={} remote_copy={}", root.Id,
+                 entry.relativePath, conflictPath.string());
+  } catch (const std::exception &error) {
+    spdlog::error("Failed to download conflict copy for root {} path {}: {}",
+                  root.Id, entry.relativePath, error.what());
+  }
+}
+
 void SyncReconciler::reconcileRoot(const SyncRoot &root) {
   for (const auto &entry : entryRepo_.listEntriesBySyncRootId(root.Id)) {
     const SyncEntryState state = SyncStateClassifier::classify(entry);
@@ -57,6 +132,8 @@ void SyncReconciler::reconcileRoot(const SyncRoot &root) {
 
     if (decision == SyncDecision::DeleteLocal) {
       applyDeleteLocal(root, absolutePath, entry.isDirectory);
+    } else if (decision == SyncDecision::Conflict) {
+      applyConflict(root, entry, absolutePath);
     } else if (decision == SyncDecision::Download && entry.isDirectory) {
       spdlog::debug("Skipping folder download for root {} path {}", root.Id,
                     entry.relativePath);

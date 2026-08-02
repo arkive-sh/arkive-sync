@@ -23,6 +23,7 @@ public:
   std::vector<SyncRoot> getSyncRoots();
   void upsertSyncRoot(const SyncRoot &input);
   std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
+  void disableSyncRoot(const std::string &syncRootId);
 
 private:
   sqlite3 *db_;

@@ -1,6 +1,7 @@
 #include "service/RemoteSyncService.hpp"
 
 #include "fs/helpers/PathHelpers.hpp"
+#include "repo/EntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "sync/RemoteScanner.hpp"
 
@@ -15,8 +16,10 @@ constexpr auto kRemoteScanInterval = std::chrono::seconds(30);
 } // namespace
 
 RemoteSyncService::RemoteSyncService(
-    std::unique_ptr<RemoteScanner> remoteScanner)
-    : remoteScanner_(std::move(remoteScanner)) {}
+    std::unique_ptr<RemoteScanner> remoteScanner, EntryRepo &entryRepo,
+    SyncRepo &syncRepo)
+    : remoteScanner_(std::move(remoteScanner)), entryRepo_(entryRepo),
+      syncRepo_(syncRepo) {}
 
 RemoteSyncService::~RemoteSyncService() = default;
 
@@ -42,12 +45,15 @@ bool RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
     remoteScanner_->scanRoot(root.Id);
     scanned = true;
     if (remoteScanner_->isRootDeleted(root.Id)) {
+      entryRepo_.markRootRemoteDeleted(root.Id);
+      syncRepo_.disableSyncRoot(root.Id);
       std::error_code error;
       std::filesystem::remove_all(normalizeFsPath(root.localPath), error);
       if (error) {
         spdlog::error("Failed to delete remote-deleted sync root {}: {}",
                       root.localPath, error.message());
       }
+      spdlog::info("Disabled sync root {} after remote deletion", root.Id);
     }
     lastRemoteScanAt_[root.Id] = now;
   }
