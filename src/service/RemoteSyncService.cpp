@@ -1,7 +1,7 @@
 #include "service/RemoteSyncService.hpp"
 
 #include "fs/helpers/PathHelpers.hpp"
-#include "repo/EntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "sync/RemoteScanner.hpp"
 
@@ -16,9 +16,11 @@ constexpr auto kRemoteScanInterval = std::chrono::seconds(30);
 } // namespace
 
 RemoteSyncService::RemoteSyncService(
-    std::unique_ptr<RemoteScanner> remoteScanner, EntryRepo &entryRepo,
+    std::unique_ptr<RemoteScanner> remoteScanner,
+    RemoteEntryRepo &remoteEntryRepo,
     SyncRepo &syncRepo)
-    : remoteScanner_(std::move(remoteScanner)), entryRepo_(entryRepo),
+    : remoteScanner_(std::move(remoteScanner)),
+      remoteEntryRepo_(remoteEntryRepo),
       syncRepo_(syncRepo) {}
 
 RemoteSyncService::~RemoteSyncService() = default;
@@ -45,7 +47,7 @@ bool RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
     remoteScanner_->scanRoot(root.Id);
     scanned = true;
     if (remoteScanner_->isRootDeleted(root.Id)) {
-      entryRepo_.markRootRemoteDeleted(root.Id);
+      remoteEntryRepo_.markRootRemoteDeleted(root.Id);
       syncRepo_.disableSyncRoot(root.Id);
       std::error_code error;
       std::filesystem::remove_all(normalizeFsPath(root.localPath), error);

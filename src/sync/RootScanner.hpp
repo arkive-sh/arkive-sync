@@ -4,6 +4,7 @@
 #include "fs/FileWatcher.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "service/SyncService.hpp"
 
@@ -16,10 +17,11 @@ class RootScanner {
 public:
   RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
               ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-              EntryRepo &entryRepo);
+              EntryRepo &entryRepo, LocalEntryRepo &localEntryRepo);
   RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
               ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-              EntryRepo &entryRepo, std::unique_ptr<IFileWatcher> watcher);
+              EntryRepo &entryRepo, LocalEntryRepo &localEntryRepo,
+              std::unique_ptr<IFileWatcher> watcher);
 
   bool scanRoot(const std::string &syncRootId);
   bool scanPath(const std::string &rootId,
@@ -41,4 +43,5 @@ private:
   ScanRepo &scanRepo_;
   DirtyPathRepo &dirtyPathRepo_;
   EntryRepo &entryRepo_;
+  LocalEntryRepo &localEntryRepo_;
 };

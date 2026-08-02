@@ -89,27 +89,6 @@ public:
   listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId);
   std::vector<Entry>
   listPendingUploadFilesBySyncRootId(const std::string &syncRootId);
-  void upsertDirectoryEntry(const DirectoryEntryUpsert &entry);
-  void upsertFileEntry(const FileEntryUpsert &entry);
-  void upsertRemoteEntry(const RemoteEntryUpsert &entry);
-  void markEntryUploaded(const std::string &entryId, const std::string &remoteId,
-                         const std::optional<std::string> &remoteParentFolderId);
-  void markEntryDownloaded(const std::string &entryId);
-  void markEntryDownloaded(const std::string &entryId, int64_t size,
-                           std::filesystem::file_time_type mtime,
-                           const std::string &contentHash);
-  void markFolderCreated(const std::string &entryId,
-                         const std::string &remoteFolderId,
-                         const std::optional<std::string> &remoteParentFolderId);
-  void markEntriesNotSeenInScanDeleted(const std::string &syncRootId,
-                                       const std::string &scanJobId);
-  void markPathDeleted(const std::string &syncRootId,
-                       const std::string &relativePath);
-  void markSubtreeEntriesNotSeenInScanDeleted(const std::string &syncRootId,
-                                              const std::string &relativePath,
-                                              const std::string &scanJobId);
-  void markRootRemoteDeleted(const std::string &syncRootId);
-
 private:
   sqlite3 *db_;
 };

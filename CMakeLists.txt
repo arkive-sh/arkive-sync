@@ -111,7 +111,9 @@ add_executable(arkive-sync
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
+    src/repo/LocalEntryRepo.cpp
     src/repo/QueueRepo.cpp
+    src/repo/RemoteEntryRepo.cpp
     src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp
@@ -222,7 +224,9 @@ add_executable(arkive-sync-tests
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
+    src/repo/LocalEntryRepo.cpp
     src/repo/QueueRepo.cpp
+    src/repo/RemoteEntryRepo.cpp
     src/repo/ScanRepo.cpp
     src/repo/SyncRepo.cpp
     src/repo/UploadResumeRepo.cpp

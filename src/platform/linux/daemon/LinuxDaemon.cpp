@@ -16,6 +16,8 @@
 #include "download/DownloadRecordDecryptor.hpp"
 #include "download/DownloadService.hpp"
 #include "repo/ConflictRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
@@ -89,6 +91,8 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
                          std::unique_ptr<ScanRepo> scanRepo,
                          std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
                          std::unique_ptr<EntryRepo> entryRepo,
+                         std::unique_ptr<LocalEntryRepo> localEntryRepo,
+                         std::unique_ptr<RemoteEntryRepo> remoteEntryRepo,
                          std::unique_ptr<ConflictRepo> conflictRepo,
                          std::unique_ptr<QueueRepo> queueRepo,
                          std::unique_ptr<QueueService> queueService,
@@ -113,6 +117,8 @@ LinuxDaemon::LinuxDaemon(std::unique_ptr<Database> db,
       syncRepo_(std::move(syncRepo)), scanRepo_(std::move(scanRepo)),
       dirtyPathRepo_(std::move(dirtyPathRepo)),
       entryRepo_(std::move(entryRepo)),
+      localEntryRepo_(std::move(localEntryRepo)),
+      remoteEntryRepo_(std::move(remoteEntryRepo)),
       conflictRepo_(std::move(conflictRepo)),
       queueRepo_(std::move(queueRepo)),
       queueService_(std::move(queueService)),

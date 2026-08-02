@@ -16,18 +16,18 @@ static constexpr int kMaxScanBatchSize = 500;
 
 RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
                          ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-                         EntryRepo &entryRepo)
+                         EntryRepo &entryRepo, LocalEntryRepo &localEntryRepo)
     : watcher_(IFileWatcher::create()), db_(db), crypto_(crypto),
       syncSvc_(syncSvc), scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
-      entryRepo_(entryRepo) {}
+      entryRepo_(entryRepo), localEntryRepo_(localEntryRepo) {}
 
 RootScanner::RootScanner(sqlite3 *db, RustCrypto &crypto, SyncService &syncSvc,
                          ScanRepo &scanRepo, DirtyPathRepo &dirtyPathRepo,
-                         EntryRepo &entryRepo,
+                         EntryRepo &entryRepo, LocalEntryRepo &localEntryRepo,
                          std::unique_ptr<IFileWatcher> watcher)
     : watcher_(std::move(watcher)), db_(db), crypto_(crypto), syncSvc_(syncSvc),
       scanRepo_(scanRepo), dirtyPathRepo_(dirtyPathRepo),
-      entryRepo_(entryRepo) {}
+      entryRepo_(entryRepo), localEntryRepo_(localEntryRepo) {}
 
 // Helper to create a iterator
 auto makeIterator = [](const std::filesystem::path &path,
@@ -124,7 +124,7 @@ bool RootScanner::handleFileEntry(const std::string &syncRootId,
     syncState = EntrySyncState::PendingUpload;
   }
 
-  entryRepo_.upsertFileEntry({
+  localEntryRepo_.upsertFileEntry({
       .syncRootId = syncRootId,
       .relativePath = relativePath,
       .size = static_cast<int64_t>(fileSize),
@@ -144,7 +144,7 @@ bool RootScanner::scanSubtree(const std::string &syncRootId, ScanJob job,
                               std::error_code &ec) {
   execOrThrow(db_, "BEGIN IMMEDIATE;");
   try {
-    entryRepo_.upsertDirectoryEntry({
+    localEntryRepo_.upsertDirectoryEntry({
         .syncRootId = syncRootId,
         .relativePath = relativePath,
         .lastSeenScanId = job.id,
@@ -189,7 +189,7 @@ bool RootScanner::scanSubtree(const std::string &syncRootId, ScanJob job,
         }
 
         if (std::filesystem::is_directory(childStatus)) {
-          entryRepo_.upsertDirectoryEntry({
+          localEntryRepo_.upsertDirectoryEntry({
               .syncRootId = syncRootId,
               .relativePath = childRelPath.generic_string(),
               .lastSeenScanId = job.id,
@@ -223,8 +223,8 @@ bool RootScanner::scanSubtree(const std::string &syncRootId, ScanJob job,
       }
 
       if (it == end) {
-        entryRepo_.markSubtreeEntriesNotSeenInScanDeleted(syncRootId,
-                                                          relativePath, job.id);
+        localEntryRepo_.markSubtreeEntriesNotSeenInScanDeleted(
+            syncRootId, relativePath, job.id);
         execOrThrow(db_, "COMMIT;");
         return true;
       }
@@ -326,7 +326,7 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       }
 
       if (std::filesystem::is_directory(status)) {
-        entryRepo_.upsertDirectoryEntry({
+        localEntryRepo_.upsertDirectoryEntry({
             .syncRootId = syncRootId,
             .relativePath = rel,
             .lastSeenScanId = job.id,
@@ -358,7 +358,7 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
 
     if (it == end) {
       scanRepo_.markScanComplete(job.id);
-      entryRepo_.markEntriesNotSeenInScanDeleted(syncRootId, job.id);
+      localEntryRepo_.markEntriesNotSeenInScanDeleted(syncRootId, job.id);
       execOrThrow(db_, "COMMIT;");
       spdlog::info("Completed scan job {} for root {}", job.id, syncRootId);
       return true;
@@ -412,7 +412,7 @@ bool RootScanner::scanPath(const std::string &rootId,
       return false;
     }
 
-    entryRepo_.markPathDeleted(rootId, relPath.generic_string());
+    localEntryRepo_.markPathDeleted(rootId, relPath.generic_string());
     return true;
   }
 

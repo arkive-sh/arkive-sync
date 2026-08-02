@@ -4,6 +4,8 @@
 #include "fs/FileEncryptor.hpp"
 #include "helpers/Base64.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
@@ -72,6 +74,8 @@ TEST_CASE("FolderCreateWorker creates remote folder and updates entry") {
 
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   FileEncryptor fileEncryptor(crypto, vaultService);
   FakeArkiveApi api;
 
@@ -81,7 +85,7 @@ TEST_CASE("FolderCreateWorker creates remote folder and updates entry") {
       .folderId = "root-folder-1",
       .enabled = true,
   });
-  entryRepo.upsertDirectoryEntry({
+  localEntryRepo.upsertDirectoryEntry({
       .syncRootId = "root-1",
       .relativePath = "docs",
       .lastSeenScanId = "scan-1",
@@ -90,7 +94,8 @@ TEST_CASE("FolderCreateWorker creates remote folder and updates entry") {
   const auto entry = entryRepo.findEntryByPath("root-1", "docs");
   REQUIRE(entry.has_value());
 
-  FolderCreateWorker worker(syncRepo, entryRepo, userRepo, fileEncryptor, api);
+  FolderCreateWorker worker(syncRepo, entryRepo, remoteEntryRepo, userRepo,
+                            fileEncryptor, api);
   worker.run(TransferJob{
       .id = "job-1",
       .entryId = entry->id,
@@ -137,6 +142,7 @@ TEST_CASE("FolderCreateWorker creates remote sync root folder when missing") {
 
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   FileEncryptor fileEncryptor(crypto, vaultService);
   FakeArkiveApi api;
 
@@ -147,7 +153,8 @@ TEST_CASE("FolderCreateWorker creates remote sync root folder when missing") {
       .enabled = true,
   });
 
-  FolderCreateWorker worker(syncRepo, entryRepo, userRepo, fileEncryptor, api);
+  FolderCreateWorker worker(syncRepo, entryRepo, remoteEntryRepo, userRepo,
+                            fileEncryptor, api);
   REQUIRE(worker.ensureRootFolder("root-1"));
 
   REQUIRE(api.requests.size() == 1);

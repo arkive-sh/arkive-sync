@@ -5,6 +5,7 @@
 #include "fs/helpers/PathHelpers.hpp"
 #include "helpers/Base64.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
 
@@ -40,10 +41,12 @@ std::string folderNameFromLocalPath(const std::string &localPath) {
 } // namespace
 
 FolderCreateWorker::FolderCreateWorker(SyncRepo &syncRepo, EntryRepo &entryRepo,
+                                       RemoteEntryRepo &remoteEntryRepo,
                                        UserRepo &userRepo,
                                        FileEncryptor &fileEncryptor,
                                        ArkiveApi &api)
-    : syncRepo_(syncRepo), entryRepo_(entryRepo), userRepo_(userRepo),
+    : syncRepo_(syncRepo), entryRepo_(entryRepo),
+      remoteEntryRepo_(remoteEntryRepo), userRepo_(userRepo),
       fileEncryptor_(fileEncryptor), api_(api) {}
 
 std::string FolderCreateWorker::userId() const {
@@ -144,8 +147,8 @@ void FolderCreateWorker::run(const TransferJob &job) {
             fileEncryptor_.createSearchTokenEntries(userId(), folderName),
     });
 
-    entryRepo_.markFolderCreated(job.entryId, created.id,
-                                 created.parentFolderId);
+    remoteEntryRepo_.markFolderCreated(job.entryId, created.id,
+                                       created.parentFolderId);
   } catch (...) {
     if (!encryptedName.empty()) {
       fileEncryptor_.zeroize(encryptedName);

@@ -8,6 +8,7 @@ class DownloadService;
 struct Entry;
 class ConflictRepo;
 class EntryRepo;
+class RemoteEntryRepo;
 class RustCrypto;
 
 class SyncReconciler {
@@ -15,6 +16,7 @@ public:
   explicit SyncReconciler(EntryRepo &entryRepo);
   SyncReconciler(EntryRepo &entryRepo, DownloadService *downloadService);
   SyncReconciler(EntryRepo &entryRepo, ConflictRepo &conflictRepo,
+                 RemoteEntryRepo &remoteEntryRepo,
                  DownloadService *downloadService, RustCrypto *crypto);
 
   void reconcileRoot(const SyncRoot &root);
@@ -28,6 +30,7 @@ private:
 
   EntryRepo &entryRepo_;
   ConflictRepo *conflictRepo_{nullptr};
+  RemoteEntryRepo *remoteEntryRepo_{nullptr};
   DownloadService *downloadService_{nullptr};
   RustCrypto *crypto_{nullptr};
 };

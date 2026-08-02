@@ -2,6 +2,7 @@
 
 #include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,7 @@ class IUploadService;
 class UploadJobRunner {
 public:
   UploadJobRunner(SyncRepo &syncRepo, EntryRepo &entryRepo,
+                  RemoteEntryRepo &remoteEntryRepo,
                   IUploadService &uploadService);
 
   void run(const TransferJob &job);
@@ -30,5 +32,6 @@ public:
 private:
   SyncRepo &syncRepo_;
   EntryRepo &entryRepo_;
+  RemoteEntryRepo &remoteEntryRepo_;
   IUploadService &uploadService_;
 };

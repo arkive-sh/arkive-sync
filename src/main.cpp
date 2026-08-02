@@ -6,6 +6,7 @@
 #include "platform/AppDataPaths.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
 #include "repo/ScanRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
@@ -28,9 +29,10 @@ int main(int argc, char *argv[]) {
     ScanRepo scanRepo(db.getDb());
     DirtyPathRepo dirtyPathRepo(db.getDb());
     EntryRepo entryRepo(db.getDb());
+    LocalEntryRepo localEntryRepo(db.getDb());
     SyncService syncService(syncRepo, crypto);
     RootScanner rootScanner(db.getDb(), crypto, syncService, scanRepo, dirtyPathRepo,
-                            entryRepo);
+                            entryRepo, localEntryRepo);
 
     std::unique_ptr<ArkiveHttpClient> client;
     std::unique_ptr<ArkiveApi> api;

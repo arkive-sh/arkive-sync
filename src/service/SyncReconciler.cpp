@@ -5,6 +5,7 @@
 #include "fs/helpers/PathHelpers.hpp"
 #include "repo/ConflictRepo.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "sync/SyncPolicy.hpp"
 #include "sync/SyncStateClassifier.hpp"
@@ -27,10 +28,12 @@ SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
 
 SyncReconciler::SyncReconciler(EntryRepo &entryRepo,
                                ConflictRepo &conflictRepo,
+                               RemoteEntryRepo &remoteEntryRepo,
                                DownloadService *downloadService,
                                RustCrypto *crypto)
     : entryRepo_(entryRepo), conflictRepo_(&conflictRepo),
-      downloadService_(downloadService), crypto_(crypto) {}
+      remoteEntryRepo_(&remoteEntryRepo), downloadService_(downloadService),
+      crypto_(crypto) {}
 
 void SyncReconciler::applyDeleteLocal(const SyncRoot &root,
                                       const std::filesystem::path &path,
@@ -148,6 +151,10 @@ void SyncReconciler::reconcileRoot(const SyncRoot &root) {
     } else if (decision == SyncDecision::Download) {
       try {
         downloadService_->downloadFile(*entry.remoteFileId, absolutePath);
+        if (remoteEntryRepo_ == nullptr) {
+          throw std::runtime_error("remote entry repo is unavailable");
+        }
+
         if (crypto_ != nullptr) {
           std::error_code ec;
           const auto size = std::filesystem::file_size(absolutePath, ec);
@@ -163,10 +170,10 @@ void SyncReconciler::reconcileRoot(const SyncRoot &root) {
           }
 
           const std::string hash = FileHasher(absolutePath, *crypto_).hashFile();
-          entryRepo_.markEntryDownloaded(entry.id, static_cast<int64_t>(size),
-                                         mtime, hash);
+          remoteEntryRepo_->markEntryDownloaded(
+              entry.id, static_cast<int64_t>(size), mtime, hash);
         } else {
-          entryRepo_.markEntryDownloaded(entry.id);
+          remoteEntryRepo_->markEntryDownloaded(entry.id);
         }
         spdlog::info("Downloaded remote file for root {} path {}", root.Id,
                      entry.relativePath);

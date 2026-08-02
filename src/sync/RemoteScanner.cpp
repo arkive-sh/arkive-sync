@@ -5,6 +5,7 @@
 #include "crypto/RustCrypto.hpp"
 #include "helpers/Base64.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/VaultService.hpp"
@@ -14,9 +15,11 @@
 #include <stdexcept>
 
 RemoteScanner::RemoteScanner(SyncRepo &syncRepo, EntryRepo &entryRepo,
-                             ArkiveApi &api, RustCrypto &crypto,
-                             VaultService &vaultService, UserRepo &userRepo)
-    : syncRepo_(syncRepo), entryRepo_(entryRepo), api_(api), crypto_(crypto),
+                             RemoteEntryRepo &remoteEntryRepo, ArkiveApi &api,
+                             RustCrypto &crypto, VaultService &vaultService,
+                             UserRepo &userRepo)
+    : syncRepo_(syncRepo), entryRepo_(entryRepo),
+      remoteEntryRepo_(remoteEntryRepo), api_(api), crypto_(crypto),
       vaultService_(vaultService), userRepo_(userRepo) {}
 
 void RemoteScanner::scanRoot(const std::string &syncRootId) const {
@@ -130,7 +133,7 @@ void RemoteScanner::scanFolder(
     spdlog::debug("Remote scan entry root={} remote_id={} type={} path={}",
                   syncRootId, entry.remoteId, entry.type, localPath);
 
-    entryRepo_.upsertRemoteEntry({
+    remoteEntryRepo_.upsertRemoteEntry({
         .syncRootId = syncRootId,
         .remoteId = entry.remoteId,
         .localPath = localPath,

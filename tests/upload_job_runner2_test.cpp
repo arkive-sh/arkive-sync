@@ -2,6 +2,8 @@
 #include "crypto/RustCrypto.hpp"
 #include "fs/FileEncryptor.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/UploadJobRunner.hpp"
@@ -71,6 +73,8 @@ TEST_CASE("UploadJobRunner resolves parent folder remote id and saves remote_fil
 
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
 
   syncRepo.upsertSyncRoot({
       .Id = "root-1",
@@ -79,21 +83,21 @@ TEST_CASE("UploadJobRunner resolves parent folder remote id and saves remote_fil
       .enabled = 1,
   });
 
-  entryRepo.upsertDirectoryEntry({
+  localEntryRepo.upsertDirectoryEntry({
       .syncRootId = "root-1",
       .relativePath = "docs",
       .lastSeenScanId = "scan-1",
   });
   const auto parentEntry = entryRepo.findEntryByPath("root-1", "docs");
   REQUIRE(parentEntry.has_value());
-  entryRepo.markFolderCreated(parentEntry->id, "remote-folder-2",
-                              std::optional<std::string>("root-folder-1"));
+  remoteEntryRepo.markFolderCreated(parentEntry->id, "remote-folder-2",
+                                    std::optional<std::string>("root-folder-1"));
 
   const auto filePath = tempDir.path() / "docs" / "movie.txt";
   std::filesystem::create_directories(filePath.parent_path());
   writeFile(filePath, "hello");
 
-  entryRepo.upsertFileEntry({
+  localEntryRepo.upsertFileEntry({
       .syncRootId = "root-1",
       .relativePath = "docs/movie.txt",
       .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
@@ -106,7 +110,7 @@ TEST_CASE("UploadJobRunner resolves parent folder remote id and saves remote_fil
   REQUIRE(fileEntry.has_value());
 
   FakeUploadService uploadService;
-  UploadJobRunner runner(syncRepo, entryRepo, uploadService);
+  UploadJobRunner runner(syncRepo, entryRepo, remoteEntryRepo, uploadService);
   runner.run(TransferJob{
       .id = "job-1",
       .entryId = fileEntry->id,

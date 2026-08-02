@@ -11,6 +11,8 @@ class SyncRepo;
 class ScanRepo;
 class DirtyPathRepo;
 class EntryRepo;
+class LocalEntryRepo;
+class RemoteEntryRepo;
 class ConflictRepo;
 class QueueRepo;
 class QueueService;
@@ -37,6 +39,8 @@ public:
               std::unique_ptr<ScanRepo> scanRepo,
               std::unique_ptr<DirtyPathRepo> dirtyPathRepo,
               std::unique_ptr<EntryRepo> entryRepo,
+              std::unique_ptr<LocalEntryRepo> localEntryRepo,
+              std::unique_ptr<RemoteEntryRepo> remoteEntryRepo,
               std::unique_ptr<ConflictRepo> conflictRepo,
               std::unique_ptr<QueueRepo> queueRepo,
               std::unique_ptr<QueueService> queueService,
@@ -67,6 +71,8 @@ private:
   std::unique_ptr<ScanRepo> scanRepo_;
   std::unique_ptr<DirtyPathRepo> dirtyPathRepo_;
   std::unique_ptr<EntryRepo> entryRepo_;
+  std::unique_ptr<LocalEntryRepo> localEntryRepo_;
+  std::unique_ptr<RemoteEntryRepo> remoteEntryRepo_;
   std::unique_ptr<ConflictRepo> conflictRepo_;
   std::unique_ptr<QueueRepo> queueRepo_;
   std::unique_ptr<QueueService> queueService_;

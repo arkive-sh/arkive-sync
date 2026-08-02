@@ -39,8 +39,10 @@ const std::string &StaleUploadError::syncRootPath() const {
 }
 
 UploadJobRunner::UploadJobRunner(SyncRepo &syncRepo, EntryRepo &entryRepo,
+                                 RemoteEntryRepo &remoteEntryRepo,
                                  IUploadService &uploadService)
     : syncRepo_(syncRepo), entryRepo_(entryRepo),
+      remoteEntryRepo_(remoteEntryRepo),
       uploadService_(uploadService) {}
 
 void UploadJobRunner::run(const TransferJob &job) {
@@ -111,6 +113,6 @@ void UploadJobRunner::run(const TransferJob &job) {
 
   const UploadFileResponse uploaded =
       uploadService_.uploadFile(absolutePath, uploadEntry);
-  entryRepo_.markEntryUploaded(job.entryId, uploaded.fileId,
-                               remoteParentFolderId);
+  remoteEntryRepo_.markEntryUploaded(job.entryId, uploaded.fileId,
+                                     remoteParentFolderId);
 }

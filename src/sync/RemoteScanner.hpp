@@ -9,6 +9,7 @@ struct SyncEntryResponse;
 
 class ArkiveApi;
 class EntryRepo;
+class RemoteEntryRepo;
 class UserRepo;
 class SyncRepo;
 class RustCrypto;
@@ -16,7 +17,8 @@ class VaultService;
 
 class RemoteScanner {
 public:
-  RemoteScanner(SyncRepo &syncRepo, EntryRepo &entryRepo, ArkiveApi &api,
+  RemoteScanner(SyncRepo &syncRepo, EntryRepo &entryRepo,
+                RemoteEntryRepo &remoteEntryRepo, ArkiveApi &api,
                 RustCrypto &crypto, VaultService &vaultService,
                 UserRepo &userRepo);
 
@@ -33,6 +35,7 @@ private:
 
   SyncRepo &syncRepo_;
   EntryRepo &entryRepo_;
+  RemoteEntryRepo &remoteEntryRepo_;
   ArkiveApi &api_;
   RustCrypto &crypto_;
   VaultService &vaultService_;

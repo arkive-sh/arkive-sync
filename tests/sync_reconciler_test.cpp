@@ -2,6 +2,8 @@
 #include "download/DownloadService.hpp"
 #include "repo/ConflictRepo.hpp"
 #include "repo/EntryRepo.hpp"
+#include "repo/LocalEntryRepo.hpp"
+#include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/SyncReconciler.hpp"
 
@@ -48,6 +50,8 @@ TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
   TempDir tempDir;
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   SyncReconciler reconciler(entryRepo);
 
   const auto filePath = tempDir.path() / "movie.txt";
@@ -61,7 +65,7 @@ TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
       .mode = SyncMode::RemoteMirror,
   });
 
-  entryRepo.upsertFileEntry({
+  localEntryRepo.upsertFileEntry({
       .syncRootId = "root-1",
       .relativePath = "movie.txt",
       .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
@@ -73,8 +77,8 @@ TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
 
   const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
   REQUIRE(entry.has_value());
-  entryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
-  entryRepo.upsertRemoteEntry({
+  remoteEntryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
+  remoteEntryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",
       .localPath = "movie.txt",
@@ -119,9 +123,11 @@ TEST_CASE("SyncReconciler downloads remote files") {
   DownloadRecordDecryptor decryptor{crypto, vaultService};
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   ConflictRepo conflictRepo(db.get());
   FakeDownloadService downloadService(api, http, crypto, decryptor);
-  SyncReconciler reconciler(entryRepo, conflictRepo, &downloadService, &crypto);
+  SyncReconciler reconciler(entryRepo, conflictRepo, remoteEntryRepo,
+                            &downloadService, &crypto);
 
   syncRepo.upsertSyncRoot({
       .Id = "root-1",
@@ -131,7 +137,7 @@ TEST_CASE("SyncReconciler downloads remote files") {
       .mode = SyncMode::RemoteMirror,
   });
 
-  entryRepo.upsertRemoteEntry({
+  remoteEntryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",
       .localPath = "movie.txt",
@@ -174,9 +180,12 @@ TEST_CASE("SyncReconciler keeps local file and downloads remote conflict copy") 
   DownloadRecordDecryptor decryptor{crypto, vaultService};
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   ConflictRepo conflictRepo(db.get());
   FakeDownloadService downloadService(api, http, crypto, decryptor);
-  SyncReconciler reconciler(entryRepo, conflictRepo, &downloadService, &crypto);
+  SyncReconciler reconciler(entryRepo, conflictRepo, remoteEntryRepo,
+                            &downloadService, &crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "local");
@@ -189,7 +198,7 @@ TEST_CASE("SyncReconciler keeps local file and downloads remote conflict copy") 
       .mode = SyncMode::TwoWay,
   });
 
-  entryRepo.upsertFileEntry({
+  localEntryRepo.upsertFileEntry({
       .syncRootId = "root-1",
       .relativePath = "movie.txt",
       .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
@@ -201,9 +210,9 @@ TEST_CASE("SyncReconciler keeps local file and downloads remote conflict copy") 
 
   const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
   REQUIRE(entry.has_value());
-  entryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
+  remoteEntryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
 
-  entryRepo.upsertRemoteEntry({
+  remoteEntryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",
       .localPath = "movie.txt",
@@ -259,9 +268,12 @@ TEST_CASE("SyncReconciler does not download remote-deleted conflict copy") {
   DownloadRecordDecryptor decryptor{crypto, vaultService};
   SyncRepo syncRepo(db.get());
   EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
   ConflictRepo conflictRepo(db.get());
   FakeDownloadService downloadService(api, http, crypto, decryptor);
-  SyncReconciler reconciler(entryRepo, conflictRepo, &downloadService, &crypto);
+  SyncReconciler reconciler(entryRepo, conflictRepo, remoteEntryRepo,
+                            &downloadService, &crypto);
 
   const auto filePath = tempDir.path() / "movie.txt";
   writeFile(filePath, "local");
@@ -274,7 +286,7 @@ TEST_CASE("SyncReconciler does not download remote-deleted conflict copy") {
       .mode = SyncMode::TwoWay,
   });
 
-  entryRepo.upsertFileEntry({
+  localEntryRepo.upsertFileEntry({
       .syncRootId = "root-1",
       .relativePath = "movie.txt",
       .size = static_cast<int64_t>(std::filesystem::file_size(filePath)),
@@ -286,8 +298,8 @@ TEST_CASE("SyncReconciler does not download remote-deleted conflict copy") {
 
   const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
   REQUIRE(entry.has_value());
-  entryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
-  entryRepo.upsertRemoteEntry({
+  remoteEntryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
+  remoteEntryRepo.upsertRemoteEntry({
       .syncRootId = "root-1",
       .remoteId = "remote-file-1",
       .localPath = "movie.txt",

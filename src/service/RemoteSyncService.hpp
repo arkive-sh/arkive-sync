@@ -8,21 +8,21 @@
 
 struct SyncRoot;
 
-class EntryRepo;
 class RemoteScanner;
+class RemoteEntryRepo;
 class SyncRepo;
 
 class RemoteSyncService {
 public:
   RemoteSyncService(std::unique_ptr<RemoteScanner> remoteScanner,
-                    EntryRepo &entryRepo, SyncRepo &syncRepo);
+                    RemoteEntryRepo &remoteEntryRepo, SyncRepo &syncRepo);
   ~RemoteSyncService();
 
   bool runTick(const std::vector<SyncRoot> &roots);
 
 private:
   std::unique_ptr<RemoteScanner> remoteScanner_;
-  EntryRepo &entryRepo_;
+  RemoteEntryRepo &remoteEntryRepo_;
   SyncRepo &syncRepo_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       lastRemoteScanAt_;
