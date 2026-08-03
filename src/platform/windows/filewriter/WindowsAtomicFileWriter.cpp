@@ -58,8 +58,8 @@ void WindowsAtomicFileWriter::writeAt(std::uint64_t offset,
       throw winError("SetFilePointerEx failed");
     }
 
-    const auto size = static_cast<DWORD>(std::min<std::size_t>(
-        data.size(), std::numeric_limits<DWORD>::max()));
+    const auto size =
+        static_cast<DWORD>(std::min<std::size_t>(data.size(), MAXDWORD));
     DWORD written = 0;
     if (!WriteFile(file_, data.data(), size, &written, nullptr)) {
       throw winError("WriteFile failed");
