@@ -142,15 +142,18 @@ add_executable(arkive-sync
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
     src/fs/FileHasher.cpp
+    src/fs/FileSnapshot.cpp
 )
 
 if(APPLE)
     target_sources(arkive-sync PRIVATE
         src/platform/macos/filewriter/MacosAtomicFileWriter.cpp
+        src/platform/macos/watcher/FSEventsWatcher.cpp
         src/platform/macos/SecureStorage.cpp
     )
     target_link_libraries(arkive-sync PRIVATE
         "-framework CoreFoundation"
+        "-framework CoreServices"
         "-framework Security"
     )
 elseif(UNIX)
@@ -167,6 +170,7 @@ elseif(UNIX)
 elseif(WIN32)
     target_sources(arkive-sync PRIVATE
         src/platform/windows/filewriter/WindowsAtomicFileWriter.cpp
+        src/platform/windows/watcher/ReadDirectoryChangesWatcher.cpp
         src/platform/windows/SecureStorage.cpp
     )
     target_link_libraries(arkive-sync PRIVATE Advapi32)
@@ -202,6 +206,7 @@ add_executable(arkive-sync-tests
     src/fs/UploadFileChunkReader.cpp
     src/fs/FileEncryptor.cpp
     src/fs/FileWatcher.cpp
+    src/fs/FileSnapshot.cpp
     src/platform/AppDataPaths.cpp
     src/platform/AtomicFileWriterFactory.cpp
     src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
@@ -210,6 +215,7 @@ add_executable(arkive-sync-tests
     tests/arkive_api_test.cpp
     tests/download_manifest_test.cpp
     tests/download_service_test.cpp
+    tests/file_snapshot_test.cpp
     tests/inotify_watcher_test.cpp
     tests/local_entry_repo_test.cpp
     tests/folder_create_worker_test.cpp

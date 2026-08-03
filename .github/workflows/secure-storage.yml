@@ -50,6 +50,21 @@ jobs:
         if: runner.os == 'macOS'
         run: ./atomic-writer-smoke
 
+      - name: Build watcher smoke test
+        if: runner.os == 'macOS'
+        run: >
+          c++ -std=c++20 -Isrc
+          tests/watcher_native_smoke.cpp
+          src/fs/FileWatcher.cpp
+          src/fs/FileSnapshot.cpp
+          src/platform/macos/watcher/FSEventsWatcher.cpp
+          -framework CoreServices
+          -o watcher-smoke
+
+      - name: Run watcher smoke test
+        if: runner.os == 'macOS'
+        run: ./watcher-smoke
+
       - name: Build smoke test
         if: runner.os == 'Windows'
         shell: cmd
@@ -78,3 +93,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: atomic-writer-smoke.exe
+
+      - name: Build watcher smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /std:c++20 /EHsc /Isrc /c tests\watcher_native_smoke.cpp /Fo:watcher_native_smoke.obj
+          cl /std:c++20 /EHsc /Isrc /c src\fs\FileWatcher.cpp /Fo:file_watcher.obj
+          cl /std:c++20 /EHsc /Isrc /c src\fs\FileSnapshot.cpp /Fo:file_snapshot.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\windows\watcher\ReadDirectoryChangesWatcher.cpp /Fo:read_directory_changes_watcher.obj
+          link watcher_native_smoke.obj file_watcher.obj file_snapshot.obj read_directory_changes_watcher.obj /OUT:watcher-smoke.exe
+
+      - name: Run watcher smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: watcher-smoke.exe
