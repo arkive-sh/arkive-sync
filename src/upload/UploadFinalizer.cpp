@@ -4,9 +4,15 @@
 #include "fs/FileEncryptor.hpp"
 #include "helpers/Base64.hpp"
 #include "helpers/Mime.hpp"
+#include <cstddef>
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <spdlog/spdlog.h>
+#include <utility>
 
 namespace {
+
+constexpr size_t kMaxEncryptedThumbnailBytes = 150 * 1024;
 
 void appendBytes(std::vector<uint8_t> &target,
                  const std::vector<uint8_t> &source) {
@@ -14,7 +20,8 @@ void appendBytes(std::vector<uint8_t> &target,
 }
 
 nlohmann::json buildMetadata(const std::filesystem::path &path,
-                             const Entry &entry) {
+                             const Entry &entry,
+                             const nlohmann::json &preview) {
   const FileMimeDetails details = describeFileMime(path);
   return {
       {"schema", "arkive.file.metadata"},
@@ -23,14 +30,19 @@ nlohmann::json buildMetadata(const std::filesystem::path &path,
       {"mime", details.mime},
       {"extension", details.extension},
       {"size", entry.size.value_or(0)},
-      {"preview", nullptr},
+      {"preview", preview},
   };
 }
 
 } // namespace
 
 UploadFinalizer::UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor)
-    : api_(api), fileEncryptor_(fileEncryptor) {}
+    : UploadFinalizer(api, fileEncryptor, generateUploadThumbnail) {}
+
+UploadFinalizer::UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor,
+                                 ThumbnailGenerator thumbnailGenerator)
+    : api_(api), fileEncryptor_(fileEncryptor),
+      thumbnailGenerator_(std::move(thumbnailGenerator)) {}
 
 UploadArtifacts UploadFinalizer::completeUpload(
     const std::filesystem::path &path, const Entry &entry,
@@ -56,9 +68,6 @@ UploadArtifacts UploadFinalizer::completeUpload(
 
     const FileMimeDetails details = describeFileMime(path);
     artifacts.fileKey = fileKey;
-    artifacts.encryptedMetadata = fileEncryptor_.encryptMetadata(
-        buildMetadata(path, entry).dump(), artifacts.fileKey, started.vaultId,
-        started.fileId);
 
     const nlohmann::json manifest = {
         {"schema", "arkive.file.manifest"},
@@ -85,6 +94,72 @@ UploadArtifacts UploadFinalizer::completeUpload(
         fileEncryptor_.wrapFileKey(artifacts.fileKey, started.vaultId,
                                    started.fileId);
 
+    nlohmann::json previewMetadata = {
+        {"thumbnail_file_id", nullptr},
+        {"has_thumbnail", false},
+    };
+    bool hasThumbnail = false;
+    std::string thumbnailMime;
+    int thumbnailWidth = 0;
+    int thumbnailHeight = 0;
+
+    std::optional<UploadThumbnail> thumbnail;
+    std::vector<uint8_t> encryptedThumbnail;
+    try {
+      thumbnail = thumbnailGenerator_(path);
+      if (thumbnail.has_value()) {
+        encryptedThumbnail = fileEncryptor_.encryptChunk(
+            thumbnail->bytes, artifacts.fileKey,
+            ArkiveAad::toBytes(ArkiveAad::makeFileThumbnail(started.vaultId,
+                                                            started.fileId)));
+        if (encryptedThumbnail.size() <= kMaxEncryptedThumbnailBytes) {
+          const std::string url =
+              api_.presignThumbnail(started.uploadSessionId,
+                                    PresignThumbnailRequest{
+                                        .encryptedSize = static_cast<int64_t>(
+                                            encryptedThumbnail.size()),
+                                        .mime = thumbnail->mime,
+                                        .width = thumbnail->width,
+                                        .height = thumbnail->height,
+                                    });
+          api_.putEncryptedPartToStorage(url, encryptedThumbnail);
+          hasThumbnail = true;
+          thumbnailMime = thumbnail->mime;
+          thumbnailWidth = thumbnail->width;
+          thumbnailHeight = thumbnail->height;
+          previewMetadata = {
+              {"thumbnail_file_id", nullptr},
+              {"has_thumbnail", true},
+              {"thumbnail_mime", thumbnailMime},
+              {"thumbnail_width", thumbnailWidth},
+              {"thumbnail_height", thumbnailHeight},
+              {"thumbnail_size", static_cast<int64_t>(encryptedThumbnail.size())},
+              {"thumbnail_version", 1},
+          };
+          spdlog::info("Uploaded thumbnail for {} size={} width={} height={}",
+                       path.string(), encryptedThumbnail.size(),
+                       thumbnailWidth, thumbnailHeight);
+        } else {
+          spdlog::warn("Skipping thumbnail for {}: encrypted size {} exceeds {}",
+                       path.string(), encryptedThumbnail.size(),
+                       kMaxEncryptedThumbnailBytes);
+        }
+      }
+    } catch (const std::exception &error) {
+      spdlog::warn("Skipping thumbnail for {}: {}", path.string(),
+                   error.what());
+    }
+    if (!encryptedThumbnail.empty()) {
+      fileEncryptor_.zeroize(encryptedThumbnail);
+    }
+    if (thumbnail.has_value() && !thumbnail->bytes.empty()) {
+      fileEncryptor_.zeroize(thumbnail->bytes);
+    }
+
+    artifacts.encryptedMetadata = fileEncryptor_.encryptMetadata(
+        buildMetadata(path, entry, previewMetadata).dump(), artifacts.fileKey,
+        started.vaultId, started.fileId);
+
     api_.uploadComplete(
         started.uploadSessionId,
         UploadCompleteRequest{
@@ -94,10 +169,10 @@ UploadArtifacts UploadFinalizer::completeUpload(
             .encryptedHash = encodeBase64(artifacts.encryptedHash),
             .searchTokens = fileEncryptor_.createSearchTokenEntries(
                 started.vaultId, details.name),
-            .hasThumbnail = false,
-            .thumbnailMime = "",
-            .thumbnailWidth = 0,
-            .thumbnailHeight = 0,
+            .hasThumbnail = hasThumbnail,
+            .thumbnailMime = thumbnailMime,
+            .thumbnailWidth = thumbnailWidth,
+            .thumbnailHeight = thumbnailHeight,
         });
   } catch (...) {
     if (!artifacts.fileKey.empty()) {

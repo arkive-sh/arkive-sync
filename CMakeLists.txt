@@ -135,6 +135,7 @@ add_executable(arkive-sync
     src/upload/UploadPolicy.cpp
     src/upload/UploadPlanner.cpp
     src/upload/MultipartUploader.cpp
+    src/upload/ThumbnailGenerator.cpp
     src/upload/UploadFinalizer.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
@@ -225,6 +226,7 @@ add_executable(arkive-sync-tests
     tests/sync_policy_test.cpp
     tests/sync_reconciler_test.cpp
     tests/upload_job_runner2_test.cpp
+    tests/upload_finalizer_test.cpp
     tests/upload_planner_test.cpp
     tests/vault_service_test.cpp
     src/crypto/Aad.cpp
@@ -256,6 +258,8 @@ add_executable(arkive-sync-tests
     src/sync/SyncMode.cpp
     src/sync/SyncPolicy.cpp
     src/upload/MultipartUploader.cpp
+    src/upload/ThumbnailGenerator.cpp
+    src/upload/UploadFinalizer.cpp
     src/upload/UploadPlanner.cpp
     src/upload/UploadPolicy.cpp
 )
