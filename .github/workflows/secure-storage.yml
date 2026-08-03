@@ -65,6 +65,19 @@ jobs:
         if: runner.os == 'macOS'
         run: ./watcher-smoke
 
+      - name: Build IPC smoke test
+        if: runner.os == 'macOS'
+        run: >
+          c++ -std=c++20 -pthread -Isrc
+          tests/ipc_native_smoke.cpp
+          src/platform/Ipc.cpp
+          src/platform/linux/Ipc.cpp
+          -o ipc-smoke
+
+      - name: Run IPC smoke test
+        if: runner.os == 'macOS'
+        run: ./ipc-smoke
+
       - name: Build smoke test
         if: runner.os == 'Windows'
         shell: cmd
@@ -108,6 +121,20 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: watcher-smoke.exe
+
+      - name: Build IPC smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /std:c++20 /EHsc /Isrc /c tests\ipc_native_smoke.cpp /Fo:ipc_native_smoke.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\Ipc.cpp /Fo:ipc_factory.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\windows\Ipc.cpp /Fo:ipc_windows.obj
+          link ipc_native_smoke.obj ipc_factory.obj ipc_windows.obj /OUT:ipc-smoke.exe
+
+      - name: Run IPC smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: ipc-smoke.exe
 
   daemon-build:
     name: daemon ${{ matrix.os }}

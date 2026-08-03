@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -61,3 +62,15 @@ std::filesystem::path appDataDir() {
 std::filesystem::path databasePath() { return appDataDir() / "arkive.db"; }
 
 std::filesystem::path cookieJarPath() { return appDataDir() / "cookies.txt"; }
+
+std::string ipcEndpoint() {
+#if defined(_WIN32)
+  return R"(\\.\pipe\arkive-sync)";
+#else
+  const char *runtimeDir = std::getenv("XDG_RUNTIME_DIR");
+  if (runtimeDir != nullptr && *runtimeDir != '\0') {
+    return (std::filesystem::path(runtimeDir) / "arkive-sync.sock").string();
+  }
+  return (appDataDir() / "arkive-sync.sock").string();
+#endif
+}

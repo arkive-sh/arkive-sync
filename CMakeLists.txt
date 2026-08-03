@@ -107,6 +107,7 @@ add_executable(arkive-sync
     src/platform/AppDataPaths.cpp
     src/platform/AtomicFileWriterFactory.cpp
     src/platform/Daemon.cpp
+    src/platform/Ipc.cpp
     src/platform/daemon/PollingDaemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/ConflictRepo.cpp
@@ -149,6 +150,7 @@ add_executable(arkive-sync
 
 if(APPLE)
     target_sources(arkive-sync PRIVATE
+        src/platform/linux/Ipc.cpp
         src/platform/macos/filewriter/MacosAtomicFileWriter.cpp
         src/platform/macos/watcher/FSEventsWatcher.cpp
         src/platform/macos/SecureStorage.cpp
@@ -166,11 +168,13 @@ elseif(UNIX)
     target_compile_options(arkive-sync PRIVATE ${LIBSECRET_CFLAGS_OTHER})
     target_sources(arkive-sync PRIVATE
         src/platform/linux/daemon/LinuxDaemon.cpp
+        src/platform/linux/Ipc.cpp
         src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
         src/platform/linux/SecureStorage.cpp
     )
 elseif(WIN32)
     target_sources(arkive-sync PRIVATE
+        src/platform/windows/Ipc.cpp
         src/platform/windows/filewriter/WindowsAtomicFileWriter.cpp
         src/platform/windows/watcher/ReadDirectoryChangesWatcher.cpp
         src/platform/windows/SecureStorage.cpp
@@ -211,6 +215,7 @@ add_executable(arkive-sync-tests
     src/fs/FileSnapshot.cpp
     src/platform/AppDataPaths.cpp
     src/platform/AtomicFileWriterFactory.cpp
+    src/platform/Ipc.cpp
     src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
@@ -229,6 +234,7 @@ add_executable(arkive-sync-tests
     tests/upload_finalizer_test.cpp
     tests/upload_planner_test.cpp
     tests/vault_service_test.cpp
+    tests/ipc_test.cpp
     src/crypto/Aad.cpp
     src/crypto/RustCrypto.cpp
     src/db/SqliteHelpers.cpp
@@ -291,3 +297,9 @@ add_custom_target(check
 include(CTest)
 include(Catch)
 catch_discover_tests(arkive-sync-tests)
+
+if(UNIX)
+    target_sources(arkive-sync-tests PRIVATE src/platform/linux/Ipc.cpp)
+elseif(WIN32)
+    target_sources(arkive-sync-tests PRIVATE src/platform/windows/Ipc.cpp)
+endif()
