@@ -62,7 +62,11 @@ SyncReconciler::conflictPathFor(const std::filesystem::path &path) const {
   const auto now = std::chrono::system_clock::now();
   const std::time_t rawTime = std::chrono::system_clock::to_time_t(now);
   std::tm time{};
+#if defined(_WIN32)
+  localtime_s(&time, &rawTime);
+#else
   localtime_r(&rawTime, &time);
+#endif
 
   std::ostringstream suffix;
   suffix << " (remote conflict " << std::put_time(&time, "%Y%m%d-%H%M%S")

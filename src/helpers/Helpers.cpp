@@ -4,18 +4,43 @@
 #include <format>
 #include <iostream>
 #include <stdexcept>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 void TerminalEchoRestore::operator()(TerminalState *state) const noexcept {
   if (state != nullptr) {
+#if defined(_WIN32)
+    if (state->input != INVALID_HANDLE_VALUE) {
+      SetConsoleMode(state->input, state->originalMode);
+    }
+#else
     tcsetattr(STDIN_FILENO, TCSANOW, &state->original);
+#endif
     delete state;
   }
 }
 
 TerminalEchoGuard makeTerminalEchoGuard() {
   auto *state = new TerminalState{};
+#if defined(_WIN32)
+  state->input = GetStdHandle(STD_INPUT_HANDLE);
+  if (state->input == INVALID_HANDLE_VALUE ||
+      !GetConsoleMode(state->input, &state->originalMode)) {
+    delete state;
+    throw std::runtime_error("GetConsoleMode failed");
+  }
+
+  DWORD hidden = state->originalMode & ~ENABLE_ECHO_INPUT;
+  if (!SetConsoleMode(state->input, hidden)) {
+    delete state;
+    throw std::runtime_error("SetConsoleMode failed");
+  }
+#else
   if (tcgetattr(STDIN_FILENO, &state->original) != 0) {
     delete state;
     throw std::runtime_error("tcgetattr failed");
@@ -28,6 +53,7 @@ TerminalEchoGuard makeTerminalEchoGuard() {
     delete state;
     throw std::runtime_error("tcsetattr failed");
   }
+#endif
 
   return TerminalEchoGuard(state);
 }
