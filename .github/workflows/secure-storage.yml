@@ -39,7 +39,11 @@ jobs:
       - name: Build smoke test
         if: runner.os == 'Windows'
         shell: cmd
-        run: cl /std:c++20 /EHsc /Isrc tests\secure_storage_native_smoke.cpp src\platform\SecureStorage.cpp src\platform\windows\SecureStorage.cpp Advapi32.lib /Fe:secure-storage-smoke.exe
+        run: |
+          cl /std:c++20 /EHsc /Isrc /c tests\secure_storage_native_smoke.cpp /Fo:secure_storage_native_smoke.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\SecureStorage.cpp /Fo:secure_storage_factory.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\windows\SecureStorage.cpp /Fo:secure_storage_windows.obj
+          link secure_storage_native_smoke.obj secure_storage_factory.obj secure_storage_windows.obj Advapi32.lib /OUT:secure-storage-smoke.exe
 
       - name: Run smoke test
         if: runner.os == 'Windows'
