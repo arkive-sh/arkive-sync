@@ -128,7 +128,7 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        run: vcpkg install curl sqlite3 --triplet x64-windows
+        run: C:/vcpkg/vcpkg.exe install curl sqlite3 --triplet x64-windows
 
       - name: Configure daemon build
         if: runner.os == 'macOS'
@@ -140,7 +140,7 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build daemon
