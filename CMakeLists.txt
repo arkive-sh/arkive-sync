@@ -174,7 +174,7 @@ elseif(WIN32)
         src/platform/windows/watcher/ReadDirectoryChangesWatcher.cpp
         src/platform/windows/SecureStorage.cpp
     )
-    target_link_libraries(arkive-sync PRIVATE Advapi32)
+    target_link_libraries(arkive-sync PRIVATE Advapi32 Bcrypt Ntdll Userenv Ws2_32)
 endif()
 
 target_include_directories(arkive-sync PRIVATE
