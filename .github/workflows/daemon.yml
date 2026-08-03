@@ -1,0 +1,81 @@
+name: Daemon IPC
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  daemon-smoke:
+    name: daemon ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: C:/vcpkg/vcpkg.exe install curl sqlite3 protobuf --triplet x64-windows
+
+      - name: Install macOS protobuf
+        if: runner.os == 'macOS'
+        run: brew list protobuf >/dev/null 2>&1 || brew install protobuf
+
+      - name: Configure daemon build
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure daemon build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build daemon
+        run: cmake --build build --target arkive-sync --config Release
+
+      - name: Run daemon smoke
+        if: runner.os == 'macOS'
+        run: |
+          ./build/arkive-sync daemon &
+          pid=$!
+          sleep 8
+          ./build/arkive-sync status
+          ./build/arkive-sync daemon stop
+          wait "$pid"
+
+      - name: Run daemon smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ".\build\Release\arkive-sync.exe" -ArgumentList "daemon" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) {
+            throw "Daemon exited before IPC smoke commands ran with code $($process.ExitCode)"
+          }
+          & ".\build\Release\arkive-sync.exe" status
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          & ".\build\Release\arkive-sync.exe" daemon stop
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) {
+            exit $process.ExitCode
+          }

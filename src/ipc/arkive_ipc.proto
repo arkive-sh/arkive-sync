@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package arkive.ipc;
+
+enum Command {
+  COMMAND_UNSPECIFIED = 0;
+  STATUS = 1;
+  STOP = 2;
+}
+
+message Request {
+  uint32 protocol_version = 1;
+  Command command = 2;
+}
+
+message Response {
+  uint32 protocol_version = 1;
+  bool ok = 2;
+  string error = 3;
+  string state = 4;
+  uint32 sync_root_count = 5;
+}

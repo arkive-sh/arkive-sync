@@ -4,6 +4,7 @@
 #include "db/Sqlite.hpp"
 #include "fs/FileWatcher.hpp"
 #include "fs/FileEncryptor.hpp"
+#include "platform/AppDataPaths.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
@@ -13,6 +14,8 @@
 #include "repo/UserRepo.hpp"
 #include "api/ArkiveApi.hpp"
 #include "api/ArkiveHttpClient.hpp"
+#include "ipc/DaemonIpcHandler.hpp"
+#include "ipc/DaemonIpcServer.hpp"
 #include "download/DownloadRecordDecryptor.hpp"
 #include "download/DownloadService.hpp"
 #include "repo/ConflictRepo.hpp"
@@ -101,6 +104,8 @@ LinuxDaemon::~LinuxDaemon() = default;
 int LinuxDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
+  DaemonIpcServer ipcServer(ipcEndpoint());
+  ipcServer.start(makeDaemonIpcHandler(services_, [] { gStopRequested = 1; }));
   services_.queueRepo->retryRunning();
   auto roots = services_.syncService->getSyncRoots();
 
@@ -295,6 +300,7 @@ int LinuxDaemon::run() {
   }
 
   services_.watcher->stop();
+  ipcServer.stop();
   spdlog::info("Daemon stopped");
   return 0;
 }

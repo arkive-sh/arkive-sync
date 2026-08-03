@@ -2,7 +2,9 @@
 #include "./crypto/RustCrypto.hpp"
 #include "./helpers/Helpers.hpp"
 #include "./platform/Daemon.hpp"
+#include "./platform/AppDataPaths.hpp"
 #include "./platform/SecureStorage.hpp"
+#include "ipc/IpcProtocolClient.hpp"
 #include "./repo/UserRepo.hpp"
 #include "./service/AuthService.hpp"
 #include "./service/SyncService.hpp"
@@ -25,6 +27,7 @@ enum class Command {
   Status,
   SecureStorageSmoke,
   Daemon,
+  DaemonStop,
   Unknown,
 };
 
@@ -65,6 +68,10 @@ Command parseCommand(int argc, char *argv[]) {
 
   if (command == "daemon" && argc == 2) {
     return Command::Daemon;
+  }
+
+  if (command == "daemon" && argc == 3 && std::string(argv[2]) == "stop") {
+    return Command::DaemonStop;
   }
 
   return Command::Unknown;
@@ -211,9 +218,35 @@ int App::run(int argc, char *argv[]) {
     return 0;
   }
 
-  case Command::Status:
-    spdlog::info("Arkive Sync is installed and working");
+  case Command::Status: {
+    try {
+      arkive::ipc::Request request;
+      request.set_protocol_version(ipc::kProtocolVersion);
+      request.set_command(arkive::ipc::STATUS);
+      const auto response =
+          IpcProtocolClient(ipcEndpoint()).request(request);
+      if (!response.ok()) {
+        throw std::runtime_error(response.error());
+      }
+      spdlog::info("Arkive Sync engine is {} ({} sync root(s))",
+                   response.state(), response.sync_root_count());
+    } catch (const std::exception &) {
+      spdlog::info("Arkive Sync is installed and working");
+    }
     return 0;
+  }
+
+  case Command::DaemonStop: {
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::STOP);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
+    }
+    spdlog::info("Arkive Sync engine stopping");
+    return 0;
+  }
 
   case Command::SecureStorageSmoke: {
     RustCrypto crypto;
@@ -252,7 +285,7 @@ int App::run(int argc, char *argv[]) {
         "Usage: arkive-sync login | arkive-sync logout | "
         "arkive-sync set-base-url <url> | arkive-sync status | "
         "arkive-sync sync add <path> | arkive-sync sync run | "
-        "arkive-sync secure-storage-smoke | arkive-sync daemon");
+        "arkive-sync secure-storage-smoke | arkive-sync daemon [stop]");
     return 1;
   }
 

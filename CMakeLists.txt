@@ -86,6 +86,20 @@ FetchContent_MakeAvailable(spdlog nlohmann_json Catch2)
 
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(Protobuf REQUIRED)
+
+protobuf_generate_cpp(ARKIVE_IPC_PROTO_SRCS ARKIVE_IPC_PROTO_HDRS
+    src/ipc/arkive_ipc.proto
+)
+
+add_library(arkive-ipc-proto STATIC
+    ${ARKIVE_IPC_PROTO_SRCS}
+    ${ARKIVE_IPC_PROTO_HDRS}
+)
+target_include_directories(arkive-ipc-proto PUBLIC
+    "${CMAKE_CURRENT_BINARY_DIR}"
+)
+target_link_libraries(arkive-ipc-proto PUBLIC protobuf::libprotobuf)
 
 add_executable(arkive-sync
     src/main.cpp
@@ -110,6 +124,10 @@ add_executable(arkive-sync
     src/platform/Ipc.cpp
     src/platform/daemon/PollingDaemon.cpp
     src/platform/SecureStorage.cpp
+    src/ipc/IpcProtocol.cpp
+    src/ipc/IpcProtocolClient.cpp
+    src/ipc/DaemonIpcServer.cpp
+    src/ipc/DaemonIpcHandler.cpp
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
@@ -197,6 +215,7 @@ target_link_libraries(arkive-sync PRIVATE
     nlohmann_json::nlohmann_json
     CURL::libcurl
     SQLite3::SQLite3
+    arkive-ipc-proto
 )
 
 enable_testing()
@@ -216,6 +235,10 @@ add_executable(arkive-sync-tests
     src/platform/AppDataPaths.cpp
     src/platform/AtomicFileWriterFactory.cpp
     src/platform/Ipc.cpp
+    src/ipc/IpcProtocol.cpp
+    src/ipc/IpcProtocolClient.cpp
+    src/ipc/DaemonIpcServer.cpp
+    src/ipc/DaemonIpcHandler.cpp
     src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
@@ -277,6 +300,7 @@ target_link_libraries(arkive-sync-tests PRIVATE
     spdlog::spdlog
     CURL::libcurl
     SQLite3::SQLite3
+    arkive-ipc-proto
 )
 
 target_include_directories(arkive-sync-tests PRIVATE

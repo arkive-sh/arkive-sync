@@ -1,6 +1,9 @@
 #include "platform/daemon/PollingDaemon.hpp"
 
 #include "fs/FileWatcher.hpp"
+#include "ipc/DaemonIpcHandler.hpp"
+#include "ipc/DaemonIpcServer.hpp"
+#include "platform/AppDataPaths.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
@@ -74,6 +77,8 @@ PollingDaemon::~PollingDaemon() = default;
 int PollingDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
+  DaemonIpcServer ipcServer(ipcEndpoint());
+  ipcServer.start(makeDaemonIpcHandler(services_, [] { gStopRequested = 1; }));
   services_.queueRepo->retryRunning();
   auto roots = services_.syncService->getSyncRoots();
 
@@ -218,6 +223,7 @@ int PollingDaemon::run() {
   }
 
   services_.watcher->stop();
+  ipcServer.stop();
   spdlog::info("Daemon stopped");
   return 0;
 }
