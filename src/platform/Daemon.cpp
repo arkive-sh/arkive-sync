@@ -8,6 +8,8 @@
 #include "download/DownloadService.hpp"
 #include "fs/FileWatcher.hpp"
 #include "platform/AppDataPaths.hpp"
+#include "platform/DaemonServices.hpp"
+#include "platform/daemon/PollingDaemon.hpp"
 #include "repo/ConflictRepo.hpp"
 #include "repo/DirtyPathRepo.hpp"
 #include "repo/EntryRepo.hpp"
@@ -34,11 +36,10 @@
 #include "platform/linux/daemon/LinuxDaemon.hpp"
 #endif
 
-#if defined(__linux__)
 namespace {
 
-LinuxDaemonServices createLinuxDaemonServices() {
-  LinuxDaemonServices services;
+DaemonServices createDaemonServices() {
+  DaemonServices services;
 
   services.db = std::make_unique<Database>();
   services.crypto = std::make_unique<RustCrypto>();
@@ -107,15 +108,20 @@ LinuxDaemonServices createLinuxDaemonServices() {
 }
 
 } // namespace
-#endif
+
+DaemonServices::DaemonServices() = default;
+DaemonServices::~DaemonServices() = default;
+DaemonServices::DaemonServices(DaemonServices &&) noexcept = default;
+DaemonServices &DaemonServices::operator=(DaemonServices &&) noexcept =
+    default;
 
 std::unique_ptr<Daemon> Daemon::create() {
 #if defined(__linux__)
-  return std::make_unique<LinuxDaemon>(createLinuxDaemonServices());
+  return std::make_unique<LinuxDaemon>(createDaemonServices());
 #elif defined(__APPLE__)
-  throw std::runtime_error("Daemon is not implemented on macOS yet");
+  return std::make_unique<PollingDaemon>(createDaemonServices());
 #elif defined(_WIN32)
-  throw std::runtime_error("Daemon is not implemented on Windows yet");
+  return std::make_unique<PollingDaemon>(createDaemonServices());
 #else
   throw std::runtime_error("Daemon is not implemented on this platform");
 #endif

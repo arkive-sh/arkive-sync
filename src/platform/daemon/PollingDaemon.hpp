@@ -3,10 +3,10 @@
 #include "platform/Daemon.hpp"
 #include "platform/DaemonServices.hpp"
 
-class LinuxDaemon final : public Daemon {
+class PollingDaemon final : public Daemon {
 public:
-  explicit LinuxDaemon(DaemonServices services);
-  ~LinuxDaemon() override;
+  explicit PollingDaemon(DaemonServices services);
+  ~PollingDaemon() override;
 
   int run() override;
 

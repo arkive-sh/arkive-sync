@@ -1,39 +1,21 @@
-#include "platform/linux/daemon/LinuxDaemon.hpp"
+#include "platform/daemon/PollingDaemon.hpp"
 
-#include "crypto/RustCrypto.hpp"
-#include "db/Sqlite.hpp"
 #include "fs/FileWatcher.hpp"
-#include "fs/FileEncryptor.hpp"
 #include "repo/DirtyPathRepo.hpp"
-#include "repo/EntryRepo.hpp"
 #include "repo/QueueRepo.hpp"
 #include "repo/ScanRepo.hpp"
-#include "repo/SyncRepo.hpp"
-#include "repo/UploadResumeRepo.hpp"
-#include "repo/UserRepo.hpp"
-#include "api/ArkiveApi.hpp"
-#include "api/ArkiveHttpClient.hpp"
-#include "download/DownloadRecordDecryptor.hpp"
-#include "download/DownloadService.hpp"
-#include "repo/ConflictRepo.hpp"
-#include "repo/LocalEntryRepo.hpp"
-#include "repo/RemoteEntryRepo.hpp"
-#include "service/FolderCreateWorker.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
 #include "service/SyncReconciler.hpp"
 #include "service/SyncService.hpp"
-#include "service/UploadJobRunner.hpp"
-#include "service/UploadService.hpp"
-#include "service/VaultService.hpp"
 #include "sync/RootScanner.hpp"
 
-#include <cerrno>
+#include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <filesystem>
 #include <spdlog/spdlog.h>
-#include <sys/epoll.h>
-#include <system_error>
-#include <unistd.h>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -45,30 +27,11 @@ volatile std::sig_atomic_t gStopRequested = 0;
 
 void handleStopSignal(int signal) {
   if (gStopRequested != 0) {
-    _exit(128 + signal);
+    std::_Exit(128 + signal);
   }
 
   gStopRequested = 1;
 }
-
-class ScopedFd {
-public:
-  explicit ScopedFd(int fd) : fd_(fd) {}
-
-  ~ScopedFd() {
-    if (fd_ >= 0) {
-      close(fd_);
-    }
-  }
-
-  ScopedFd(const ScopedFd &) = delete;
-  ScopedFd &operator=(const ScopedFd &) = delete;
-
-  int get() const { return fd_; }
-
-private:
-  int fd_{-1};
-};
 
 class ScopedSignalHandlers {
 public:
@@ -91,29 +54,28 @@ private:
   SignalHandler previousSigterm_;
 };
 
+std::vector<SyncRoot> remoteBoundRoots(const std::vector<SyncRoot> &syncRoots) {
+  std::vector<SyncRoot> bound;
+  for (const auto &root : syncRoots) {
+    if (!root.folderId.empty()) {
+      bound.push_back(root);
+    }
+  }
+  return bound;
+}
+
 } // namespace
 
-LinuxDaemon::LinuxDaemon(DaemonServices services)
+PollingDaemon::PollingDaemon(DaemonServices services)
     : services_(std::move(services)) {}
 
-LinuxDaemon::~LinuxDaemon() = default;
+PollingDaemon::~PollingDaemon() = default;
 
-int LinuxDaemon::run() {
+int PollingDaemon::run() {
   gStopRequested = 0;
   ScopedSignalHandlers signalHandlers;
   services_.queueRepo->retryRunning();
   auto roots = services_.syncService->getSyncRoots();
-
-  const auto remoteBoundRoots = [](
-      const std::vector<SyncRoot> &syncRoots) {
-    std::vector<SyncRoot> bound;
-    for (const auto &root : syncRoots) {
-      if (!root.folderId.empty()) {
-        bound.push_back(root);
-      }
-    }
-    return bound;
-  };
 
   if (services_.remoteSyncService != nullptr) {
     const auto boundRoots = remoteBoundRoots(roots);
@@ -152,22 +114,6 @@ int LinuxDaemon::run() {
 
   roots = services_.syncService->getSyncRoots();
 
-  const ScopedFd epollFd(epoll_create1(EPOLL_CLOEXEC));
-  if (epollFd.get() < 0) {
-    throw std::system_error(errno, std::generic_category(),
-                            "epoll_create1 failed");
-  }
-
-  epoll_event event{};
-  event.events = EPOLLIN;
-  event.data.fd = services_.watcher->fd();
-
-  if (epoll_ctl(epollFd.get(), EPOLL_CTL_ADD, services_.watcher->fd(),
-                &event) < 0) {
-    throw std::system_error(errno, std::generic_category(),
-                            "epoll_ctl add watcher failed");
-  }
-
   const auto processWatcherEvents = [&]() {
     for (const auto &fileEvent : services_.watcher->poll()) {
       if (fileEvent.oldPath.has_value()) {
@@ -195,6 +141,9 @@ int LinuxDaemon::run() {
         }
       }
     }
+
+    processWatcherEvents();
+
     for (const auto &root : roots) {
       if (!root.enabled) {
         continue;
@@ -257,7 +206,7 @@ int LinuxDaemon::run() {
                         root.Id, error.what());
         } catch (...) {
           services_.dirtyPathRepo->markFailed(dirtyPath->id,
-                                     "Unknown dirty path processing error");
+                                              "Unknown dirty path error");
           spdlog::error("Dirty path {} failed for root {} with unknown error",
                         dirtyPath->id, root.Id);
         }
@@ -265,33 +214,7 @@ int LinuxDaemon::run() {
     }
 
     services_.queueService->runTick();
-
-    epoll_event readyEvents[8]{};
-    const int readyCount = epoll_wait(epollFd.get(), readyEvents, 8, 1000);
-
-    if (readyCount < 0) {
-      if (errno == EINTR) {
-        continue;
-      }
-
-      throw std::system_error(errno, std::generic_category(),
-                              "epoll_wait failed");
-    }
-
-    // poll every tick so expired move/delete events are flushed
-    // even when no new inotify fd readability arrives.
-    if (readyCount == 0) {
-      processWatcherEvents();
-      continue;
-    }
-
-    for (int i = 0; i < readyCount; ++i) {
-      if (readyEvents[i].data.fd != services_.watcher->fd()) {
-        continue;
-      }
-
-      processWatcherEvents();
-    }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   services_.watcher->stop();

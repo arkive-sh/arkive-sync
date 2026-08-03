@@ -107,6 +107,7 @@ add_executable(arkive-sync
     src/platform/AppDataPaths.cpp
     src/platform/AtomicFileWriterFactory.cpp
     src/platform/Daemon.cpp
+    src/platform/daemon/PollingDaemon.cpp
     src/platform/SecureStorage.cpp
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
