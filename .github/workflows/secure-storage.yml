@@ -1,4 +1,4 @@
-name: Secure Storage
+name: Platform Smoke
 
 on:
   workflow_dispatch:
@@ -36,6 +36,20 @@ jobs:
         if: runner.os == 'macOS'
         run: ./secure-storage-smoke
 
+      - name: Build atomic writer smoke test
+        if: runner.os == 'macOS'
+        run: >
+          c++ -std=c++20 -Isrc
+          tests/atomic_file_writer_native_smoke.cpp
+          src/platform/AtomicFileWriterFactory.cpp
+          src/platform/macos/filewriter/MacosAtomicFileWriter.cpp
+          src/helpers/Hex.cpp
+          -o atomic-writer-smoke
+
+      - name: Run atomic writer smoke test
+        if: runner.os == 'macOS'
+        run: ./atomic-writer-smoke
+
       - name: Build smoke test
         if: runner.os == 'Windows'
         shell: cmd
@@ -49,3 +63,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: secure-storage-smoke.exe
+
+      - name: Build atomic writer smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /std:c++20 /EHsc /Isrc /c tests\atomic_file_writer_native_smoke.cpp /Fo:atomic_file_writer_native_smoke.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\AtomicFileWriterFactory.cpp /Fo:atomic_file_writer_factory.obj
+          cl /std:c++20 /EHsc /Isrc /c src\platform\windows\filewriter\WindowsAtomicFileWriter.cpp /Fo:atomic_file_writer_windows.obj
+          cl /std:c++20 /EHsc /Isrc /c src\helpers\Hex.cpp /Fo:hex.obj
+          link atomic_file_writer_native_smoke.obj atomic_file_writer_factory.obj atomic_file_writer_windows.obj hex.obj /OUT:atomic-writer-smoke.exe
+
+      - name: Run atomic writer smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: atomic-writer-smoke.exe

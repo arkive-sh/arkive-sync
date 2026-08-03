@@ -146,6 +146,7 @@ add_executable(arkive-sync
 
 if(APPLE)
     target_sources(arkive-sync PRIVATE
+        src/platform/macos/filewriter/MacosAtomicFileWriter.cpp
         src/platform/macos/SecureStorage.cpp
     )
     target_link_libraries(arkive-sync PRIVATE
@@ -165,6 +166,7 @@ elseif(UNIX)
     )
 elseif(WIN32)
     target_sources(arkive-sync PRIVATE
+        src/platform/windows/filewriter/WindowsAtomicFileWriter.cpp
         src/platform/windows/SecureStorage.cpp
     )
     target_link_libraries(arkive-sync PRIVATE Advapi32)
