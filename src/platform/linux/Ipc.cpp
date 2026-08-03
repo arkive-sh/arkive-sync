@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -99,9 +100,16 @@ sockaddr_un makeAddress(const std::string &endpoint) {
 }
 
 int connectSocket(const std::string &endpoint) {
-  const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd < 0) {
     throw std::system_error(errno, std::generic_category(), "IPC socket failed");
+  }
+
+  if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+    const int error = errno;
+    close(fd);
+    throw std::system_error(error, std::generic_category(),
+                            "IPC close-on-exec setup failed");
   }
 
   const sockaddr_un address = makeAddress(endpoint);
@@ -125,9 +133,15 @@ LinuxIpcServer::LinuxIpcServer(const std::string &endpoint)
   }
   unlink(endpoint_.c_str());
 
-  fd_ = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
   if (fd_ < 0) {
     throw std::system_error(errno, std::generic_category(), "IPC socket failed");
+  }
+  if (fcntl(fd_, F_SETFD, FD_CLOEXEC) < 0) {
+    const int error = errno;
+    stop();
+    throw std::system_error(error, std::generic_category(),
+                            "IPC close-on-exec setup failed");
   }
 
   const sockaddr_un address = makeAddress(endpoint_);
@@ -154,9 +168,15 @@ LinuxIpcServer::LinuxIpcServer(const std::string &endpoint)
 LinuxIpcServer::~LinuxIpcServer() { stop(); }
 
 std::unique_ptr<IpcConnection> LinuxIpcServer::accept() {
-  const int connection = ::accept4(fd_, nullptr, nullptr, SOCK_CLOEXEC);
+  const int connection = ::accept(fd_, nullptr, nullptr);
   if (connection < 0) {
     throw std::system_error(errno, std::generic_category(), "IPC accept failed");
+  }
+  if (fcntl(connection, F_SETFD, FD_CLOEXEC) < 0) {
+    const int error = errno;
+    close(connection);
+    throw std::system_error(error, std::generic_category(),
+                            "IPC close-on-exec setup failed");
   }
   return std::make_unique<UnixConnection>(connection);
 }
