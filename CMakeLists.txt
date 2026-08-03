@@ -163,6 +163,11 @@ elseif(UNIX)
         src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
         src/platform/linux/SecureStorage.cpp
     )
+elseif(WIN32)
+    target_sources(arkive-sync PRIVATE
+        src/platform/windows/SecureStorage.cpp
+    )
+    target_link_libraries(arkive-sync PRIVATE Advapi32)
 endif()
 
 target_include_directories(arkive-sync PRIVATE
