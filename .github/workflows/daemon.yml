@@ -104,18 +104,25 @@ jobs:
           list_output=$(./build/arkive-sync sync list 2>&1)
           echo "$list_output"
           echo "$list_output" | grep -Fq "$root"
-          sync_output=$(./build/arkive-sync sync run 2>&1)
-          echo "$sync_output"
-          echo "$sync_output" | grep -Eq '[1-9][0-9]* remote entr(y|ies) available'
+          ./build/arkive-sync sync run
+          sleep 15
           pull_output=$(./build/arkive-sync sync pull 2>&1)
           echo "$pull_output"
           echo "$pull_output" | grep -Eq 'Pulled remote changes for [1-9][0-9]* sync root'
+          if ./build/arkive-sync sync remove invalid-root-id; then
+            echo "sync remove accepted an invalid root"
+            exit 1
+          fi
           ./build/arkive-sync sync remove "$root_id"
           post_remove_output=$(./build/arkive-sync sync list 2>&1)
           echo "$post_remove_output"
           echo "$post_remove_output" | grep -F "id=$root_id" | grep -Fq "enabled=false"
           ./build/arkive-sync daemon stop
           wait "$pid"
+          if ./build/arkive-sync sync list; then
+            echo "IPC client succeeded after daemon stopped"
+            exit 1
+          fi
 
       - name: Run daemon smoke
         if: runner.os == 'Windows'
@@ -151,17 +158,18 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $listOutput -notmatch [regex]::Escape($root)) {
             throw "sync list did not contain the added root"
           }
-          $syncOutput = (& ".\build\Release\arkive-sync.exe" sync run 2>&1 | Out-String)
-          $syncOutput
+          & ".\build\Release\arkive-sync.exe" sync run
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
-          if ($syncOutput -notmatch '[1-9][0-9]* remote entr') {
-            throw "sync run did not report a remote entry"
-          }
+          Start-Sleep -Seconds 15
           & ".\build\Release\arkive-sync.exe" sync pull
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
+          }
+          & ".\build\Release\arkive-sync.exe" sync remove invalid-root-id
+          if ($LASTEXITCODE -eq 0) {
+            throw "sync remove accepted an invalid root"
           }
           & ".\build\Release\arkive-sync.exe" sync remove $rootId
           if ($LASTEXITCODE -ne 0) {
@@ -180,4 +188,8 @@ jobs:
           $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
             exit $process.ExitCode
+          }
+          & ".\build\Release\arkive-sync.exe" sync list
+          if ($LASTEXITCODE -eq 0) {
+            throw "IPC client succeeded after daemon stopped"
           }

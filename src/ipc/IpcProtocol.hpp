@@ -10,6 +10,8 @@ namespace ipc {
 
 constexpr uint32_t kProtocolVersion = 1;
 
+bool isSupportedProtocolVersion(uint32_t version);
+
 std::vector<uint8_t> serialize(const google::protobuf::Message &message);
 
 template <typename Message>

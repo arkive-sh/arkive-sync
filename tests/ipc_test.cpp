@@ -1,10 +1,16 @@
 #include "platform/Ipc.hpp"
+#include "ipc/IpcProtocol.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <filesystem>
 #include <thread>
+
+TEST_CASE("IPC rejects unsupported protocol versions") {
+  REQUIRE(ipc::isSupportedProtocolVersion(ipc::kProtocolVersion));
+  REQUIRE_FALSE(ipc::isSupportedProtocolVersion(ipc::kProtocolVersion + 1));
+}
 
 TEST_CASE("IPC sends and receives framed messages") {
 #if defined(_WIN32)

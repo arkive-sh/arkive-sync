@@ -4,6 +4,10 @@
 
 namespace ipc {
 
+bool isSupportedProtocolVersion(uint32_t version) {
+  return version == kProtocolVersion;
+}
+
 std::vector<uint8_t> serialize(const google::protobuf::Message &message) {
   const size_t size = message.ByteSizeLong();
   std::vector<uint8_t> bytes(size);

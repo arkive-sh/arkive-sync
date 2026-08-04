@@ -42,7 +42,6 @@ arkive::ipc::Response syncRun(DaemonServices &services) {
       }
     }
     services.queueService->build(root.Id);
-    services.queueService->runTick();
   }
 
   arkive::ipc::Response response;

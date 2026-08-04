@@ -219,11 +219,8 @@ int App::run(int argc, char *argv[]) {
     if (!response.ok()) {
       throw std::runtime_error(response.error());
     }
-    spdlog::info("Ran scan for {} sync root(s)",
+    spdlog::info("Scan complete for {} sync root(s)",
                  response.scanned_root_count());
-    spdlog::info("{} remote entr{} available",
-                 response.synced_entry_count(),
-                 response.synced_entry_count() == 1 ? "y" : "ies");
     return 0;
   }
 

@@ -7,7 +7,7 @@ makeDaemonIpcHandler(DaemonServices &services, std::function<void()> stop) {
     arkive::ipc::Response response;
     response.set_protocol_version(ipc::kProtocolVersion);
 
-    if (request.protocol_version() != ipc::kProtocolVersion) {
+    if (!ipc::isSupportedProtocolVersion(request.protocol_version())) {
       response.set_error("Unsupported IPC protocol version");
       return response;
     }
