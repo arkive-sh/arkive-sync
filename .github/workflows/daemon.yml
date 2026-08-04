@@ -34,14 +34,15 @@ jobs:
           path: |
             C:\Users\runneradmin\AppData\Local\vcpkg\archives
             C:\vcpkg\downloads
-          key: windows-vcpkg-${{ hashFiles('CMakeLists.txt', '.github/workflows/daemon.yml') }}
+          key: windows-vcpkg-${{ hashFiles('CMakeLists.txt', '.github/workflows/daemon.yml', 'ci/vcpkg/triplets/x64-windows-release.cmake') }}
 
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          VCPKG_BUILD_TYPE: release
-        run: C:/vcpkg/vcpkg.exe install curl sqlite3 protobuf --triplet x64-windows
+        run: >
+          C:/vcpkg/vcpkg.exe install curl sqlite3 protobuf
+          --triplet x64-windows-release
+          --overlay-triplets "$env:GITHUB_WORKSPACE/ci/vcpkg/triplets"
 
       - name: Install macOS protobuf
         if: runner.os == 'macOS'
@@ -58,7 +59,8 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-          -DVCPKG_TARGET_TRIPLET=x64-windows
+          -DVCPKG_TARGET_TRIPLET=x64-windows-release
+          -DVCPKG_OVERLAY_TRIPLETS=$env:GITHUB_WORKSPACE/ci/vcpkg/triplets
 
       - name: Build daemon
         run: cmake --build build --target arkive-sync --config Release
