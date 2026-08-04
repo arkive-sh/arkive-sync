@@ -27,6 +27,15 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
 
+      - name: Cache Windows dependencies
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Users\runneradmin\AppData\Local\vcpkg\archives
+            C:\vcpkg\downloads
+          key: windows-vcpkg-${{ hashFiles('CMakeLists.txt', '.github/workflows/daemon.yml') }}
+
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: pwsh
