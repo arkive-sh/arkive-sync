@@ -61,8 +61,22 @@ bool AuthService::login(const std::string &email, const std::string &password) {
     throw std::invalid_argument("Password cannot be empty!");
   }
 
-  const LoginResponse response = api_.login(email, password);
-  const nlohmann::json me = api_.me();
+  LoginResponse response;
+  try {
+    response = api_.login(email, password);
+  } catch (const HttpError &error) {
+    throw std::runtime_error("Login request failed: " +
+                             std::string(error.what()));
+  }
+
+  nlohmann::json me;
+  try {
+    me = api_.me();
+  } catch (const HttpError &error) {
+    throw std::runtime_error(
+        "Login succeeded but session check failed: " +
+        std::string(error.what()));
+  }
 
   AccountRecord updated{
       .baseUrl = account->baseUrl,

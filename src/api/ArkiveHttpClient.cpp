@@ -145,6 +145,7 @@ nlohmann::json ArkiveHttpClient::postJson(const std::string &path,
   curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
 
   CURLcode code = curl_easy_perform(curl.get());
+  curl_easy_setopt(curl.get(), CURLOPT_COOKIELIST, "FLUSH");
 
   long status = 0;
   curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
