@@ -4,6 +4,7 @@
 #include <curl/curl.h>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ private:
   std::string baseUrl_;
   std::string cookiePath_;
   CURLSH *cookieShare_{nullptr};
+  mutable std::mutex cookieMutex_;
 
   std::string url(const std::string &path) const;
 };

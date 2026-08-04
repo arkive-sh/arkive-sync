@@ -86,6 +86,7 @@ struct UploadCompleteRequest {
   std::string thumbnailMime;
   int thumbnailWidth;
   int thumbnailHeight;
+  int64_t thumbnailSize;
 };
 
 struct ListSyncEntriesRequest {

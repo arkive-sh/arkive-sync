@@ -268,6 +268,7 @@ void ArkiveApi::uploadComplete(const std::string &uploadSessionId,
           {"thumbnailMime", request.thumbnailMime},
           {"thumbnailWidth", request.thumbnailWidth},
           {"thumbnailHeight", request.thumbnailHeight},
+          {"thumbnailSize", request.thumbnailSize},
       });
 }
 

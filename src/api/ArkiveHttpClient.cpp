@@ -10,6 +10,14 @@
 
 namespace {
 
+void lockCookieShare(CURL *, curl_lock_data, curl_lock_access, void *userData) {
+  static_cast<std::mutex *>(userData)->lock();
+}
+
+void unlockCookieShare(CURL *, curl_lock_data, void *userData) {
+  static_cast<std::mutex *>(userData)->unlock();
+}
+
 using CurlPtr = std::unique_ptr<CURL, decltype(&curl_easy_cleanup)>;
 using HeaderPtr = std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>;
 
@@ -44,6 +52,12 @@ ArkiveHttpClient::ArkiveHttpClient(std::string baseUrl, std::string cookiePath)
   cookieShare_ = curl_share_init();
   if (cookieShare_ == nullptr ||
       curl_share_setopt(cookieShare_, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE) !=
+          CURLSHE_OK ||
+      curl_share_setopt(cookieShare_, CURLSHOPT_LOCKFUNC, lockCookieShare) !=
+          CURLSHE_OK ||
+      curl_share_setopt(cookieShare_, CURLSHOPT_UNLOCKFUNC, unlockCookieShare) !=
+          CURLSHE_OK ||
+      curl_share_setopt(cookieShare_, CURLSHOPT_USERDATA, &cookieMutex_) !=
           CURLSHE_OK) {
     if (cookieShare_ != nullptr) {
       curl_share_cleanup(cookieShare_);
@@ -63,6 +77,9 @@ ArkiveHttpClient::ArkiveHttpClient(ArkiveHttpClient &&other) noexcept
     : baseUrl_(std::move(other.baseUrl_)),
       cookiePath_(std::move(other.cookiePath_)),
       cookieShare_(other.cookieShare_) {
+  if (cookieShare_ != nullptr) {
+    curl_share_setopt(cookieShare_, CURLSHOPT_USERDATA, &cookieMutex_);
+  }
   other.cookieShare_ = nullptr;
 }
 
@@ -74,6 +91,9 @@ ArkiveHttpClient &ArkiveHttpClient::operator=(ArkiveHttpClient &&other) noexcept
       curl_share_cleanup(cookieShare_);
     }
     cookieShare_ = other.cookieShare_;
+    if (cookieShare_ != nullptr) {
+      curl_share_setopt(cookieShare_, CURLSHOPT_USERDATA, &cookieMutex_);
+    }
     other.cookieShare_ = nullptr;
   }
 

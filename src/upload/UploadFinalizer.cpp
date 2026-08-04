@@ -173,6 +173,7 @@ UploadArtifacts UploadFinalizer::completeUpload(
             .thumbnailMime = thumbnailMime,
             .thumbnailWidth = thumbnailWidth,
             .thumbnailHeight = thumbnailHeight,
+            .thumbnailSize = static_cast<int64_t>(encryptedThumbnail.size()),
         });
   } catch (...) {
     if (!artifacts.fileKey.empty()) {

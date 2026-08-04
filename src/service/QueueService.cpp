@@ -9,11 +9,20 @@
 #include "sync/SyncStateClassifier.hpp"
 
 #include <filesystem>
+#include <future>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <vector>
 
 namespace {
+
+constexpr size_t kMaxConcurrentUploads = 2;
+
+struct UploadResult {
+  TransferJob job;
+  std::exception_ptr error;
+};
 
 std::optional<std::string>
 resolveRemoteFolderId(EntryRepo &entryRepo, const SyncRoot &syncRoot,
@@ -128,27 +137,55 @@ void QueueService::runTick() {
   }
 
   while (true) {
-    const auto job = queueRepo_.claimNextQueuedByType("upload_file");
-    if (!job.has_value()) {
+    std::vector<std::future<UploadResult>> uploads;
+    uploads.reserve(kMaxConcurrentUploads);
+
+    for (size_t i = 0; i < kMaxConcurrentUploads; ++i) {
+      const auto job = queueRepo_.claimNextQueuedByType("upload_file");
+      if (!job.has_value()) {
+        break;
+      }
+
+      uploads.push_back(std::async(
+          std::launch::async, [this, job = *job]() -> UploadResult {
+            try {
+              uploadJobRunner_->run(job);
+              return UploadResult{.job = job, .error = nullptr};
+            } catch (...) {
+              return UploadResult{.job = job,
+                                  .error = std::current_exception()};
+            }
+          }));
+    }
+
+    if (uploads.empty()) {
       break;
     }
 
-    const auto entry = entryRepo_.getEntryById(job->entryId);
-    const std::string syncRootId =
-        entry.has_value() ? entry->syncRootId : std::string();
+    for (auto &upload : uploads) {
+      UploadResult result = upload.get();
+      const auto entry = entryRepo_.getEntryById(result.job.entryId);
+      const std::string syncRootId =
+          entry.has_value() ? entry->syncRootId : std::string();
 
-    try {
-      uploadJobRunner_->run(*job);
-      queueRepo_.markDone(job->id);
-      if (!syncRootId.empty()) {
-        build(syncRootId);
+      if (result.error == nullptr) {
+        queueRepo_.markDone(result.job.id);
+        if (!syncRootId.empty()) {
+          build(syncRootId);
+        }
+        continue;
       }
-    } catch (const std::exception &error) {
-      queueRepo_.markFailed(job->id, error.what());
-      spdlog::error("Queue job {} failed: {}", job->id, error.what());
-    } catch (...) {
-      queueRepo_.markFailed(job->id, "Unknown queue job error");
-      spdlog::error("Queue job {} failed with unknown error", job->id);
+
+      try {
+        std::rethrow_exception(result.error);
+      } catch (const std::exception &error) {
+        queueRepo_.markFailed(result.job.id, error.what());
+        spdlog::error("Queue job {} failed: {}", result.job.id,
+                      error.what());
+      } catch (...) {
+        queueRepo_.markFailed(result.job.id, "Unknown queue job error");
+        spdlog::error("Queue job {} failed", result.job.id);
+      }
     }
   }
 }
