@@ -12,6 +12,7 @@
 #include "./sync/RootScanner.hpp"
 #include "./repo/ScanRepo.hpp"
 #include <iostream>
+#include <cstdlib>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -128,38 +129,40 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Login: {
-    if (authService_ == nullptr) {
-      throw std::runtime_error(
-          "Base URL is not configured. Run: arkive-sync set-base-url <url>");
+    IpcProtocolClient client(ipcEndpoint());
+    arkive::ipc::Request statusRequest;
+    statusRequest.set_protocol_version(ipc::kProtocolVersion);
+    statusRequest.set_command(arkive::ipc::STATUS);
+    const auto status = client.request(statusRequest);
+    if (!status.ok()) {
+      throw std::runtime_error(status.error());
     }
 
-    spdlog::info("Logging into arkive");
-    const auto account = userRepo_.getAccount();
-    if (!account.has_value()) {
-      throw std::runtime_error("Base URL is missing");
+    arkive::ipc::Request loginRequest;
+    loginRequest.set_protocol_version(ipc::kProtocolVersion);
+    loginRequest.set_command(arkive::ipc::LOGIN);
+    const char *environmentEmail = std::getenv("ARKIVE_LOGIN_EMAIL");
+    const char *environmentPassword = std::getenv("ARKIVE_LOGIN_PASSWORD");
+    if (environmentEmail != nullptr && environmentPassword != nullptr) {
+      loginRequest.set_email(environmentEmail);
+      loginRequest.set_password(environmentPassword);
+    } else if (status.authenticated()) {
+      loginRequest.set_password(
+          readPasswordFromTerminal("Enter your vault password: "));
+    } else {
+      std::string email;
+      std::cout << "Enter your email: ";
+      std::getline(std::cin, email);
+      loginRequest.set_email(email);
+      loginRequest.set_password(
+          readPasswordFromTerminal("Enter your password: "));
     }
 
-    const bool hasValidSession = authService_->hasValidSession();
-    std::string password;
-
-    if (hasValidSession) {
-      password = readPasswordFromTerminal("Enter your vault password: ");
-      if (!hasPersistedVaultMaterial(*account)) {
-        authService_->refreshVaultMaterial(password);
-      }
-      vaultService_.unlock(password);
-      spdlog::info("Session is already valid. Vault unlocked.");
-      return 0;
+    const auto response = client.request(loginRequest);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
     }
-
-    std::string email;
-    std::cout << "Enter your email: ";
-    std::getline(std::cin, email);
-    password = readPasswordFromTerminal("Enter your password: ");
-
-    authService_->login(email, password);
-    vaultService_.unlock(password);
-    if (vaultService_.isUnlocked()) {
+    if (response.vault_unlocked()) {
       spdlog::info("Successfully logged in and unlocked vault!");
     } else {
       spdlog::info("Successfully logged in!");
@@ -168,53 +171,41 @@ int App::run(int argc, char *argv[]) {
   }
 
   case Command::Logout: {
-    if (authService_ == nullptr) {
-      throw std::runtime_error(
-          "Base URL is not configured. Run: arkive-sync set-base-url <url>");
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::LOGOUT);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
     }
-
-    spdlog::info("Logging out of arkive");
-    vaultService_.lock();
-    vaultService_.clearPersistedSession();
-    if (authService_->logout()) {
-      spdlog::info("Successfully logged out!");
-    } else {
-      spdlog::info("No valid session found. Cleared local auth state.");
-    }
+    spdlog::info("Successfully logged out!");
     return 0;
   }
 
   case Command::SyncAdd: {
-    const SyncRoot root = syncService_.addSyncRoot(argv[3]);
-    spdlog::info("Added sync root id={} path={}", root.Id, root.localPath);
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::SYNC_ADD);
+    request.set_path(argv[3]);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
+    }
+    spdlog::info("Added sync root id={} path={}", response.sync_root_id(),
+                 response.sync_root_path());
     return 0;
   }
 
   case Command::SyncRun: {
-    const auto roots = syncService_.getSyncRoots();
-    if (roots.empty()) {
-      throw std::runtime_error("No sync roots configured");
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::SYNC_RUN);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
     }
-
-    size_t scanned = 0;
-    for (const auto &root : roots) {
-      if (!root.enabled) {
-        continue;
-      }
-
-      while (true) {
-        if (!rootScanner_.scanRoot(root.Id)) {
-          throw std::runtime_error("Failed to scan sync root: " + root.Id);
-        }
-
-        if (!scanRepo_.hasRunningScanJob(root.Id)) {
-          scanned++;
-          break;
-        }
-      }
-    }
-
-    spdlog::info("Ran scan for {} sync root(s)", scanned);
+    spdlog::info("Ran scan for {} sync root(s)",
+                 response.scanned_root_count());
     return 0;
   }
 

@@ -1,9 +1,5 @@
 #include "ipc/DaemonIpcHandler.hpp"
-
-#include "platform/DaemonServices.hpp"
-#include "service/SyncService.hpp"
-
-#include <utility>
+#include "ipc/commands/Commands.hpp"
 
 DaemonIpcServer::Handler
 makeDaemonIpcHandler(DaemonServices &services, std::function<void()> stop) {
@@ -18,16 +14,17 @@ makeDaemonIpcHandler(DaemonServices &services, std::function<void()> stop) {
 
     switch (request.command()) {
     case arkive::ipc::STATUS:
-      response.set_ok(true);
-      response.set_state("running");
-      response.set_sync_root_count(
-          static_cast<uint32_t>(services.syncService->getSyncRoots().size()));
-      return response;
+      return ipc::commands::status(services);
+    case arkive::ipc::LOGIN:
+      return ipc::commands::login(services, request);
+    case arkive::ipc::LOGOUT:
+      return ipc::commands::logout(services);
+    case arkive::ipc::SYNC_ADD:
+      return ipc::commands::syncAdd(services, request);
+    case arkive::ipc::SYNC_RUN:
+      return ipc::commands::syncRun(services);
     case arkive::ipc::STOP:
-      response.set_ok(true);
-      response.set_state("stopping");
-      stop();
-      return response;
+      return ipc::commands::stop(stop);
     default:
       response.set_error("Unsupported IPC command");
       return response;

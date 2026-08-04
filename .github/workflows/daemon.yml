@@ -10,6 +10,10 @@ jobs:
   daemon-smoke:
     name: daemon ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      ARKIVE_TEST_BASE_URL: https://a386-2407-d000-11-7833-acdf-deeb-f13d-bfc2.ngrok-free.app
+      ARKIVE_LOGIN_EMAIL: ${{ secrets.ARKIVE_TEST_EMAIL }}
+      ARKIVE_LOGIN_PASSWORD: ${{ secrets.ARKIVE_TEST_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,13 +52,40 @@ jobs:
       - name: Build daemon
         run: cmake --build build --target arkive-sync --config Release
 
+      - name: Configure test server
+        if: runner.os == 'macOS'
+        run: ./build/arkive-sync set-base-url "$ARKIVE_TEST_BASE_URL"
+
+      - name: Configure test server
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\build\Release\arkive-sync.exe set-base-url $env:ARKIVE_TEST_BASE_URL
+
+      - name: Verify login secrets
+        if: runner.os == 'macOS'
+        run: test -n "$ARKIVE_LOGIN_EMAIL" && test -n "$ARKIVE_LOGIN_PASSWORD"
+
+      - name: Verify login secrets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ARKIVE_LOGIN_EMAIL) -or [string]::IsNullOrWhiteSpace($env:ARKIVE_LOGIN_PASSWORD)) {
+            throw "ARKIVE_TEST_EMAIL and ARKIVE_TEST_PASSWORD secrets are required"
+          }
+
       - name: Run daemon smoke
         if: runner.os == 'macOS'
         run: |
           ./build/arkive-sync daemon &
           pid=$!
           sleep 8
+          ./build/arkive-sync login
           ./build/arkive-sync status
+          root="$RUNNER_TEMP/arkive-sync-root"
+          mkdir -p "$root"
+          echo smoke > "$root/file.txt"
+          ./build/arkive-sync sync add "$root"
+          ./build/arkive-sync sync run
           ./build/arkive-sync daemon stop
           wait "$pid"
 
@@ -67,7 +98,22 @@ jobs:
           if ($process.HasExited) {
             throw "Daemon exited before IPC smoke commands ran with code $($process.ExitCode)"
           }
+          & ".\build\Release\arkive-sync.exe" login
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
           & ".\build\Release\arkive-sync.exe" status
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $root = Join-Path $env:RUNNER_TEMP "arkive-sync-root"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          Set-Content -Path (Join-Path $root "file.txt") -Value "smoke"
+          & ".\build\Release\arkive-sync.exe" sync add $root
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          & ".\build\Release\arkive-sync.exe" sync run
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }

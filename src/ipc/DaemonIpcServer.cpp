@@ -28,7 +28,14 @@ void DaemonIpcServer::serve(Handler handler) {
       auto connection = server_->accept();
       const auto request =
           ipc::parse<arkive::ipc::Request>(connection->receive());
-      const auto response = handler(request);
+      arkive::ipc::Response response;
+      response.set_protocol_version(ipc::kProtocolVersion);
+      try {
+        response = handler(request);
+      } catch (const std::exception &error) {
+        response.set_error(error.what());
+      }
+      response.set_protocol_version(ipc::kProtocolVersion);
       connection->send(ipc::serialize(response));
       if (request.command() == arkive::ipc::STOP) {
         stopping_ = true;

@@ -21,6 +21,7 @@
 #include "repo/UploadResumeRepo.hpp"
 #include "repo/UserRepo.hpp"
 #include "service/FolderCreateWorker.hpp"
+#include "service/AuthService.hpp"
 #include "service/QueueService.hpp"
 #include "service/RemoteSyncService.hpp"
 #include "service/SyncReconciler.hpp"
@@ -75,6 +76,8 @@ DaemonServices createDaemonServices() {
     services.client = std::make_unique<ArkiveHttpClient>(
         account->baseUrl, cookieJarPath().string());
     services.api = std::make_unique<ArkiveApi>(*services.client);
+    services.authService =
+        std::make_unique<AuthService>(*services.userRepo, *services.api);
     services.folderCreateWorker = std::make_unique<FolderCreateWorker>(
         *services.syncRepo, *services.entryRepo, *services.remoteEntryRepo,
         *services.userRepo, *services.fileEncryptor, *services.api);

@@ -128,6 +128,10 @@ add_executable(arkive-sync
     src/ipc/IpcProtocolClient.cpp
     src/ipc/DaemonIpcServer.cpp
     src/ipc/DaemonIpcHandler.cpp
+    src/ipc/commands/StatusCommand.cpp
+    src/ipc/commands/AuthCommands.cpp
+    src/ipc/commands/SyncCommands.cpp
+    src/ipc/commands/StopCommand.cpp
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
     src/repo/EntryRepo.cpp
@@ -239,9 +243,14 @@ add_executable(arkive-sync-tests
     src/ipc/IpcProtocolClient.cpp
     src/ipc/DaemonIpcServer.cpp
     src/ipc/DaemonIpcHandler.cpp
+    src/ipc/commands/StatusCommand.cpp
+    src/ipc/commands/AuthCommands.cpp
+    src/ipc/commands/SyncCommands.cpp
+    src/ipc/commands/StopCommand.cpp
     src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
     src/sync/RemoteScanner.cpp
     src/service/RemoteSyncService.cpp
+    src/service/AuthService.cpp
     tests/arkive_api_test.cpp
     tests/download_manifest_test.cpp
     tests/download_service_test.cpp

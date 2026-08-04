@@ -17,6 +17,7 @@ class QueueService;
 class RemoteSyncService;
 class FolderCreateWorker;
 class UserRepo;
+class AuthService;
 class VaultService;
 class FileEncryptor;
 class ArkiveHttpClient;
@@ -44,6 +45,7 @@ struct DaemonServices {
   std::unique_ptr<QueueService> queueService;
   std::unique_ptr<RemoteSyncService> remoteSyncService;
   std::unique_ptr<UserRepo> userRepo;
+  std::unique_ptr<AuthService> authService;
   std::unique_ptr<UploadResumeRepo> uploadResumeRepo;
   std::unique_ptr<VaultService> vaultService;
   std::unique_ptr<FileEncryptor> fileEncryptor;
