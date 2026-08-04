@@ -37,6 +37,14 @@ SET
   remote_folder_id = ?,
   remote_parent_folder_id = ?,
   remote_deleted_at = ?,
+  synced_remote_updated_at = CASE
+    WHEN synced_remote_updated_at IS NULL
+      AND remote_id IS NOT NULL
+      AND local_content_hash IS NOT NULL
+      AND local_content_hash = synced_content_hash
+      THEN ?
+    ELSE synced_remote_updated_at
+  END,
   last_remote_seen_at = CURRENT_TIMESTAMP,
   sync_state = ?,
   last_synced_at = CURRENT_TIMESTAMP,
@@ -66,10 +74,11 @@ WHERE sync_root_id = ?
     bindOptionalText(db_, stmt.get(), 8, entry.remoteFolderId);
     bindOptionalText(db_, stmt.get(), 9, entry.remoteParentFolderId);
     bindOptionalText(db_, stmt.get(), 10, entry.remoteDeletedAt);
-    bindText(db_, stmt.get(), 11,
+    bindText(db_, stmt.get(), 11, entry.remoteUpdatedAt);
+    bindText(db_, stmt.get(), 12,
              entry.remoteDeletedAt.has_value() ? "deleted" : "unchanged");
-    bindText(db_, stmt.get(), 12, entry.syncRootId);
-    bindText(db_, stmt.get(), 13, entry.remoteId);
+    bindText(db_, stmt.get(), 13, entry.syncRootId);
+    bindText(db_, stmt.get(), 14, entry.remoteId);
 
     const int rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {

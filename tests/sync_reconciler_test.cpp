@@ -6,6 +6,7 @@
 #include "repo/RemoteEntryRepo.hpp"
 #include "repo/SyncRepo.hpp"
 #include "service/SyncReconciler.hpp"
+#include "sync/SyncStateClassifier.hpp"
 
 #include "support/TestDatabase.hpp"
 #include "support/FakeSecureStorage.hpp"
@@ -44,6 +45,50 @@ std::string readFile(const std::filesystem::path &path) {
 }
 
 } // namespace
+
+TEST_CASE("Remote scan acknowledges an uploaded clean file") {
+  TestDatabase db;
+  SyncRepo syncRepo(db.get());
+  EntryRepo entryRepo(db.get());
+  LocalEntryRepo localEntryRepo(db.get());
+  RemoteEntryRepo remoteEntryRepo(db.get());
+
+  syncRepo.upsertSyncRoot({
+      .Id = "root-1",
+      .localPath = "/tmp/root-1",
+      .folderId = "root-folder-1",
+      .enabled = true,
+      .mode = SyncMode::TwoWay,
+  });
+  localEntryRepo.upsertFileEntry({
+      .syncRootId = "root-1",
+      .relativePath = "movie.txt",
+      .size = 5,
+      .mtime = std::filesystem::file_time_type{},
+      .contentHash = "hash-1",
+      .syncState = EntrySyncState::PendingUpload,
+      .lastSeenScanId = "scan-1",
+  });
+
+  const auto entry = entryRepo.findEntryByPath("root-1", "movie.txt");
+  REQUIRE(entry.has_value());
+  remoteEntryRepo.markEntryUploaded(entry->id, "remote-file-1", std::nullopt);
+
+  remoteEntryRepo.upsertRemoteEntry({
+      .syncRootId = "root-1",
+      .remoteId = "remote-file-1",
+      .localPath = "movie.txt",
+      .remoteType = "file",
+      .remoteFileId = std::string("remote-file-1"),
+      .remoteUpdatedAt = "2026-06-19T00:00:00Z",
+  });
+
+  const auto refreshed = entryRepo.findEntryByPath("root-1", "movie.txt");
+  REQUIRE(refreshed.has_value());
+  REQUIRE(refreshed->syncedRemoteUpdatedAt ==
+          std::optional<std::string>("2026-06-19T00:00:00Z"));
+  REQUIRE_FALSE(SyncStateClassifier::classify(*refreshed).remoteDirty);
+}
 
 TEST_CASE("SyncReconciler applies delete local for remote deleted entries") {
   TestDatabase db;

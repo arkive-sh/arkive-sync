@@ -203,3 +203,4 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "IPC client succeeded after daemon stopped"
           }
+          exit 0
