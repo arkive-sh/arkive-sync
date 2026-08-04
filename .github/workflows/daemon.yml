@@ -39,6 +39,8 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          VCPKG_BUILD_TYPE: release
         run: C:/vcpkg/vcpkg.exe install curl sqlite3 protobuf --triplet x64-windows
 
       - name: Install macOS protobuf
@@ -103,6 +105,9 @@ jobs:
           sync_output=$(./build/arkive-sync sync run 2>&1)
           echo "$sync_output"
           echo "$sync_output" | grep -Eq '[1-9][0-9]* remote entr(y|ies) available'
+          pull_output=$(./build/arkive-sync sync pull 2>&1)
+          echo "$pull_output"
+          echo "$pull_output" | grep -Eq 'Pulled remote changes for [1-9][0-9]* sync root'
           ./build/arkive-sync sync remove "$root_id"
           post_remove_output=$(./build/arkive-sync sync list 2>&1)
           echo "$post_remove_output"
@@ -151,6 +156,10 @@ jobs:
           }
           if ($syncOutput -notmatch '[1-9][0-9]* remote entr') {
             throw "sync run did not report a remote entry"
+          }
+          & ".\build\Release\arkive-sync.exe" sync pull
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
           }
           & ".\build\Release\arkive-sync.exe" sync remove $rootId
           if ($LASTEXITCODE -ne 0) {
