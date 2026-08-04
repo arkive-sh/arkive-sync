@@ -19,6 +19,7 @@ public:
   ~RemoteSyncService();
 
   bool runTick(const std::vector<SyncRoot> &roots);
+  bool runNow(const std::vector<SyncRoot> &roots);
 
 private:
   std::unique_ptr<RemoteScanner> remoteScanner_;

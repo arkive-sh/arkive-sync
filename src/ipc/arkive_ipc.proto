@@ -12,6 +12,7 @@ enum Command {
   SYNC_RUN = 6;
   SYNC_LIST = 7;
   SYNC_REMOVE = 8;
+  SYNC_PULL = 9;
 }
 
 message SyncRoot {

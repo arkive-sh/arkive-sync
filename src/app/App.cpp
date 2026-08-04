@@ -27,6 +27,7 @@ enum class Command {
   SyncRun,
   SyncList,
   SyncRemove,
+  SyncPull,
   Status,
   SecureStorageSmoke,
   Daemon,
@@ -71,6 +72,10 @@ Command parseCommand(int argc, char *argv[]) {
 
   if (command == "sync" && argc == 4 && std::string(argv[2]) == "remove") {
     return Command::SyncRemove;
+  }
+
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "pull") {
+    return Command::SyncPull;
   }
 
   if (command == "secure-storage-smoke" && argc == 2) {
@@ -253,6 +258,19 @@ int App::run(int argc, char *argv[]) {
     return 0;
   }
 
+  case Command::SyncPull: {
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::SYNC_PULL);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
+    }
+    spdlog::info("Pulled remote changes for {} sync root(s)",
+                 response.scanned_root_count());
+    return 0;
+  }
+
   case Command::Status: {
     try {
       arkive::ipc::Request request;
@@ -321,6 +339,7 @@ int App::run(int argc, char *argv[]) {
         "arkive-sync set-base-url <url> | arkive-sync status | "
         "arkive-sync sync add <path> | arkive-sync sync list | "
         "arkive-sync sync remove <id> | arkive-sync sync run | "
+        "arkive-sync sync pull | "
         "arkive-sync secure-storage-smoke | arkive-sync daemon [stop]");
     return 1;
   }

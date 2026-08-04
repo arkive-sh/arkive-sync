@@ -62,3 +62,10 @@ bool RemoteSyncService::runTick(const std::vector<SyncRoot> &roots) {
 
   return scanned;
 }
+
+bool RemoteSyncService::runNow(const std::vector<SyncRoot> &roots) {
+  for (const auto &root : roots) {
+    lastRemoteScanAt_.erase(root.Id);
+  }
+  return runTick(roots);
+}
