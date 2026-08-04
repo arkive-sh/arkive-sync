@@ -164,7 +164,7 @@ void SyncReconciler::reconcileRoot(const SyncRoot &root) {
           const auto size = std::filesystem::file_size(absolutePath, ec);
           if (ec || size >
                         static_cast<uintmax_t>(
-                            std::numeric_limits<int64_t>::max())) {
+                            (std::numeric_limits<int64_t>::max)())) {
             throw std::runtime_error("downloaded file size unavailable");
           }
 
