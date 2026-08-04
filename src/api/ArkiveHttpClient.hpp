@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/HttpError.hpp"
+#include <curl/curl.h>
 #include <cstdint>
 #include <functional>
 #include <nlohmann/json.hpp>
@@ -13,7 +14,7 @@ public:
       std::function<void(const uint8_t *data, std::size_t size)>;
 
   explicit ArkiveHttpClient(std::string baseUrl, std::string cookiePath);
-  virtual ~ArkiveHttpClient() = default;
+  virtual ~ArkiveHttpClient();
 
   // Allow move ownership
   ArkiveHttpClient(ArkiveHttpClient &&other) noexcept;
@@ -29,8 +30,11 @@ public:
                               uint64_t length, const ByteSink &sink);
 
 private:
+  void configureCurl(CURL *curl) const;
+
   std::string baseUrl_;
   std::string cookiePath_;
+  CURLSH *cookieShare_{nullptr};
 
   std::string url(const std::string &path) const;
 };

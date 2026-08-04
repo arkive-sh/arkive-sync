@@ -40,19 +40,50 @@ ArkiveHttpClient::ArkiveHttpClient(std::string baseUrl, std::string cookiePath)
   if (cookie_file_path.has_parent_path()) {
     std::filesystem::create_directories(cookie_file_path.parent_path());
   }
+
+  cookieShare_ = curl_share_init();
+  if (cookieShare_ == nullptr ||
+      curl_share_setopt(cookieShare_, CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE) !=
+          CURLSHE_OK) {
+    if (cookieShare_ != nullptr) {
+      curl_share_cleanup(cookieShare_);
+      cookieShare_ = nullptr;
+    }
+    throw std::runtime_error("failed to initialize curl cookie sharing");
+  }
+}
+
+ArkiveHttpClient::~ArkiveHttpClient() {
+  if (cookieShare_ != nullptr) {
+    curl_share_cleanup(cookieShare_);
+  }
 }
 
 ArkiveHttpClient::ArkiveHttpClient(ArkiveHttpClient &&other) noexcept
     : baseUrl_(std::move(other.baseUrl_)),
-      cookiePath_(std::move(other.cookiePath_)) {}
+      cookiePath_(std::move(other.cookiePath_)),
+      cookieShare_(other.cookieShare_) {
+  other.cookieShare_ = nullptr;
+}
 
 ArkiveHttpClient &ArkiveHttpClient::operator=(ArkiveHttpClient &&other) noexcept {
   if (this != &other) {
     baseUrl_ = std::move(other.baseUrl_);
     cookiePath_ = std::move(other.cookiePath_);
+    if (cookieShare_ != nullptr) {
+      curl_share_cleanup(cookieShare_);
+    }
+    cookieShare_ = other.cookieShare_;
+    other.cookieShare_ = nullptr;
   }
 
   return *this;
+}
+
+void ArkiveHttpClient::configureCurl(CURL *curl) const {
+  curl_easy_setopt(curl, CURLOPT_SHARE, cookieShare_);
+  curl_easy_setopt(curl, CURLOPT_COOKIEFILE, cookiePath_.c_str());
+  curl_easy_setopt(curl, CURLOPT_COOKIEJAR, cookiePath_.c_str());
 }
 
 static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
@@ -124,6 +155,7 @@ std::string ArkiveHttpClient::url(const std::string &path) const {
 nlohmann::json ArkiveHttpClient::postJson(const std::string &path,
                                       const nlohmann::json &body) {
   CurlPtr curl = makeCurlHandle();
+  configureCurl(curl.get());
 
   std::string response;
   std::string requestUrl = url(path);
@@ -140,9 +172,6 @@ nlohmann::json ArkiveHttpClient::postJson(const std::string &path,
   curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, bodyText.size());
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
 
   CURLcode code = curl_easy_perform(curl.get());
   curl_easy_setopt(curl.get(), CURLOPT_COOKIELIST, "FLUSH");
@@ -167,6 +196,7 @@ nlohmann::json ArkiveHttpClient::postJson(const std::string &path,
 
 nlohmann::json ArkiveHttpClient::getJson(const std::string &path) {
   CurlPtr curl = makeCurlHandle();
+  configureCurl(curl.get());
 
   std::string response;
   std::string requestUrl = url(path);
@@ -180,8 +210,6 @@ nlohmann::json ArkiveHttpClient::getJson(const std::string &path) {
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
 
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
   curl_easy_setopt(curl.get(), CURLOPT_COOKIELIST, "FLUSH");
 
   CURLcode code = curl_easy_perform(curl.get());
@@ -206,6 +234,7 @@ nlohmann::json ArkiveHttpClient::getJson(const std::string &path) {
 
 void ArkiveHttpClient::postForm(const std::string &path) {
   CurlPtr curl = makeCurlHandle();
+  configureCurl(curl.get());
 
   std::string response;
   std::string requestUrl = url(path);
@@ -217,9 +246,6 @@ void ArkiveHttpClient::postForm(const std::string &path) {
   curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, writeCallback);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response);
-
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEFILE, cookiePath_.c_str());
-  curl_easy_setopt(curl.get(), CURLOPT_COOKIEJAR, cookiePath_.c_str());
 
   CURLcode code = curl_easy_perform(curl.get());
 
@@ -238,6 +264,7 @@ void ArkiveHttpClient::postForm(const std::string &path) {
 std::string ArkiveHttpClient::putBytes(const std::string &pathOrUrl,
                                        const std::vector<uint8_t> &body) {
   CurlPtr curl = makeCurlHandle();
+  configureCurl(curl.get());
   HeaderPtr headers(nullptr, &curl_slist_free_all);
 
   std::string response;
@@ -286,6 +313,7 @@ void ArkiveHttpClient::getRangeToSink(const std::string &pathOrUrl,
   }
 
   CurlPtr curl = makeCurlHandle();
+  configureCurl(curl.get());
   std::string response;
   const std::string requestUrl = url(pathOrUrl);
   const std::string range =
