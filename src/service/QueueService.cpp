@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr size_t kMaxConcurrentUploads = 2;
+constexpr size_t kMaxConcurrentUploads = 4;
 
 struct UploadResult {
   TransferJob job;

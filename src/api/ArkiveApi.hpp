@@ -26,6 +26,7 @@ struct StartUploadRequest {
   int uploadPartCount;
   int16_t encryptionVersion;
   std::optional<std::string> folderId;
+  bool singlePart{false};
 };
 
 struct StartUploadResponse {
@@ -37,6 +38,7 @@ struct StartUploadResponse {
   int totalChunks;
   int64_t uploadPartSize;
   int uploadPartCount;
+  std::string uploadUrl;
 };
 
 struct PresignPartsResponse {
@@ -144,6 +146,8 @@ public:
   virtual UploadLimitsResponse uploadLimits();
   virtual CreateFolderResponse createFolder(const CreateFolderRequest &request);
   virtual StartUploadResponse startUpload(const StartUploadRequest &request);
+  virtual std::string
+  presignSingleUpload(const std::string &uploadSessionId);
   virtual PresignPartsResponse
   presignParts(const std::string &uploadSessionId,
                const std::vector<int> &partNumbers);

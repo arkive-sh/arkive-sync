@@ -11,7 +11,7 @@ jobs:
     name: daemon ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     env:
-      ARKIVE_TEST_BASE_URL: https://c592-2407-d000-11-7833-acdf-deeb-f13d-bfc2.ngrok-free.app
+      ARKIVE_TEST_BASE_URL: https://0d16-2407-d000-11-7833-acdf-deeb-f13d-bfc2.ngrok-free.app
       ARKIVE_LOGIN_EMAIL: ${{ secrets.ARKIVE_TEST_EMAIL }}
       ARKIVE_LOGIN_PASSWORD: ${{ secrets.ARKIVE_TEST_PASSWORD }}
     strategy:
@@ -89,7 +89,8 @@ jobs:
       - name: Run daemon smoke
         if: runner.os == 'macOS'
         run: |
-          ./build/arkive-sync daemon &
+          daemon_log="$RUNNER_TEMP/arkive-daemon.log"
+          ./build/arkive-sync daemon >"$daemon_log" 2>&1 &
           pid=$!
           sleep 8
           ./build/arkive-sync login
@@ -106,6 +107,8 @@ jobs:
           echo "$list_output" | grep -Fq "$root"
           ./build/arkive-sync sync run
           sleep 15
+          cat "$daemon_log"
+          grep -Fq 'mode=single-part' "$daemon_log"
           pull_output=$(./build/arkive-sync sync pull 2>&1)
           echo "$pull_output"
           echo "$pull_output" | grep -Eq 'Pulled remote changes for [1-9][0-9]* sync root'
@@ -128,7 +131,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath ".\build\Release\arkive-sync.exe" -ArgumentList "daemon" -PassThru -NoNewWindow
+          $daemonLog = Join-Path $env:RUNNER_TEMP "arkive-daemon.log"
+          $daemonErrorLog = Join-Path $env:RUNNER_TEMP "arkive-daemon-error.log"
+          $process = Start-Process -FilePath ".\build\Release\arkive-sync.exe" -ArgumentList "daemon" -PassThru -NoNewWindow -RedirectStandardOutput $daemonLog -RedirectStandardError $daemonErrorLog
           Start-Sleep -Seconds 8
           if ($process.HasExited) {
             throw "Daemon exited before IPC smoke commands ran with code $($process.ExitCode)"
@@ -163,6 +168,11 @@ jobs:
             exit $LASTEXITCODE
           }
           Start-Sleep -Seconds 15
+          Get-Content $daemonLog
+          Get-Content $daemonErrorLog
+          if (-not (Select-String -Path $daemonLog -Pattern "mode=single-part" -Quiet)) {
+            throw "daemon did not use the single-part upload path"
+          }
           & ".\build\Release\arkive-sync.exe" sync pull
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE

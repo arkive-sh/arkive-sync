@@ -22,6 +22,7 @@ StartUploadResponse decodeStartUploadResponse(const nlohmann::json &json) {
       .totalChunks = json.value("totalChunks", 0),
       .uploadPartSize = json.value("uploadPartSize", int64_t{0}),
       .uploadPartCount = json.value("uploadPartCount", 0),
+      .uploadUrl = json.value("uploadUrl", ""),
   };
 }
 
@@ -209,10 +210,17 @@ StartUploadResponse ArkiveApi::startUpload(const StartUploadRequest &request) {
       {"folderId", request.folderId.has_value()
                        ? nlohmann::json(*request.folderId)
                        : nlohmann::json(nullptr)},
+      {"singlePart", request.singlePart},
   };
 
   return decodeStartUploadResponse(
       client_.postJson("/api/uploads/start", payload));
+}
+
+std::string ArkiveApi::presignSingleUpload(
+    const std::string &uploadSessionId) {
+  return client_.postJson("/api/uploads/" + uploadSessionId + "/presign", {})
+      .value("url", "");
 }
 
 PresignPartsResponse

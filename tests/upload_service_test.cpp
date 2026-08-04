@@ -47,11 +47,21 @@ public:
     return StartUploadResponse{.fileId = "file-1",
                                .vaultId = "vault-1",
                                .uploadSessionId = "session-1",
-                               .providerUploadId = "provider-1",
+                               .providerUploadId = request.singlePart ? ""
+                                                                     : "provider-1",
                                .fileChunkSize = request.fileChunkSize,
                                .totalChunks = request.totalChunks,
                                .uploadPartSize = request.uploadPartSize,
-                               .uploadPartCount = request.uploadPartCount};
+                               .uploadPartCount = request.uploadPartCount,
+                               .uploadUrl = request.singlePart
+                                                ? "https://example.invalid/single"
+                                                : ""};
+  }
+
+  std::string presignSingleUpload(const std::string &uploadSessionId) override {
+    ++singlePresignCalls;
+    lastPresignSession = uploadSessionId;
+    return "https://example.invalid/single";
   }
 
   PresignPartsResponse presignParts(const std::string &uploadSessionId,
@@ -96,6 +106,7 @@ public:
   int uploadLimitsCalls = 0;
   int startUploadCalls = 0;
   int presignCalls = 0;
+  int singlePresignCalls = 0;
   int putCalls = 0;
   int uploadPartCalls = 0;
   int completeCalls = 0;
@@ -161,7 +172,7 @@ bool bytesContainAsciiSubstring(const std::vector<uint8_t> &bytes,
 
 } // namespace
 
-TEST_CASE("UploadService happy path calls start/presign/put/part/complete") {
+TEST_CASE("UploadService uses single PUT for one-chunk files") {
   TestDatabase db;
   TempDir tempDir;
   RustCrypto crypto;
@@ -202,15 +213,13 @@ TEST_CASE("UploadService happy path calls start/presign/put/part/complete") {
   REQUIRE(response.fileId == "file-1");
 
   REQUIRE(api.startUploadCalls == 1);
-  REQUIRE(api.presignCalls >= 1);
+  REQUIRE(api.lastStartUpload->singlePart);
+  REQUIRE(api.presignCalls == 0);
+  REQUIRE(api.singlePresignCalls == 0);
   REQUIRE(api.putCalls >= 1);
-  REQUIRE(api.uploadPartCalls >= 1);
+  REQUIRE(api.uploadPartCalls == 0);
   REQUIRE(api.completeCalls == 1);
 
-  REQUIRE(api.lastPresignSession.has_value());
-  REQUIRE(*api.lastPresignSession == "session-1");
-  REQUIRE(api.lastUploadPartSession.has_value());
-  REQUIRE(*api.lastUploadPartSession == "session-1");
   REQUIRE(api.lastCompleteSession.has_value());
   REQUIRE(*api.lastCompleteSession == "session-1");
 

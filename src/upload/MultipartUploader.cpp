@@ -111,24 +111,34 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
             fileEncryptor_.hashBytes(uploadBody);
         partResult.uploadHash = encodeBase64(uploadHashBytes);
 
-        const PresignPartsResponse presigned = api_.presignParts(
-            started.uploadSessionId, {static_cast<int>(partNumber)});
-
-        const auto urlIt = presigned.urls.find(static_cast<int>(partNumber));
-        if (urlIt == presigned.urls.end()) {
-          throw std::runtime_error("missing presigned URL for upload part " +
-                                   std::to_string(partNumber));
+        std::string uploadUrl = started.uploadUrl;
+        if (uploadUrl.empty()) {
+          if (started.providerUploadId.empty()) {
+            uploadUrl = api_.presignSingleUpload(started.uploadSessionId);
+          } else {
+            const PresignPartsResponse presigned = api_.presignParts(
+                started.uploadSessionId, {static_cast<int>(partNumber)});
+            const auto urlIt =
+                presigned.urls.find(static_cast<int>(partNumber));
+            if (urlIt == presigned.urls.end()) {
+              throw std::runtime_error("missing presigned URL for upload part " +
+                                       std::to_string(partNumber));
+            }
+            uploadUrl = urlIt->second;
+          }
         }
 
-        partResult.etag = api_.putEncryptedPartToStorage(urlIt->second, uploadBody);
-        api_.uploadPart(started.uploadSessionId,
-                        UploadPartRequest{
-                            .partNumber = static_cast<int>(partNumber),
-                            .encryptedHash = partResult.uploadHash,
-                            .etag = partResult.etag,
-                        });
-        if (onPartUploaded) {
-          onPartUploaded(partResult);
+        partResult.etag = api_.putEncryptedPartToStorage(uploadUrl, uploadBody);
+        if (!started.providerUploadId.empty()) {
+          api_.uploadPart(started.uploadSessionId,
+                          UploadPartRequest{
+                              .partNumber = static_cast<int>(partNumber),
+                              .encryptedHash = partResult.uploadHash,
+                              .etag = partResult.etag,
+                          });
+          if (onPartUploaded) {
+            onPartUploaded(partResult);
+          }
         }
 
         if (!uploadHashBytes.empty()) {

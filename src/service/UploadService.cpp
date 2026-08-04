@@ -10,6 +10,7 @@
 #include <chrono>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 
 namespace {
@@ -127,6 +128,7 @@ startResponseFromSession(const UploadResumeSessionRecord &session) {
       .totalChunks = session.totalChunks,
       .uploadPartSize = session.uploadPartSize,
       .uploadPartCount = session.uploadPartCount,
+      .uploadUrl = "",
   };
 }
 
@@ -177,6 +179,8 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   const std::string localPath = normalizeFsPath(path);
   const uint64_t originalSize = static_cast<uint64_t>(*entry.size);
   const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
+  spdlog::info("Uploading file={} mode={}", path.string(),
+               uploadPlan.totalChunks == 1 ? "single-part" : "multipart");
   const std::optional<std::string> localMtime = currentMtimeString(path);
   const UploadLimitsResponse limits = uploadLimits();
   const uint64_t partConcurrency = ArkiveUploadPolicy::resolvePartConcurrency(
@@ -225,6 +229,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
             .uploadPartCount = static_cast<int>(uploadPlan.uploadPartCount),
             .encryptionVersion = 1,
             .folderId = entry.parentFolderId,
+            .singlePart = uploadPlan.totalChunks == 1,
         });
 
         artifacts.fileKey = fileEncryptor_.createFileKey();
