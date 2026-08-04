@@ -106,7 +106,7 @@ jobs:
           ./build/arkive-sync sync remove "$root_id"
           post_remove_output=$(./build/arkive-sync sync list 2>&1)
           echo "$post_remove_output"
-          ! echo "$post_remove_output" | grep -Fq "$root"
+          echo "$post_remove_output" | grep -F "id=$root_id" | grep -Fq "enabled=false"
           ./build/arkive-sync daemon stop
           wait "$pid"
 
@@ -158,7 +158,8 @@ jobs:
           }
           $postRemoveOutput = (& ".\build\Release\arkive-sync.exe" sync list 2>&1 | Out-String)
           $postRemoveOutput
-          if ($LASTEXITCODE -ne 0 -or $postRemoveOutput -match [regex]::Escape($root)) {
+          $disabledRootPattern = "id=$([regex]::Escape($rootId)).*path=$([regex]::Escape($root)).*enabled=false"
+          if ($LASTEXITCODE -ne 0 -or $postRemoveOutput -notmatch $disabledRootPattern) {
             throw "sync remove did not disable the root"
           }
           & ".\build\Release\arkive-sync.exe" daemon stop
