@@ -10,6 +10,15 @@ enum Command {
   LOGOUT = 4;
   SYNC_ADD = 5;
   SYNC_RUN = 6;
+  SYNC_LIST = 7;
+  SYNC_REMOVE = 8;
+}
+
+message SyncRoot {
+  string id = 1;
+  string path = 2;
+  bool enabled = 3;
+  string mode = 4;
 }
 
 message Request {
@@ -32,4 +41,6 @@ message Response {
   string sync_root_id = 9;
   string sync_root_path = 10;
   uint32 scanned_root_count = 11;
+  repeated SyncRoot sync_roots = 12;
+  uint32 synced_entry_count = 13;
 }

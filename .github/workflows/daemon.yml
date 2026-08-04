@@ -11,7 +11,7 @@ jobs:
     name: daemon ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     env:
-      ARKIVE_TEST_BASE_URL: https://a386-2407-d000-11-7833-acdf-deeb-f13d-bfc2.ngrok-free.app
+      ARKIVE_TEST_BASE_URL: https://c592-2407-d000-11-7833-acdf-deeb-f13d-bfc2.ngrok-free.app
       ARKIVE_LOGIN_EMAIL: ${{ secrets.ARKIVE_TEST_EMAIL }}
       ARKIVE_LOGIN_PASSWORD: ${{ secrets.ARKIVE_TEST_PASSWORD }}
     strategy:
@@ -93,8 +93,20 @@ jobs:
           root="$RUNNER_TEMP/arkive-sync-root"
           mkdir -p "$root"
           echo smoke > "$root/file.txt"
-          ./build/arkive-sync sync add "$root"
-          ./build/arkive-sync sync run
+          add_output=$(./build/arkive-sync sync add "$root" 2>&1)
+          echo "$add_output"
+          root_id=$(echo "$add_output" | sed -n 's/.*id=\([^ ]*\).*/\1/p' | head -1)
+          test -n "$root_id"
+          list_output=$(./build/arkive-sync sync list 2>&1)
+          echo "$list_output"
+          echo "$list_output" | grep -Fq "$root"
+          sync_output=$(./build/arkive-sync sync run 2>&1)
+          echo "$sync_output"
+          echo "$sync_output" | grep -Eq '[1-9][0-9]* remote entr(y|ies) available'
+          ./build/arkive-sync sync remove "$root_id"
+          post_remove_output=$(./build/arkive-sync sync list 2>&1)
+          echo "$post_remove_output"
+          ! echo "$post_remove_output" | grep -Fq "$root"
           ./build/arkive-sync daemon stop
           wait "$pid"
 
@@ -118,13 +130,36 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP "arkive-sync-root"
           New-Item -ItemType Directory -Force -Path $root | Out-Null
           Set-Content -Path (Join-Path $root "file.txt") -Value "smoke"
-          & ".\build\Release\arkive-sync.exe" sync add $root
+          $addOutput = (& ".\build\Release\arkive-sync.exe" sync add $root 2>&1 | Out-String)
+          $addOutput
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
-          & ".\build\Release\arkive-sync.exe" sync run
+          $rootId = [regex]::Match($addOutput, 'id=([^ ]+)').Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($rootId)) {
+            throw "sync add did not return a root id"
+          }
+          $listOutput = (& ".\build\Release\arkive-sync.exe" sync list 2>&1 | Out-String)
+          $listOutput
+          if ($LASTEXITCODE -ne 0 -or $listOutput -notmatch [regex]::Escape($root)) {
+            throw "sync list did not contain the added root"
+          }
+          $syncOutput = (& ".\build\Release\arkive-sync.exe" sync run 2>&1 | Out-String)
+          $syncOutput
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
+          }
+          if ($syncOutput -notmatch '[1-9][0-9]* remote entr') {
+            throw "sync run did not report a remote entry"
+          }
+          & ".\build\Release\arkive-sync.exe" sync remove $rootId
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $postRemoveOutput = (& ".\build\Release\arkive-sync.exe" sync list 2>&1 | Out-String)
+          $postRemoveOutput
+          if ($LASTEXITCODE -ne 0 -or $postRemoveOutput -match [regex]::Escape($root)) {
+            throw "sync remove did not disable the root"
           }
           & ".\build\Release\arkive-sync.exe" daemon stop
           if ($LASTEXITCODE -ne 0) {

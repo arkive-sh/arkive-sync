@@ -40,3 +40,10 @@ SyncService::findSyncRootById(const std::string &syncRootId) {
 }
 
 std::vector<SyncRoot> SyncService::getSyncRoots() { return syncRepo_.getSyncRoots(); }
+
+void SyncService::removeSyncRoot(const std::string &syncRootId) {
+  if (!syncRepo_.findSyncRootById(syncRootId).has_value()) {
+    throw std::invalid_argument("Sync root not found: " + syncRootId);
+  }
+  syncRepo_.disableSyncRoot(syncRootId);
+}

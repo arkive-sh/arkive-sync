@@ -23,6 +23,10 @@ makeDaemonIpcHandler(DaemonServices &services, std::function<void()> stop) {
       return ipc::commands::syncAdd(services, request);
     case arkive::ipc::SYNC_RUN:
       return ipc::commands::syncRun(services);
+    case arkive::ipc::SYNC_LIST:
+      return ipc::commands::syncList(services);
+    case arkive::ipc::SYNC_REMOVE:
+      return ipc::commands::syncRemove(services, request);
     case arkive::ipc::STOP:
       return ipc::commands::stop(stop);
     default:

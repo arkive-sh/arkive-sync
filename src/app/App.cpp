@@ -25,6 +25,8 @@ enum class Command {
   SetBaseUrl,
   SyncAdd,
   SyncRun,
+  SyncList,
+  SyncRemove,
   Status,
   SecureStorageSmoke,
   Daemon,
@@ -61,6 +63,14 @@ Command parseCommand(int argc, char *argv[]) {
 
   if (command == "sync" && argc == 3 && std::string(argv[2]) == "run") {
     return Command::SyncRun;
+  }
+
+  if (command == "sync" && argc == 3 && std::string(argv[2]) == "list") {
+    return Command::SyncList;
+  }
+
+  if (command == "sync" && argc == 4 && std::string(argv[2]) == "remove") {
+    return Command::SyncRemove;
   }
 
   if (command == "secure-storage-smoke" && argc == 2) {
@@ -206,6 +216,40 @@ int App::run(int argc, char *argv[]) {
     }
     spdlog::info("Ran scan for {} sync root(s)",
                  response.scanned_root_count());
+    spdlog::info("{} remote entr{} available",
+                 response.synced_entry_count(),
+                 response.synced_entry_count() == 1 ? "y" : "ies");
+    return 0;
+  }
+
+  case Command::SyncList: {
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::SYNC_LIST);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
+    }
+    for (const auto &root : response.sync_roots()) {
+      spdlog::info("Sync root id={} path={} enabled={} mode={}", root.id(),
+                   root.path(), root.enabled(), root.mode());
+    }
+    if (response.sync_roots().empty()) {
+      spdlog::info("No sync roots configured");
+    }
+    return 0;
+  }
+
+  case Command::SyncRemove: {
+    arkive::ipc::Request request;
+    request.set_protocol_version(ipc::kProtocolVersion);
+    request.set_command(arkive::ipc::SYNC_REMOVE);
+    request.set_path(argv[3]);
+    const auto response = IpcProtocolClient(ipcEndpoint()).request(request);
+    if (!response.ok()) {
+      throw std::runtime_error(response.error());
+    }
+    spdlog::info("Disabled sync root {}", response.sync_root_id());
     return 0;
   }
 
@@ -275,7 +319,8 @@ int App::run(int argc, char *argv[]) {
     spdlog::error(
         "Usage: arkive-sync login | arkive-sync logout | "
         "arkive-sync set-base-url <url> | arkive-sync status | "
-        "arkive-sync sync add <path> | arkive-sync sync run | "
+        "arkive-sync sync add <path> | arkive-sync sync list | "
+        "arkive-sync sync remove <id> | arkive-sync sync run | "
         "arkive-sync secure-storage-smoke | arkive-sync daemon [stop]");
     return 1;
   }

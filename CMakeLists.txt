@@ -131,6 +131,8 @@ add_executable(arkive-sync
     src/ipc/commands/StatusCommand.cpp
     src/ipc/commands/AuthCommands.cpp
     src/ipc/commands/SyncCommands.cpp
+    src/ipc/commands/SyncListCommand.cpp
+    src/ipc/commands/SyncRemoveCommand.cpp
     src/ipc/commands/StopCommand.cpp
     src/repo/ConflictRepo.cpp
     src/repo/DirtyPathRepo.cpp
@@ -246,6 +248,8 @@ add_executable(arkive-sync-tests
     src/ipc/commands/StatusCommand.cpp
     src/ipc/commands/AuthCommands.cpp
     src/ipc/commands/SyncCommands.cpp
+    src/ipc/commands/SyncListCommand.cpp
+    src/ipc/commands/SyncRemoveCommand.cpp
     src/ipc/commands/StopCommand.cpp
     src/platform/linux/filewriter/LinuxAtomicFileWriter.cpp
     src/sync/RemoteScanner.cpp

@@ -17,6 +17,7 @@ public:
                        SyncMode mode = SyncMode::TwoWay);
   std::optional<SyncRoot> findSyncRootById(const std::string &syncRootId);
   std::vector<SyncRoot> getSyncRoots();
+  void removeSyncRoot(const std::string &syncRootId);
 
 private:
   std::string makeRootId(const std::string &pathHash) const;

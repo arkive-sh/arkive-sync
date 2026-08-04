@@ -1,7 +1,9 @@
 #include "ipc/commands/Commands.hpp"
 
 #include "platform/DaemonServices.hpp"
+#include "repo/EntryRepo.hpp"
 #include "repo/ScanRepo.hpp"
+#include "service/QueueService.hpp"
 #include "service/SyncService.hpp"
 #include "sync/RootScanner.hpp"
 
@@ -39,11 +41,22 @@ arkive::ipc::Response syncRun(DaemonServices &services) {
         break;
       }
     }
+    services.queueService->build(root.Id);
+    services.queueService->runTick();
   }
 
   arkive::ipc::Response response;
   response.set_ok(true);
   response.set_scanned_root_count(scanned);
+  uint32_t syncedEntries = 0;
+  for (const auto &root : roots) {
+    for (const auto &entry : services.entryRepo->listEntriesBySyncRootId(root.Id)) {
+      if (entry.remoteId.has_value()) {
+        syncedEntries++;
+      }
+    }
+  }
+  response.set_synced_entry_count(syncedEntries);
   return response;
 }
 
