@@ -7,6 +7,7 @@
 #include "upload/MultipartUploader.hpp"
 #include "upload/UploadFinalizer.hpp"
 #include <filesystem>
+#include <mutex>
 #include <string>
 
 struct UploadFileResponse {
@@ -32,9 +33,13 @@ public:
                                 const Entry &entry) override;
 
 private:
+  UploadLimitsResponse uploadLimits();
+
   ArkiveApi &api_;
   FileEncryptor &fileEncryptor_;
   UploadResumeRepo &uploadResumeRepo_;
   MultipartUploader multipartUploader_;
   UploadFinalizer uploadFinalizer_;
+  std::once_flag uploadLimitsOnce_;
+  UploadLimitsResponse cachedUploadLimits_{};
 };

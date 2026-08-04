@@ -158,6 +158,13 @@ UploadService::UploadService(ArkiveApi &api, FileEncryptor &fileEncryptor,
       multipartUploader_(api, fileEncryptor),
       uploadFinalizer_(api, fileEncryptor) {}
 
+UploadLimitsResponse UploadService::uploadLimits() {
+  std::call_once(uploadLimitsOnce_, [this]() {
+    cachedUploadLimits_ = api_.uploadLimits();
+  });
+  return cachedUploadLimits_;
+}
+
 UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
                                              const Entry &entry) {
   if (entry.isDirectory) {
@@ -171,7 +178,7 @@ UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,
   const uint64_t originalSize = static_cast<uint64_t>(*entry.size);
   const UploadPlan uploadPlan = UploadPlanner::createPlan(originalSize);
   const std::optional<std::string> localMtime = currentMtimeString(path);
-  const UploadLimitsResponse limits = api_.uploadLimits();
+  const UploadLimitsResponse limits = uploadLimits();
   const uint64_t partConcurrency = ArkiveUploadPolicy::resolvePartConcurrency(
       uploadPlan.uploadPartCount, limits.partConcurrency);
 
