@@ -202,11 +202,6 @@ int PollingDaemon::run() {
         const bool scanComplete =
             !services_.scanRepo->hasRunningScanJob(root.Id);
         produceQueuePage(root, scanComplete);
-        if (scanComplete) {
-          if (services_.syncReconciler != nullptr) {
-            services_.syncReconciler->reconcileRoot(root);
-          }
-        }
         services_.queueService->runTick();
         continue;
       }

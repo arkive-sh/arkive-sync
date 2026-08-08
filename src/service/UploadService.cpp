@@ -10,6 +10,8 @@
 #include <chrono>
 #include <filesystem>
 #include <future>
+#include <functional>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -170,6 +172,7 @@ UploadLimitsResponse UploadService::uploadLimits() {
 
 std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
     const std::vector<UploadBatchItem> &items) {
+  const auto batchStartedAt = std::chrono::steady_clock::now();
   struct Context {
     UploadBatchItem item;
     std::string localPath;
@@ -230,6 +233,7 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
     return results;
   }
 
+  const auto startStageStartedAt = std::chrono::steady_clock::now();
   std::map<std::string, BatchStartUploadResult> startedById;
   for (size_t offset = 0; offset < fresh.size(); offset += 100) {
     const size_t end = std::min(fresh.size(), offset + 100);
@@ -255,6 +259,10 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
       startedById.emplace(result.clientId, std::move(result));
     }
   }
+  spdlog::info("Upload batch stage=start files={} duration_ms={}", fresh.size(),
+               std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - startStageStartedAt)
+                   .count());
 
   for (auto &context : fresh) {
     const auto started = startedById.find(context.item.id);
@@ -305,43 +313,84 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
     size_t index;
     std::optional<PreparedUploadCompletion> completion;
     std::string error;
+    UploadTiming timing;
+    uint64_t finalizerMs = 0;
   };
+  std::map<uint64_t, std::vector<size_t>, std::greater<>> concurrencyGroups;
+  for (size_t index = 0; index < fresh.size(); ++index) {
+    concurrencyGroups[ArkiveUploadPolicy::resolveFileConcurrency(
+        fresh[index].originalSize)].push_back(index);
+  }
+
   std::vector<Prepared> prepared;
   prepared.reserve(fresh.size());
-  for (size_t offset = 0; offset < fresh.size(); offset += 4) {
-    std::vector<std::future<Prepared>> futures;
-    const size_t end = std::min(fresh.size(), offset + 4);
-    for (size_t index = offset; index < end; ++index) {
-      if (fresh[index].started.uploadSessionId.empty()) {
-        continue;
-      }
-      futures.push_back(std::async(std::launch::async, [this, &fresh, index]() {
-        try {
-          const auto parts = multipartUploader_.uploadParts(
-              fresh[index].item.path, fresh[index].fileKey,
-              fresh[index].started, fresh[index].plan,
-              fresh[index].partConcurrency, {},
-              [this, &fresh, index](const UploadedPartResult &part) {
-                uploadResumeRepo_.upsertPart(
-                    fresh[index].started.uploadSessionId,
-                    makeResumePartRecord(part));
-              });
-          return Prepared{
-              .index = index,
-              .completion = uploadFinalizer_.prepareCompletion(
-                  fresh[index].item.path, fresh[index].item.entry,
-                  fresh[index].started, fresh[index].plan, parts,
-                  fresh[index].fileKey),
-          };
-        } catch (const std::exception &error) {
-          return Prepared{.index = index, .error = error.what()};
+  const auto transferStageStartedAt = std::chrono::steady_clock::now();
+  for (const auto &[fileConcurrency, indices] : concurrencyGroups) {
+    for (size_t offset = 0; offset < indices.size(); offset += fileConcurrency) {
+      std::vector<std::future<Prepared>> futures;
+      const size_t end = std::min(indices.size(), offset + fileConcurrency);
+      for (size_t position = offset; position < end; ++position) {
+        const size_t index = indices[position];
+        if (fresh[index].started.uploadSessionId.empty()) {
+          continue;
         }
-      }));
-    }
-    for (auto &future : futures) {
-      prepared.push_back(future.get());
+        futures.push_back(std::async(std::launch::async, [this, &fresh, index]() {
+          try {
+            UploadTiming timing;
+            const auto parts = multipartUploader_.uploadParts(
+                fresh[index].item.path, fresh[index].fileKey,
+                fresh[index].started, fresh[index].plan,
+                fresh[index].partConcurrency, {},
+                [this, &fresh, index](const UploadedPartResult &part) {
+                  uploadResumeRepo_.upsertPart(
+                      fresh[index].started.uploadSessionId,
+                      makeResumePartRecord(part));
+                }, &timing);
+            const auto finalizerStartedAt = std::chrono::steady_clock::now();
+            auto completion = uploadFinalizer_.prepareCompletion(
+                fresh[index].item.path, fresh[index].item.entry,
+                fresh[index].started, fresh[index].plan, parts,
+                fresh[index].fileKey);
+            return Prepared{
+                .index = index,
+                .completion = std::move(completion),
+                .timing = timing,
+                .finalizerMs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - finalizerStartedAt)
+                        .count()),
+            };
+          } catch (const std::exception &error) {
+            return Prepared{.index = index, .error = error.what()};
+          }
+        }));
+      }
+      for (auto &future : futures) {
+        prepared.push_back(future.get());
+      }
     }
   }
+  spdlog::info("Upload batch stage=transfer files={} duration_ms={}",
+               fresh.size(),
+               std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - transferStageStartedAt)
+                   .count());
+  uint64_t prepareMs = 0;
+  uint64_t presignMs = 0;
+  uint64_t storageMs = 0;
+  uint64_t resumeMs = 0;
+  uint64_t finalizerMs = 0;
+  for (const auto &item : prepared) {
+    prepareMs += item.timing.prepareMs;
+    presignMs += item.timing.presignMs;
+    storageMs += item.timing.storageMs;
+    resumeMs += item.timing.resumeMs;
+    finalizerMs += item.finalizerMs;
+  }
+  spdlog::info(
+      "Upload batch transfer breakdown prepare_ms={} presign_ms={} "
+      "storage_ms={} resume_ms={} finalizer_ms={}",
+      prepareMs, presignMs, storageMs, resumeMs, finalizerMs);
 
   std::vector<BatchCompleteUploadRequest> completions;
   std::map<std::string, size_t> completionIds;
@@ -365,6 +414,7 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
 
   std::map<std::string, BatchCompleteUploadResult> completedById;
   if (!completions.empty()) {
+    const auto completeStageStartedAt = std::chrono::steady_clock::now();
     for (size_t offset = 0; offset < completions.size(); offset += 100) {
       const size_t end = std::min(completions.size(), offset + 100);
       std::vector<BatchCompleteUploadRequest> page(
@@ -374,6 +424,11 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
         completedById.emplace(result.clientId, std::move(result));
       }
     }
+    spdlog::info("Upload batch stage=complete files={} duration_ms={}",
+                 completions.size(),
+                 std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - completeStageStartedAt)
+                     .count());
   }
 
   for (auto &item : prepared) {
@@ -415,6 +470,10 @@ std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
       fileEncryptor_.zeroize(context.fileKey);
     }
   }
+  spdlog::info("Upload batch finished files={} duration_ms={}", fresh.size(),
+               std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - batchStartedAt)
+                   .count());
   return results;
 }
 

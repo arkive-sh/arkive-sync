@@ -4,6 +4,7 @@
 #include "fs/FileEncryptor.hpp"
 #include "helpers/Base64.hpp"
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -37,7 +38,8 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
     const StartUploadResponse &started, const UploadPlan &plan,
     uint64_t partConcurrency,
     const std::vector<UploadedPartResult> &completedParts,
-    const std::function<void(const UploadedPartResult &)> &onPartUploaded) {
+    const std::function<void(const UploadedPartResult &)> &onPartUploaded,
+    UploadTiming *timing) {
   std::vector<UploadedPartResult> uploadedParts(
       static_cast<std::size_t>(plan.uploadPartCount));
   for (const auto &completedPart : completedParts) {
@@ -68,6 +70,7 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
       UploadedPartResult partResult;
 
       try {
+        const auto partStartedAt = std::chrono::steady_clock::now();
         partResult.plan = makePartPlan(partNumber, plan);
         const uint64_t partChunkCount =
             ((partResult.plan.partEnd - partResult.plan.partStart) +
@@ -111,8 +114,10 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
             fileEncryptor_.hashBytes(uploadBody);
         partResult.uploadHash = encodeBase64(uploadHashBytes);
 
+        const auto prepareFinishedAt = std::chrono::steady_clock::now();
         std::string uploadUrl = started.uploadUrl;
         if (uploadUrl.empty()) {
+          const auto presignStartedAt = std::chrono::steady_clock::now();
           if (started.providerUploadId.empty()) {
             uploadUrl = api_.presignSingleUpload(started.uploadSessionId);
           } else {
@@ -126,9 +131,19 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
             }
             uploadUrl = urlIt->second;
           }
+          if (timing != nullptr) {
+            std::lock_guard<std::mutex> lock(resultsMutex);
+            timing->presignMs += static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - presignStartedAt)
+                    .count());
+          }
         }
 
+        const auto storageStartedAt = std::chrono::steady_clock::now();
         partResult.etag = api_.putEncryptedPartToStorage(uploadUrl, uploadBody);
+        const auto storageFinishedAt = std::chrono::steady_clock::now();
+        const auto resumeStartedAt = storageFinishedAt;
         if (!started.providerUploadId.empty()) {
           api_.uploadPart(started.uploadSessionId,
                           UploadPartRequest{
@@ -139,6 +154,21 @@ std::vector<UploadedPartResult> MultipartUploader::uploadParts(
           if (onPartUploaded) {
             onPartUploaded(partResult);
           }
+        }
+        if (timing != nullptr) {
+          std::lock_guard<std::mutex> lock(resultsMutex);
+          timing->prepareMs += static_cast<uint64_t>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  prepareFinishedAt - partStartedAt)
+                  .count());
+          timing->storageMs += static_cast<uint64_t>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  storageFinishedAt - storageStartedAt)
+                  .count());
+          timing->resumeMs += static_cast<uint64_t>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - resumeStartedAt)
+                  .count());
         }
 
         if (!uploadHashBytes.empty()) {

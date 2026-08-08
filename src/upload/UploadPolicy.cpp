@@ -4,6 +4,20 @@
 
 namespace ArkiveUploadPolicy {
 
+uint64_t resolveFileConcurrency(uint64_t fileSize) {
+  constexpr uint64_t kMiB = 1024 * 1024;
+  if (fileSize <= 4 * kMiB) {
+    return 32;
+  }
+  if (fileSize <= 64 * kMiB) {
+    return 8;
+  }
+  if (fileSize <= 512 * kMiB) {
+    return 4;
+  }
+  return 2;
+}
+
 uint64_t resolvePartConcurrency(uint64_t uploadPartCount, int serverCap) {
   if (uploadPartCount == 0) {
     return 0;
