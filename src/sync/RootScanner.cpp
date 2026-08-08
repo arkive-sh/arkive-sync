@@ -243,6 +243,7 @@ bool RootScanner::scanSubtree(const std::string &syncRootId, ScanJob job,
 }
 
 bool RootScanner::scanRoot(const std::string &syncRootId) {
+  std::unique_lock scanLock(scanMutex_);
   auto syncRoot = syncSvc_.findSyncRootById(syncRootId);
   if (!syncRoot || !syncRoot->enabled) {
     return false;
@@ -285,18 +286,24 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       spdlog::info("Created new scan job {} for root {}", job.id, syncRootId);
     }
 
-    std::filesystem::recursive_directory_iterator it =
-        makeIterator(rootPath, ec);
-    if (ec) {
-      sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-      return false;
+    auto active = activeScans_.find(syncRootId);
+    if (active == activeScans_.end() || active->second.rootPath != rootPath) {
+      if (active != activeScans_.end()) {
+        activeScans_.erase(active);
+      }
+
+      ActiveScan state{.rootPath = rootPath,
+                       .iterator = makeIterator(rootPath, ec)};
+      std::filesystem::recursive_directory_iterator end;
+      if (ec || !positionAfterCursor(job, ec, state.iterator, end, rootPath)) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+      }
+      active = activeScans_.emplace(syncRootId, std::move(state)).first;
     }
 
-    std::filesystem::recursive_directory_iterator end;
-    if (!positionAfterCursor(job, ec, it, end, rootPath)) {
-      sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-      return false;
-    }
+    auto &it = active->second.iterator;
+    const std::filesystem::recursive_directory_iterator end;
 
     size_t processed = 0;
     std::optional<std::string> lastCursor;
@@ -360,6 +367,7 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
       scanRepo_.markScanComplete(job.id);
       localEntryRepo_.markEntriesNotSeenInScanDeleted(syncRootId, job.id);
       execOrThrow(db_, "COMMIT;");
+      activeScans_.erase(syncRootId);
       spdlog::info("Completed scan job {} for root {}", job.id, syncRootId);
       return true;
     }
@@ -373,6 +381,7 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
     execOrThrow(db_, "COMMIT;");
     return true;
   } catch (...) {
+    activeScans_.erase(syncRootId);
     sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
     throw;
   }
@@ -380,6 +389,7 @@ bool RootScanner::scanRoot(const std::string &syncRootId) {
 
 bool RootScanner::scanPath(const std::string &rootId,
                            const std::filesystem::path &relativePath) {
+  std::unique_lock scanLock(scanMutex_);
   std::optional<SyncRoot> syncRoot = syncSvc_.findSyncRootById(rootId);
   if (!syncRoot.has_value() || syncRoot->localPath == "") {
     return false;

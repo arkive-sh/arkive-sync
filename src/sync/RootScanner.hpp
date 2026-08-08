@@ -10,8 +10,10 @@
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <sqlite3.h>
 #include <string>
+#include <unordered_map>
 
 class RootScanner {
 public:
@@ -28,6 +30,11 @@ public:
                 const std::filesystem::path &relativePath);
 
 private:
+  struct ActiveScan {
+    std::filesystem::path rootPath;
+    std::filesystem::recursive_directory_iterator iterator;
+  };
+
   bool handleFileEntry(const std::string &syncRootId, const ScanJob &job,
                        const std::filesystem::path &absPath,
                        const std::string &relativePath, std::error_code &ec);
@@ -44,4 +51,6 @@ private:
   DirtyPathRepo &dirtyPathRepo_;
   EntryRepo &entryRepo_;
   LocalEntryRepo &localEntryRepo_;
+  std::mutex scanMutex_;
+  std::unordered_map<std::string, ActiveScan> activeScans_;
 };

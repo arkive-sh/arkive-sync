@@ -111,9 +111,11 @@ int PollingDaemon::run() {
       continue;
     }
 
-    services_.queueService->build(root.Id);
-    if (services_.syncReconciler != nullptr) {
-      services_.syncReconciler->reconcileRoot(root);
+    if (!services_.scanRepo->hasRunningScanJob(root.Id)) {
+      services_.queueService->build(root.Id);
+      if (services_.syncReconciler != nullptr) {
+        services_.syncReconciler->reconcileRoot(root);
+      }
     }
   }
 
@@ -158,9 +160,11 @@ int PollingDaemon::run() {
         if (!services_.rootScanner->scanRoot(root.Id)) {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
-        services_.queueService->build(root.Id);
-        if (services_.syncReconciler != nullptr) {
-          services_.syncReconciler->reconcileRoot(root);
+        if (!services_.scanRepo->hasRunningScanJob(root.Id)) {
+          services_.queueService->build(root.Id);
+          if (services_.syncReconciler != nullptr) {
+            services_.syncReconciler->reconcileRoot(root);
+          }
         }
         continue;
       }

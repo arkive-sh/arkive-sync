@@ -85,6 +85,8 @@ public:
   std::optional<Entry> findEntryByPath(const std::string &syncRootId,
                                        const std::string &relativePath);
   std::vector<Entry> listEntriesBySyncRootId(const std::string &syncRootId);
+  std::vector<Entry> listEntriesBySyncRootIdPage(const std::string &syncRootId,
+                                                 int limit, int offset);
   std::vector<Entry>
   listPendingUploadDirectoriesBySyncRootId(const std::string &syncRootId);
   std::vector<Entry>

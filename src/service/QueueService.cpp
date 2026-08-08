@@ -18,6 +18,7 @@
 namespace {
 
 constexpr size_t kMaxConcurrentUploads = 4;
+constexpr int kQueueBuildPageSize = 500;
 
 struct UploadResult {
   TransferJob job;
@@ -65,40 +66,55 @@ void QueueService::build(const std::string &syncRootId) {
     return;
   }
 
-  for (const auto &entry : entryRepo_.listEntriesBySyncRootId(syncRootId)) {
-    const SyncEntryState state = SyncStateClassifier::classify(entry);
-    if (SyncPolicy::decide(state, syncRoot->mode) != SyncDecision::Upload) {
-      continue;
+  for (int offset = 0;; offset += kQueueBuildPageSize) {
+    const auto entries = entryRepo_.listEntriesBySyncRootIdPage(
+        syncRootId, kQueueBuildPageSize, offset);
+    if (entries.empty()) {
+      break;
     }
 
-    const std::optional<std::string> remoteFolderId =
-        resolveRemoteFolderId(entryRepo_, *syncRoot, entry);
-    if (!remoteFolderId.has_value() && !syncRoot->folderId.empty() &&
-        std::filesystem::path(entry.relativePath).parent_path().empty()) {
-      // root-level children can still target the root folder id
-    } else if (!remoteFolderId.has_value() &&
-               !std::filesystem::path(entry.relativePath).parent_path().empty()) {
-      continue;
-    }
-
-    if (entry.isDirectory) {
-      if (entry.remoteId.has_value() ||
-          queueRepo_.hasActiveCreateFolderForEntry(entry.id)) {
+    for (const auto &entry : entries) {
+      const SyncEntryState state = SyncStateClassifier::classify(entry);
+      if (SyncPolicy::decide(state, syncRoot->mode) != SyncDecision::Upload) {
         continue;
       }
 
-      queueRepo_.enqueueCreateFolder(entry.id, entry.relativePath,
-                                     remoteFolderId);
-      continue;
+      const std::optional<std::string> remoteFolderId =
+          resolveRemoteFolderId(entryRepo_, *syncRoot, entry);
+      if (!remoteFolderId.has_value() && !syncRoot->folderId.empty() &&
+          std::filesystem::path(entry.relativePath).parent_path().empty()) {
+        // root-level children can still target the root folder id
+      } else if (!remoteFolderId.has_value() &&
+                 !std::filesystem::path(entry.relativePath)
+                      .parent_path()
+                      .empty()) {
+        continue;
+      }
+
+      if (entry.isDirectory) {
+        if (entry.remoteId.has_value() ||
+            queueRepo_.hasActiveCreateFolderForEntry(entry.id)) {
+          continue;
+        }
+
+        queueRepo_.enqueueCreateFolder(entry.id, entry.relativePath,
+                                       remoteFolderId);
+        continue;
+      }
+
+      if (queueRepo_.hasActiveUploadFileForEntry(entry.id) ||
+          !entry.size.has_value() || *entry.size < 0) {
+        continue;
+      }
+
+      queueRepo_.enqueueUploadFile(
+          entry.id, entry.relativePath, remoteFolderId,
+          static_cast<uint64_t>(*entry.size));
     }
 
-    if (queueRepo_.hasActiveUploadFileForEntry(entry.id) ||
-        !entry.size.has_value() || *entry.size < 0) {
-      continue;
+    if (entries.size() < static_cast<size_t>(kQueueBuildPageSize)) {
+      break;
     }
-
-    queueRepo_.enqueueUploadFile(entry.id, entry.relativePath, remoteFolderId,
-                                 static_cast<uint64_t>(*entry.size));
   }
 }
 
