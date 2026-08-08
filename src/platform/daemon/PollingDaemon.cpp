@@ -71,8 +71,14 @@ std::vector<SyncRoot> remoteBoundRoots(const std::vector<SyncRoot> &syncRoots) {
 
 } // namespace
 
-PollingDaemon::PollingDaemon(DaemonServices services)
-    : services_(std::move(services)) {}
+PollingDaemon::PollingDaemon(DaemonServices services,
+                             std::function<void()> waitForEvents)
+    : services_(std::move(services)),
+      waitForEvents_(waitForEvents ? std::move(waitForEvents)
+                                   : std::function<void()>([] {
+                                       std::this_thread::sleep_for(
+                                           std::chrono::seconds(1));
+                                     })) {}
 
 PollingDaemon::~PollingDaemon() = default;
 
@@ -201,6 +207,7 @@ int PollingDaemon::run() {
             services_.syncReconciler->reconcileRoot(root);
           }
         }
+        services_.queueService->runTick();
         continue;
       }
 
@@ -263,7 +270,7 @@ int PollingDaemon::run() {
     }
 
     services_.queueService->runTick();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    waitForEvents_();
   }
 
   services_.watcher->stop();
