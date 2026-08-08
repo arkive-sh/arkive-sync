@@ -107,6 +107,8 @@ add_executable(arkive-sync
     src/api/ArkiveApi.cpp
     src/api/HttpError.cpp
     src/api/ArkiveHttpClient.cpp
+    src/networking/curl.cpp
+    src/networking/StoragePutTransport.cpp
     src/db/Sqlite.cpp
     src/db/SqliteHelpers.cpp
     src/download/DownloadManifest.cpp
@@ -231,6 +233,8 @@ add_executable(arkive-sync-tests
     src/api/ArkiveApi.cpp
     src/api/ArkiveHttpClient.cpp
     src/api/HttpError.cpp
+    src/networking/curl.cpp
+    src/networking/StoragePutTransport.cpp
     src/db/Sqlite.cpp
     src/download/DownloadManifest.cpp
     src/download/DownloadRecordDecryptor.cpp

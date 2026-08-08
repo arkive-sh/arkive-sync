@@ -1,4 +1,5 @@
 #include "service/AuthService.hpp"
+#include "api/HttpError.hpp"
 #include <stdexcept>
 #include <string>
 
