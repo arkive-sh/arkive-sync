@@ -11,6 +11,11 @@
 
 class FileEncryptor;
 
+struct PreparedUploadCompletion {
+  UploadArtifacts artifacts;
+  UploadCompleteRequest request;
+};
+
 class UploadFinalizer {
 public:
   using ThumbnailGenerator =
@@ -19,6 +24,12 @@ public:
   UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor);
   UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor,
                   ThumbnailGenerator thumbnailGenerator);
+
+  PreparedUploadCompletion prepareCompletion(
+      const std::filesystem::path &path, const Entry &entry,
+      const StartUploadResponse &started, const UploadPlan &plan,
+      const std::vector<UploadedPartResult> &parts,
+      const std::vector<uint8_t> &fileKey);
 
   UploadArtifacts completeUpload(const std::filesystem::path &path,
                                  const Entry &entry,

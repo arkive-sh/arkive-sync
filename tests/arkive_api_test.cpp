@@ -13,7 +13,15 @@ public:
     return nextJson;
   }
 
+  nlohmann::json postJson(const std::string &path,
+                          const nlohmann::json &body) override {
+    lastPath = path;
+    lastBody = body;
+    return nextJson;
+  }
+
   std::string lastPath;
+  nlohmann::json lastBody;
   nlohmann::json nextJson;
 };
 
@@ -73,4 +81,42 @@ TEST_CASE("ArkiveApi parses file record") {
   REQUIRE(record.encryptedFileKey == "key-b64");
   REQUIRE(record.encryptedManifest == "manifest-b64");
   REQUIRE(record.sourceUrl == "https://storage.invalid/object");
+}
+
+TEST_CASE("ArkiveApi maps upload batches by client id") {
+  FakeHttpClient client;
+  client.nextJson = {
+      {"uploads", {{{"clientId", "job-1"},
+                     {"fileId", "file-1"},
+                     {"vaultId", "vault-1"},
+                     {"uploadSessionId", "session-1"},
+                     {"providerUploadId", "provider-1"},
+                     {"fileChunkSize", 4194304},
+                     {"totalChunks", 1},
+                     {"uploadPartSize", 8388608},
+                     {"uploadPartCount", 1}}}},
+  };
+
+  ArkiveApi api(client);
+  const auto results = api.startUploadBatch({
+      BatchStartUploadRequest{
+          .clientId = "job-1",
+          .request = StartUploadRequest{
+              .originalSize = 5,
+              .fileChunkSize = 4194304,
+              .totalChunks = 1,
+              .uploadPartSize = 8388608,
+              .uploadPartCount = 1,
+              .encryptionVersion = 1,
+              .singlePart = true,
+          },
+      },
+  });
+
+  REQUIRE(client.lastPath == "/api/uploads/batch/start");
+  REQUIRE(client.lastBody.at("files").size() == 1);
+  REQUIRE(client.lastBody.at("files").at(0).at("clientId") == "job-1");
+  REQUIRE(results.size() == 1);
+  REQUIRE(results.front().upload.has_value());
+  REQUIRE(results.front().upload->uploadSessionId == "session-1");
 }

@@ -9,7 +9,6 @@
 #include "sync/SyncStateClassifier.hpp"
 
 #include <filesystem>
-#include <future>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -17,13 +16,8 @@
 
 namespace {
 
-constexpr size_t kMaxConcurrentUploads = 4;
 constexpr int kQueueBuildPageSize = 500;
-
-struct UploadResult {
-  TransferJob job;
-  std::exception_ptr error;
-};
+constexpr int kUploadBatchSize = 100;
 
 std::optional<std::string>
 resolveRemoteFolderId(EntryRepo &entryRepo, const SyncRoot &syncRoot,
@@ -177,47 +171,28 @@ void QueueService::runTick() {
   }
 
   while (true) {
-    std::vector<std::future<UploadResult>> uploads;
-    uploads.reserve(kMaxConcurrentUploads);
+    std::vector<TransferJob> uploads;
+    uploads.reserve(kUploadBatchSize);
 
-    for (size_t i = 0; i < kMaxConcurrentUploads; ++i) {
+    for (int i = 0; i < kUploadBatchSize; ++i) {
       const auto job = queueRepo_.claimNextQueuedByType("upload_file");
       if (!job.has_value()) {
         break;
       }
-
-      uploads.push_back(std::async(
-          std::launch::async, [this, job = *job]() -> UploadResult {
-            try {
-              uploadJobRunner_->run(job);
-              return UploadResult{.job = job, .error = nullptr};
-            } catch (...) {
-              return UploadResult{.job = job,
-                                  .error = std::current_exception()};
-            }
-          }));
+      uploads.push_back(*job);
     }
 
     if (uploads.empty()) {
       break;
     }
 
-    for (auto &upload : uploads) {
-      UploadResult result = upload.get();
-      if (result.error == nullptr) {
+    for (const auto &result : uploadJobRunner_->runBatch(uploads)) {
+      if (result.error.empty()) {
         queueRepo_.markDone(result.job.id);
-        continue;
-      }
-
-      try {
-        std::rethrow_exception(result.error);
-      } catch (const std::exception &error) {
-        queueRepo_.markFailed(result.job.id, error.what());
+      } else {
+        queueRepo_.markFailed(result.job.id, result.error);
         spdlog::error("Queue job {} failed: {}", result.job.id,
-                      error.what());
-      } catch (...) {
-        queueRepo_.markFailed(result.job.id, "Unknown queue job error");
-        spdlog::error("Queue job {} failed", result.job.id);
+                      result.error);
       }
     }
   }

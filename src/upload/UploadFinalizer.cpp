@@ -44,7 +44,7 @@ UploadFinalizer::UploadFinalizer(ArkiveApi &api, FileEncryptor &fileEncryptor,
     : api_(api), fileEncryptor_(fileEncryptor),
       thumbnailGenerator_(std::move(thumbnailGenerator)) {}
 
-UploadArtifacts UploadFinalizer::completeUpload(
+PreparedUploadCompletion UploadFinalizer::prepareCompletion(
     const std::filesystem::path &path, const Entry &entry,
     const StartUploadResponse &started, const UploadPlan &plan,
     const std::vector<UploadedPartResult> &parts,
@@ -160,21 +160,27 @@ UploadArtifacts UploadFinalizer::completeUpload(
         buildMetadata(path, entry, previewMetadata).dump(), artifacts.fileKey,
         started.vaultId, started.fileId);
 
-    api_.uploadComplete(
-        started.uploadSessionId,
-        UploadCompleteRequest{
-            .encryptedMetadata = encodeBase64(artifacts.encryptedMetadata),
-            .encryptedFileKey = encodeBase64(artifacts.encryptedFileKey),
-            .encryptedManifest = encodeBase64(artifacts.encryptedManifest),
-            .encryptedHash = encodeBase64(artifacts.encryptedHash),
-            .searchTokens = fileEncryptor_.createSearchTokenEntries(
-                started.vaultId, details.name),
-            .hasThumbnail = hasThumbnail,
-            .thumbnailMime = thumbnailMime,
-            .thumbnailWidth = thumbnailWidth,
-            .thumbnailHeight = thumbnailHeight,
-            .thumbnailSize = static_cast<int64_t>(encryptedThumbnail.size()),
-        });
+    UploadCompleteRequest request{
+        .encryptedMetadata = encodeBase64(artifacts.encryptedMetadata),
+        .encryptedFileKey = encodeBase64(artifacts.encryptedFileKey),
+        .encryptedManifest = encodeBase64(artifacts.encryptedManifest),
+        .encryptedHash = encodeBase64(artifacts.encryptedHash),
+        .searchTokens = fileEncryptor_.createSearchTokenEntries(
+            started.vaultId, details.name),
+        .hasThumbnail = hasThumbnail,
+        .thumbnailMime = thumbnailMime,
+        .thumbnailWidth = thumbnailWidth,
+        .thumbnailHeight = thumbnailHeight,
+        .thumbnailSize = static_cast<int64_t>(encryptedThumbnail.size()),
+    };
+
+    if (!combinedChunkHashes.empty()) {
+      fileEncryptor_.zeroize(combinedChunkHashes);
+    }
+    return PreparedUploadCompletion{
+        .artifacts = std::move(artifacts),
+        .request = std::move(request),
+    };
   } catch (...) {
     if (!artifacts.fileKey.empty()) {
       fileEncryptor_.zeroize(artifacts.fileKey);
@@ -200,5 +206,35 @@ UploadArtifacts UploadFinalizer::completeUpload(
   if (!combinedChunkHashes.empty()) {
     fileEncryptor_.zeroize(combinedChunkHashes);
   }
-  return artifacts;
+  throw std::runtime_error("upload completion preparation failed");
+}
+
+UploadArtifacts UploadFinalizer::completeUpload(
+    const std::filesystem::path &path, const Entry &entry,
+    const StartUploadResponse &started, const UploadPlan &plan,
+    const std::vector<UploadedPartResult> &parts,
+    const std::vector<uint8_t> &fileKey) {
+  PreparedUploadCompletion prepared =
+      prepareCompletion(path, entry, started, plan, parts, fileKey);
+  try {
+    api_.uploadComplete(started.uploadSessionId, prepared.request);
+  } catch (...) {
+    if (!prepared.artifacts.fileKey.empty()) {
+      fileEncryptor_.zeroize(prepared.artifacts.fileKey);
+    }
+    if (!prepared.artifacts.encryptedFileKey.empty()) {
+      fileEncryptor_.zeroize(prepared.artifacts.encryptedFileKey);
+    }
+    if (!prepared.artifacts.encryptedMetadata.empty()) {
+      fileEncryptor_.zeroize(prepared.artifacts.encryptedMetadata);
+    }
+    if (!prepared.artifacts.encryptedManifest.empty()) {
+      fileEncryptor_.zeroize(prepared.artifacts.encryptedManifest);
+    }
+    if (!prepared.artifacts.encryptedHash.empty()) {
+      fileEncryptor_.zeroize(prepared.artifacts.encryptedHash);
+    }
+    throw;
+  }
+  return std::move(prepared.artifacts);
 }

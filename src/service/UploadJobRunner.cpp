@@ -6,6 +6,7 @@
 #include "sync/SyncStateClassifier.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
@@ -52,6 +53,22 @@ void UploadJobRunner::run(const TransferJob &job) {
     throw std::invalid_argument("UploadJobRunner requires upload_file job");
   }
 
+  const auto item = prepareUploadItem(job);
+  if (!item.has_value()) {
+    return;
+  }
+  const UploadFileResponse uploaded =
+      uploadService_.uploadFile(item->path, item->entry);
+  remoteEntryRepo_.markEntryUploaded(job.entryId, uploaded.fileId,
+                                     item->entry.parentFolderId);
+}
+
+std::optional<UploadBatchItem>
+UploadJobRunner::prepareUploadItem(const TransferJob &job) {
+  if (job.jobType != "upload_file") {
+    throw std::invalid_argument("UploadJobRunner requires upload_file job");
+  }
+
   const auto entry = entryRepo_.getEntryById(job.entryId);
   if (!entry.has_value()) {
     throw std::runtime_error("Queued upload entry is missing");
@@ -64,7 +81,7 @@ void UploadJobRunner::run(const TransferJob &job) {
 
   if (SyncPolicy::decide(SyncStateClassifier::classify(*entry),
                          syncRoot->mode) != SyncDecision::Upload) {
-    return;
+    return std::nullopt;
   }
 
   const std::filesystem::path absolutePath =
@@ -118,8 +135,70 @@ void UploadJobRunner::run(const TransferJob &job) {
   Entry uploadEntry = *entry;
   uploadEntry.parentFolderId = remoteParentFolderId;
 
-  const UploadFileResponse uploaded =
-      uploadService_.uploadFile(absolutePath, uploadEntry);
-  remoteEntryRepo_.markEntryUploaded(job.entryId, uploaded.fileId,
-                                     remoteParentFolderId);
+  return UploadBatchItem{
+      .id = job.id,
+      .path = absolutePath,
+      .entry = std::move(uploadEntry),
+  };
+}
+
+std::vector<UploadJobBatchResult>
+UploadJobRunner::runBatch(const std::vector<TransferJob> &jobs) {
+  std::vector<UploadJobBatchResult> results;
+  results.reserve(jobs.size());
+  std::vector<UploadBatchItem> items;
+
+  for (const auto &job : jobs) {
+    try {
+      const auto item = prepareUploadItem(job);
+      if (!item.has_value()) {
+        results.push_back(UploadJobBatchResult{.job = job});
+        continue;
+      }
+      items.push_back(*item);
+      results.push_back(UploadJobBatchResult{.job = job});
+    } catch (const std::exception &error) {
+      results.push_back(UploadJobBatchResult{.job = job, .error = error.what()});
+    }
+  }
+
+  if (items.empty()) {
+    return results;
+  }
+
+  std::vector<UploadBatchResult> uploads;
+  try {
+    uploads = uploadService_.uploadFilesBatch(items);
+  } catch (const std::exception &error) {
+    for (auto &result : results) {
+      if (result.error.empty()) {
+        result.error = error.what();
+      }
+    }
+    return results;
+  }
+
+  for (const auto &upload : uploads) {
+    auto result = std::find_if(results.begin(), results.end(),
+                               [&upload](const auto &item) {
+                                 return item.job.id == upload.id;
+                               });
+    if (result == results.end()) {
+      continue;
+    }
+    if (!upload.response.has_value()) {
+      result->error = upload.error.empty() ? "Upload failed" : upload.error;
+      continue;
+    }
+    const auto item = std::find_if(items.begin(), items.end(),
+                                   [&upload](const auto &candidate) {
+                                     return candidate.id == upload.id;
+                                   });
+    if (item != items.end()) {
+      remoteEntryRepo_.markEntryUploaded(result->job.entryId,
+                                         upload.response->fileId,
+                                         item->entry.parentFolderId);
+    }
+  }
+  return results;
 }

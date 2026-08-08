@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -165,6 +166,256 @@ UploadLimitsResponse UploadService::uploadLimits() {
     cachedUploadLimits_ = api_.uploadLimits();
   });
   return cachedUploadLimits_;
+}
+
+std::vector<UploadBatchResult> UploadService::uploadFilesBatch(
+    const std::vector<UploadBatchItem> &items) {
+  struct Context {
+    UploadBatchItem item;
+    std::string localPath;
+    uint64_t originalSize = 0;
+    UploadPlan plan;
+    std::optional<std::string> localMtime;
+    uint64_t partConcurrency = 1;
+    StartUploadResponse started;
+    std::vector<uint8_t> fileKey;
+  };
+
+  std::vector<UploadBatchResult> results;
+  results.reserve(items.size());
+  std::vector<Context> fresh;
+
+  const UploadLimitsResponse limits = uploadLimits();
+  for (const auto &item : items) {
+    try {
+      if (item.entry.isDirectory || !item.entry.size.has_value() ||
+          *item.entry.size < 0) {
+        throw std::invalid_argument("batch upload requires a regular file with a valid size");
+      }
+
+      const std::string localPath = normalizeFsPath(item.path);
+      const uint64_t originalSize = static_cast<uint64_t>(*item.entry.size);
+      const UploadPlan plan = UploadPlanner::createPlan(originalSize);
+      const auto localMtime = currentMtimeString(item.path);
+      const auto resume = uploadResumeRepo_.getSessionByLocalPath(localPath);
+      if (resume.has_value() &&
+          sessionMatchesEntry(*resume, item.entry, localPath, originalSize,
+                              localMtime, plan)) {
+        results.push_back(UploadBatchResult{
+            .id = item.id,
+            .response = uploadFile(item.path, item.entry),
+        });
+        continue;
+      }
+      if (resume.has_value()) {
+        uploadResumeRepo_.deleteSessionByLocalPath(localPath);
+      }
+
+      fresh.push_back(Context{
+          .item = item,
+          .localPath = localPath,
+          .originalSize = originalSize,
+          .plan = plan,
+          .localMtime = localMtime,
+          .partConcurrency = ArkiveUploadPolicy::resolvePartConcurrency(
+              plan.uploadPartCount, limits.partConcurrency),
+      });
+      results.push_back(UploadBatchResult{.id = item.id});
+    } catch (const std::exception &error) {
+      results.push_back(UploadBatchResult{.id = item.id, .error = error.what()});
+    }
+  }
+
+  if (fresh.empty()) {
+    return results;
+  }
+
+  std::map<std::string, BatchStartUploadResult> startedById;
+  for (size_t offset = 0; offset < fresh.size(); offset += 100) {
+    const size_t end = std::min(fresh.size(), offset + 100);
+    std::vector<BatchStartUploadRequest> starts;
+    starts.reserve(end - offset);
+    for (size_t index = offset; index < end; ++index) {
+      const auto &context = fresh[index];
+      starts.push_back(BatchStartUploadRequest{
+          .clientId = context.item.id,
+          .request = StartUploadRequest{
+              .originalSize = static_cast<int64_t>(context.plan.originalSize),
+              .fileChunkSize = static_cast<int64_t>(context.plan.fileChunkSize),
+              .totalChunks = static_cast<int>(context.plan.totalChunks),
+              .uploadPartSize = static_cast<int64_t>(context.plan.uploadPartSize),
+              .uploadPartCount = static_cast<int>(context.plan.uploadPartCount),
+              .encryptionVersion = 1,
+              .folderId = context.item.entry.parentFolderId,
+              .singlePart = context.plan.totalChunks == 1,
+          },
+      });
+    }
+    for (auto &result : api_.startUploadBatch(starts)) {
+      startedById.emplace(result.clientId, std::move(result));
+    }
+  }
+
+  for (auto &context : fresh) {
+    const auto started = startedById.find(context.item.id);
+    if (started == startedById.end() || !started->second.upload.has_value()) {
+      const std::string error = started == startedById.end()
+                                    ? "Batch start returned no result"
+                                    : (started->second.error.empty()
+                                           ? "Batch start validation failed"
+                                           : started->second.error);
+      for (auto &result : results) {
+        if (result.id == context.item.id) {
+          result.error = error;
+          break;
+        }
+      }
+      continue;
+    }
+
+    context.started = *started->second.upload;
+    context.fileKey = fileEncryptor_.createFileKey();
+    std::vector<uint8_t> encryptedFileKeyBlob =
+        fileEncryptor_.encryptResumeFileKey(context.fileKey,
+                                            context.started.uploadSessionId);
+    uploadResumeRepo_.replaceSession(UploadResumeSessionRecord{
+        .id = context.started.uploadSessionId,
+        .entryId = context.item.entry.id,
+        .localPath = context.localPath,
+        .localSize = static_cast<int64_t>(context.originalSize),
+        .localMtime = context.localMtime,
+        .localHash = context.item.entry.contentHash,
+        .folderId = context.item.entry.parentFolderId,
+        .vaultId = context.started.vaultId,
+        .fileId = context.started.fileId,
+        .uploadSessionId = context.started.uploadSessionId,
+        .providerUploadId = context.started.providerUploadId,
+        .fileChunkSize = context.started.fileChunkSize,
+        .totalChunks = context.started.totalChunks,
+        .uploadPartSize = context.started.uploadPartSize,
+        .uploadPartCount = context.started.uploadPartCount,
+        .encryptedFileKeyBlob = encodeBase64(encryptedFileKeyBlob),
+    });
+    if (!encryptedFileKeyBlob.empty()) {
+      fileEncryptor_.zeroize(encryptedFileKeyBlob);
+    }
+  }
+
+  struct Prepared {
+    size_t index;
+    std::optional<PreparedUploadCompletion> completion;
+    std::string error;
+  };
+  std::vector<Prepared> prepared;
+  prepared.reserve(fresh.size());
+  for (size_t offset = 0; offset < fresh.size(); offset += 4) {
+    std::vector<std::future<Prepared>> futures;
+    const size_t end = std::min(fresh.size(), offset + 4);
+    for (size_t index = offset; index < end; ++index) {
+      if (fresh[index].started.uploadSessionId.empty()) {
+        continue;
+      }
+      futures.push_back(std::async(std::launch::async, [this, &fresh, index]() {
+        try {
+          const auto parts = multipartUploader_.uploadParts(
+              fresh[index].item.path, fresh[index].fileKey,
+              fresh[index].started, fresh[index].plan,
+              fresh[index].partConcurrency, {},
+              [this, &fresh, index](const UploadedPartResult &part) {
+                uploadResumeRepo_.upsertPart(
+                    fresh[index].started.uploadSessionId,
+                    makeResumePartRecord(part));
+              });
+          return Prepared{
+              .index = index,
+              .completion = uploadFinalizer_.prepareCompletion(
+                  fresh[index].item.path, fresh[index].item.entry,
+                  fresh[index].started, fresh[index].plan, parts,
+                  fresh[index].fileKey),
+          };
+        } catch (const std::exception &error) {
+          return Prepared{.index = index, .error = error.what()};
+        }
+      }));
+    }
+    for (auto &future : futures) {
+      prepared.push_back(future.get());
+    }
+  }
+
+  std::vector<BatchCompleteUploadRequest> completions;
+  std::map<std::string, size_t> completionIds;
+  for (auto &item : prepared) {
+    if (!item.completion.has_value()) {
+      for (auto &result : results) {
+        if (result.id == fresh[item.index].item.id) {
+          result.error = item.error;
+          break;
+        }
+      }
+      continue;
+    }
+    completionIds.emplace(fresh[item.index].item.id, completions.size());
+    completions.push_back(BatchCompleteUploadRequest{
+        .clientId = fresh[item.index].item.id,
+        .uploadSessionId = fresh[item.index].started.uploadSessionId,
+        .request = item.completion->request,
+    });
+  }
+
+  std::map<std::string, BatchCompleteUploadResult> completedById;
+  if (!completions.empty()) {
+    for (size_t offset = 0; offset < completions.size(); offset += 100) {
+      const size_t end = std::min(completions.size(), offset + 100);
+      std::vector<BatchCompleteUploadRequest> page(
+          completions.begin() + static_cast<std::ptrdiff_t>(offset),
+          completions.begin() + static_cast<std::ptrdiff_t>(end));
+      for (auto &result : api_.uploadCompleteBatch(page)) {
+        completedById.emplace(result.clientId, std::move(result));
+      }
+    }
+  }
+
+  for (auto &item : prepared) {
+    if (!item.completion.has_value()) {
+      continue;
+    }
+    const auto &context = fresh[item.index];
+    const auto completed = completedById.find(context.item.id);
+    for (auto &result : results) {
+      if (result.id != context.item.id) {
+        continue;
+      }
+      if (completed == completedById.end() || !completed->second.completed) {
+        result.error = completed == completedById.end()
+                           ? "Batch complete returned no result"
+                           : completed->second.error;
+      } else {
+        result.response = UploadFileResponse{
+            .fileId = context.started.fileId,
+            .vaultId = context.started.vaultId,
+            .uploadSessionId = context.started.uploadSessionId,
+            .providerUploadId = context.started.providerUploadId,
+        };
+        uploadResumeRepo_.deleteSessionByUploadSessionId(
+            context.started.uploadSessionId);
+      }
+      break;
+    }
+  }
+
+  for (auto &item : prepared) {
+    if (!item.completion.has_value()) {
+      continue;
+    }
+    zeroizeArtifacts(fileEncryptor_, item.completion->artifacts);
+  }
+  for (auto &context : fresh) {
+    if (!context.fileKey.empty()) {
+      fileEncryptor_.zeroize(context.fileKey);
+    }
+  }
+  return results;
 }
 
 UploadFileResponse UploadService::uploadFile(const std::filesystem::path &path,

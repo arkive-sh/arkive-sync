@@ -41,6 +41,18 @@ struct StartUploadResponse {
   std::string uploadUrl;
 };
 
+struct BatchStartUploadRequest {
+  std::string clientId;
+  StartUploadRequest request;
+};
+
+struct BatchStartUploadResult {
+  std::string clientId;
+  std::optional<StartUploadResponse> upload;
+  std::string error;
+  std::map<std::string, std::string> validationErrors;
+};
+
 struct PresignPartsResponse {
   std::map<int, std::string> urls;
 };
@@ -89,6 +101,18 @@ struct UploadCompleteRequest {
   int thumbnailWidth;
   int thumbnailHeight;
   int64_t thumbnailSize;
+};
+
+struct BatchCompleteUploadRequest {
+  std::string clientId;
+  std::string uploadSessionId;
+  UploadCompleteRequest request;
+};
+
+struct BatchCompleteUploadResult {
+  std::string clientId;
+  bool completed = false;
+  std::string error;
 };
 
 struct ListSyncEntriesRequest {
@@ -146,6 +170,8 @@ public:
   virtual UploadLimitsResponse uploadLimits();
   virtual CreateFolderResponse createFolder(const CreateFolderRequest &request);
   virtual StartUploadResponse startUpload(const StartUploadRequest &request);
+  virtual std::vector<BatchStartUploadResult>
+  startUploadBatch(const std::vector<BatchStartUploadRequest> &requests);
   virtual std::string
   presignSingleUpload(const std::string &uploadSessionId);
   virtual PresignPartsResponse
@@ -160,6 +186,8 @@ public:
                           const UploadPartRequest &request);
   virtual void uploadComplete(const std::string &uploadSessionId,
                               const UploadCompleteRequest &request);
+  virtual std::vector<BatchCompleteUploadResult> uploadCompleteBatch(
+      const std::vector<BatchCompleteUploadRequest> &requests);
   virtual ListSyncEntriesResponse
   listSyncEntries(const std::optional<std::string> &folderId,
                   bool includeDeleted);

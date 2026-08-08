@@ -154,6 +154,52 @@ std::string buildListSyncEntriesPath(const ListSyncEntriesRequest &request) {
   return path.str();
 }
 
+nlohmann::json encodeStartUploadRequest(const StartUploadRequest &request) {
+  return {
+      {"originalSize", request.originalSize},
+      {"fileChunkSize", request.fileChunkSize},
+      {"totalChunks", request.totalChunks},
+      {"uploadPartSize", request.uploadPartSize},
+      {"uploadPartCount", request.uploadPartCount},
+      {"encryptionVersion", request.encryptionVersion},
+      {"folderId", request.folderId.has_value()
+                       ? nlohmann::json(*request.folderId)
+                       : nlohmann::json(nullptr)},
+      {"singlePart", request.singlePart},
+  };
+}
+
+nlohmann::json encodeUploadCompleteRequest(
+    const UploadCompleteRequest &request) {
+  nlohmann::json payload{
+      {"encryptedMetadata", request.encryptedMetadata},
+      {"encryptedFileKey", request.encryptedFileKey},
+      {"encryptedManifest", request.encryptedManifest},
+      {"encryptedHash", request.encryptedHash},
+      {"searchTokens", encodeSearchTokens(request.searchTokens)},
+      {"hasThumbnail", request.hasThumbnail},
+      {"thumbnailMime", request.thumbnailMime},
+      {"thumbnailWidth", request.thumbnailWidth},
+      {"thumbnailHeight", request.thumbnailHeight},
+      {"thumbnailSize", request.thumbnailSize},
+  };
+  return payload;
+}
+
+std::map<std::string, std::string>
+decodeValidationErrors(const nlohmann::json &json) {
+  std::map<std::string, std::string> errors;
+  if (!json.is_object()) {
+    return errors;
+  }
+  for (const auto &[key, value] : json.items()) {
+    if (value.is_string()) {
+      errors.emplace(key, value.get<std::string>());
+    }
+  }
+  return errors;
+}
+
 } // namespace
 
 ArkiveApi::ArkiveApi(ArkiveHttpClient &client) : client_(client) {}
@@ -200,21 +246,39 @@ CreateFolderResponse ArkiveApi::createFolder(const CreateFolderRequest &request)
 }
 
 StartUploadResponse ArkiveApi::startUpload(const StartUploadRequest &request) {
-  nlohmann::json payload{
-      {"originalSize", request.originalSize},
-      {"fileChunkSize", request.fileChunkSize},
-      {"totalChunks", request.totalChunks},
-      {"uploadPartSize", request.uploadPartSize},
-      {"uploadPartCount", request.uploadPartCount},
-      {"encryptionVersion", request.encryptionVersion},
-      {"folderId", request.folderId.has_value()
-                       ? nlohmann::json(*request.folderId)
-                       : nlohmann::json(nullptr)},
-      {"singlePart", request.singlePart},
-  };
-
   return decodeStartUploadResponse(
-      client_.postJson("/api/uploads/start", payload));
+      client_.postJson("/api/uploads/start", encodeStartUploadRequest(request)));
+}
+
+std::vector<BatchStartUploadResult> ArkiveApi::startUploadBatch(
+    const std::vector<BatchStartUploadRequest> &requests) {
+  nlohmann::json files = nlohmann::json::array();
+  for (const auto &item : requests) {
+    nlohmann::json payload = encodeStartUploadRequest(item.request);
+    payload["clientId"] = item.clientId;
+    files.push_back(std::move(payload));
+  }
+
+  const auto response = client_.postJson("/api/uploads/batch/start",
+                                         {{"files", std::move(files)}});
+  std::vector<BatchStartUploadResult> results;
+  if (!response.contains("uploads") || !response["uploads"].is_array()) {
+    return results;
+  }
+  for (const auto &item : response["uploads"]) {
+    BatchStartUploadResult result{
+        .clientId = item.value("clientId", ""),
+        .error = item.value("error", ""),
+        .validationErrors = decodeValidationErrors(
+            item.value("validationErrors", nlohmann::json::object())),
+    };
+    if (result.error.empty() && result.validationErrors.empty() &&
+        item.contains("uploadSessionId")) {
+      result.upload = decodeStartUploadResponse(item);
+    }
+    results.push_back(std::move(result));
+  }
+  return results;
 }
 
 std::string ArkiveApi::presignSingleUpload(
@@ -264,20 +328,34 @@ void ArkiveApi::uploadPart(const std::string &uploadSessionId,
 
 void ArkiveApi::uploadComplete(const std::string &uploadSessionId,
                                const UploadCompleteRequest &request) {
-  client_.postJson(
-      "/api/uploads/" + uploadSessionId + "/complete",
-      {
-          {"encryptedMetadata", request.encryptedMetadata},
-          {"encryptedFileKey", request.encryptedFileKey},
-          {"encryptedManifest", request.encryptedManifest},
-          {"encryptedHash", request.encryptedHash},
-          {"searchTokens", encodeSearchTokens(request.searchTokens)},
-          {"hasThumbnail", request.hasThumbnail},
-          {"thumbnailMime", request.thumbnailMime},
-          {"thumbnailWidth", request.thumbnailWidth},
-          {"thumbnailHeight", request.thumbnailHeight},
-          {"thumbnailSize", request.thumbnailSize},
-      });
+  client_.postJson("/api/uploads/" + uploadSessionId + "/complete",
+                   encodeUploadCompleteRequest(request));
+}
+
+std::vector<BatchCompleteUploadResult> ArkiveApi::uploadCompleteBatch(
+    const std::vector<BatchCompleteUploadRequest> &requests) {
+  nlohmann::json uploads = nlohmann::json::array();
+  for (const auto &item : requests) {
+    nlohmann::json payload = encodeUploadCompleteRequest(item.request);
+    payload["clientId"] = item.clientId;
+    payload["uploadSessionId"] = item.uploadSessionId;
+    uploads.push_back(std::move(payload));
+  }
+
+  const auto response = client_.postJson(
+      "/api/uploads/batch/complete", {{"uploads", std::move(uploads)}});
+  std::vector<BatchCompleteUploadResult> results;
+  if (!response.contains("uploads") || !response["uploads"].is_array()) {
+    return results;
+  }
+  for (const auto &item : response["uploads"]) {
+    results.push_back(BatchCompleteUploadResult{
+        .clientId = item.value("clientId", ""),
+        .completed = item.value("completed", false),
+        .error = item.value("error", ""),
+    });
+  }
+  return results;
 }
 
 ListSyncEntriesResponse
