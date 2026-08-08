@@ -395,6 +395,69 @@ LIMIT ? OFFSET ?;
   return entries;
 }
 
+std::vector<Entry> EntryRepo::listEntriesBySyncRootIdAfterPath(
+    const std::string &syncRootId, const std::optional<std::string> &afterPath,
+    int limit) {
+  if (limit <= 0) {
+    throw std::invalid_argument("entry page has invalid limit");
+  }
+
+  static constexpr const char *sql = R"sql(
+SELECT
+  id,
+  remote_id,
+  remote_file_id,
+  local_deleted_at,
+  remote_deleted_at,
+  sync_root_id,
+  local_path,
+  parent_folder_id,
+  local_size,
+  local_mtime,
+  local_content_hash,
+  synced_content_hash,
+  remote_updated_at,
+  synced_remote_updated_at,
+  conflict_state,
+  sync_state,
+  last_seen_scan_job_id,
+  is_directory
+FROM entries
+WHERE sync_root_id = ?
+  AND (? IS NULL OR local_path > ?)
+ORDER BY local_path ASC
+LIMIT ?;
+  )sql";
+
+  sqlite3_stmt *rawStmt = nullptr;
+  if (sqlite3_prepare_v2(db_, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+    throw std::runtime_error(std::string("Prepare failed: ") +
+                             sqlite3_errmsg(db_));
+  }
+
+  StmtUniquePtr stmt(rawStmt);
+  bindText(db_, stmt.get(), 1, syncRootId);
+  bindOptionalText(db_, stmt.get(), 2, afterPath);
+  bindOptionalText(db_, stmt.get(), 3, afterPath);
+  throwIfBindFailed(db_, sqlite3_bind_int(stmt.get(), 4, limit));
+
+  std::vector<Entry> entries;
+  entries.reserve(static_cast<size_t>(limit));
+  while (true) {
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+      break;
+    }
+    if (rc != SQLITE_ROW) {
+      throw std::runtime_error(std::string("Step failed: ") +
+                               sqlite3_errmsg(db_));
+    }
+    entries.push_back(readEntry(stmt.get()));
+  }
+
+  return entries;
+}
+
 std::vector<Entry> EntryRepo::listPendingUploadDirectoriesBySyncRootId(
     const std::string &syncRootId) {
   static constexpr const char *sql = R"sql(

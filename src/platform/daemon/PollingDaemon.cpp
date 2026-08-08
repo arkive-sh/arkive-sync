@@ -17,8 +17,10 @@
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -111,15 +113,46 @@ int PollingDaemon::run() {
       continue;
     }
 
-    if (!services_.scanRepo->hasRunningScanJob(root.Id)) {
-      services_.queueService->build(root.Id);
-      if (services_.syncReconciler != nullptr) {
-        services_.syncReconciler->reconcileRoot(root);
-      }
-    }
   }
 
   roots = services_.syncService->getSyncRoots();
+
+  std::unordered_map<std::string, std::optional<std::string>> queueCursors;
+  std::unordered_map<std::string, bool> queueComplete;
+  for (const auto &root : roots) {
+    queueComplete[root.Id] = false;
+  }
+
+  const auto produceQueuePage = [&](const SyncRoot &root,
+                                    bool scanComplete) {
+    if (queueComplete[root.Id]) {
+      return;
+    }
+
+    const auto cursor = queueCursors.find(root.Id);
+    const QueueBuildPage page = services_.queueService->buildPage(
+        root.Id, cursor == queueCursors.end() ? std::nullopt : cursor->second,
+        scanComplete);
+    if (page.nextPath.has_value()) {
+      queueCursors[root.Id] = page.nextPath;
+    }
+    if (page.complete) {
+      queueComplete[root.Id] = true;
+      queueCursors.erase(root.Id);
+    }
+  };
+
+  for (const auto &root : roots) {
+    if (!root.enabled) {
+      continue;
+    }
+    const bool scanComplete =
+        !services_.scanRepo->hasRunningScanJob(root.Id);
+    produceQueuePage(root, scanComplete);
+    if (scanComplete && services_.syncReconciler != nullptr) {
+      services_.syncReconciler->reconcileRoot(root);
+    }
+  }
 
   const auto processWatcherEvents = [&]() {
     for (const auto &fileEvent : services_.watcher->poll()) {
@@ -160,14 +193,18 @@ int PollingDaemon::run() {
         if (!services_.rootScanner->scanRoot(root.Id)) {
           spdlog::error("Failed to continue scan for sync root {}", root.Id);
         }
-        if (!services_.scanRepo->hasRunningScanJob(root.Id)) {
-          services_.queueService->build(root.Id);
+        const bool scanComplete =
+            !services_.scanRepo->hasRunningScanJob(root.Id);
+        produceQueuePage(root, scanComplete);
+        if (scanComplete) {
           if (services_.syncReconciler != nullptr) {
             services_.syncReconciler->reconcileRoot(root);
           }
         }
         continue;
       }
+
+      produceQueuePage(root, true);
 
       int processedDirtyPaths = 0;
 
@@ -198,7 +235,8 @@ int PollingDaemon::run() {
                             dirtyPath->id, root.Id);
               break;
             }
-            services_.queueService->build(root.Id);
+            services_.queueService->enqueueEntry(root.Id,
+                                                 *dirtyPath->relativePath);
             if (services_.syncReconciler != nullptr) {
               services_.syncReconciler->reconcileRoot(root);
             }
@@ -206,6 +244,8 @@ int PollingDaemon::run() {
             break;
           case DirtyPathEventType::FullRescan:
             services_.scanRepo->ensureRunningScanJob(root.Id);
+            queueCursors.erase(root.Id);
+            queueComplete[root.Id] = false;
             services_.dirtyPathRepo->markDone(dirtyPath->id);
             break;
           }
